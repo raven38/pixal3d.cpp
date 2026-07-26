@@ -103,13 +103,19 @@ dropzone.addEventListener("drop", (e) => {
   const f = (e as DragEvent).dataTransfer?.files?.[0];
   if (f && f.type.startsWith("image/")) setInput(f, f.name);
 });
-window.addEventListener("paste", (e) => {
-  const item = (e as ClipboardEvent).clipboardData?.items;
-  if (!item) return;
-  for (const it of item) {
-    if (it.type.startsWith("image/")) {
-      const f = it.getAsFile();
-      if (f) setInput(f, f.name || "pasted.png");
+window.addEventListener("paste", async (e: ClipboardEvent) => {
+  for (const item of e.clipboardData?.items ?? []) {
+    const image = item.type.startsWith("image/") && item.getAsFile();
+    if (image) return setInput(image, image.name || "pasted.png");
+  }
+  // WebKitGTK can omit image data from ClipboardEvent. Since paste was
+  // user-triggered, try reading the clipboard item list for an image.
+  const items = await navigator.clipboard.read().catch(() => []);
+  for (const item of items) {
+    const type = item.types.find((type) => type.startsWith("image/"));
+    if (type) {
+      const image = await item.getType(type).catch(() => null);
+      if (image) return setInput(image, "pasted.png");
     }
   }
 });
