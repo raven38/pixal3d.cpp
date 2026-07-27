@@ -62,6 +62,21 @@ export async function openOutputDir(): Promise<void> {
   if (isTauri()) await invoke("open_output_dir");
 }
 
+/** Open the server logs directory in the OS file browser (Tauri only). */
+export async function openLogsDir(): Promise<void> {
+  if (isTauri()) await invoke("open_logs_dir");
+}
+
+/** The logs directory path (Tauri only); empty string in the browser. */
+export async function logsDir(): Promise<string> {
+  if (!isTauri()) return "";
+  try {
+    return await invoke<string>("logs_dir");
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Auto-save GLB bytes into the configured output directory (Tauri only).
  * The Rust side resolves + creates the dir and returns the full path; the fs

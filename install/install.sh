@@ -20,7 +20,7 @@ ROCM_GFX="gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 gfx1103 gfx1150 gfx115
 # ---- defaults / args -------------------------------------------------------
 DEST="${XDG_DATA_HOME:-$HOME/.local/share}/trellis-studio"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/trellis-studio"
-BACKEND=""; GPU=0; PORT=8080; MODELS_DIR=""; SKIP_MODELS=0; SKIP_APP=0; ASSUME_YES=0
+BACKEND=""; GPU=0; PORT=8080; MODELS_DIR=""; SKIP_MODELS=0; SKIP_APP=0; ASSUME_YES=0; QUANT=""
 
 usage() {
   cat <<EOF
@@ -31,7 +31,10 @@ Trellis Studio installer (Linux)
   --port P                     server port (default 8080)
   --dest DIR                   install location (default $DEST)
   --models-dir DIR             where to put weights (default <dest>/models)
-  --skip-models                don't download the ~16.5 GB weights
+  --quant q8|q4                download quantized weights instead of f16:
+                                 q8 ~9.5 GB (near-lossless), q4 ~6 GB (smaller,
+                                 slight quality loss). Default: f16 (~16.5 GB).
+  --skip-models                don't download the weights
   --skip-app                   don't download the desktop app
   -y, --yes                    don't prompt for confirmation
   -h, --help                   this help
@@ -44,6 +47,7 @@ while [ $# -gt 0 ]; do
     --port) PORT="$2"; shift 2;;
     --dest) DEST="$2"; shift 2;;
     --models-dir) MODELS_DIR="$2"; shift 2;;
+    --quant) QUANT="$2"; shift 2;;
     --skip-models) SKIP_MODELS=1; shift;;
     --skip-app) SKIP_APP=1; shift;;
     -y|--yes) ASSUME_YES=1; shift;;
@@ -53,6 +57,13 @@ while [ $# -gt 0 ]; do
 done
 MODELS_DIR="${MODELS_DIR:-$DEST/models}"
 RUNTIME_DIR="$DEST/runtime"
+# Quantized weights live in q8/ and q4/ subpaths of the HF repo, same filenames.
+case "$QUANT" in
+  "")   WEIGHTS_LABEL="f16 (~16.5 GB)";;
+  q8)   WEIGHTS_LABEL="Q8 (~9.5 GB, near-lossless)";;
+  q4)   WEIGHTS_LABEL="Q4 (~6 GB, slight quality loss)";;
+  *)    die "invalid --quant: $QUANT (use q8 or q4)";;
+esac
 
 # ---- logging ---------------------------------------------------------------
 # Status messages go to stderr so command substitution (e.g. $(detect_backend))
@@ -93,6 +104,7 @@ case "$BACKEND" in cuda|rocm|vulkan) ;; *) die "invalid backend: $BACKEND";; esa
 echo
 info "install dir : $DEST"
 info "models dir  : $MODELS_DIR $([ "$SKIP_MODELS" = 1 ] && echo '(skipped)')"
+info "weights     : $WEIGHTS_LABEL"
 info "backend/gpu : $BACKEND / $GPU     port: $PORT"
 echo
 if [ "$ASSUME_YES" != 1 ] && [ -t 0 ]; then
@@ -130,9 +142,10 @@ fi
 if [ "$SKIP_MODELS" = 1 ]; then
   warn "skipping model download (--skip-models); set them in the app's Settings."
 else
-  log "downloading TRELLIS.2 weights (~16.5 GB, resumable) -> $MODELS_DIR"
+  log "downloading TRELLIS.2 weights [$WEIGHTS_LABEL, resumable] -> $MODELS_DIR"
   mkdir -p "$MODELS_DIR"
-  for m in "${MODELS[@]}"; do download "${HF_BASE}/${m}" "$MODELS_DIR/${m}"; done
+  # ${QUANT:+$QUANT/} -> "q8/" or "q4/" when set, empty for f16.
+  for m in "${MODELS[@]}"; do download "${HF_BASE}/${QUANT:+$QUANT/}${m}" "$MODELS_DIR/${m}"; done
 fi
 
 # ---- 3. desktop app --------------------------------------------------------

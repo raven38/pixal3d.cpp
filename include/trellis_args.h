@@ -19,7 +19,7 @@ struct TrellisParams {
     std::string image;                                          // input image (image->3D)
     std::string output = "model.glb";                           // output .glb
     std::string copyright;                                      // glTF asset.copyright metadata
-    std::string models = "/media/ilintar/D_SSD/models/trellis2/gguf";
+    std::string models = "models";              // GGUF dir; override with --models DIR
     std::string host   = "127.0.0.1";                           // trellis-server only
     int      port = 8080;                                       // trellis-server only
     int      gpu  = 0;                                          // >=0 GPU index, <0 CPU
@@ -36,15 +36,18 @@ struct TrellisParams {
                                 // as background and the model then generates holes there.)
     bool texture  = true;       // texture flow + UV bake (else geometry-only)
     bool xatlas   = true;       // xatlas UV unwrap (else voxel-native box projection)
-    int  band     = 1;          // narrow-band DC remesh band width (remesh_dc.h).
-                                //   1 = reference default; 2 = thicker offset shell,
-                                //   suppresses the doubled inner skin some subjects
-                                //   develop at band 1 (thin walls, chairs, vessels)
+    int  band     = 0;          // narrow-band DC remesh band width (remesh_dc.h).
+                                //   0 = auto: scale with resolution (res/512) so the
+                                //   smoothing offset is resolution-independent — 1 @512,
+                                //   2 @1024 — which suppresses the res-1024 "outer-skin"
+                                //   speckle (issue #22). >0 forces that width (e.g. 1 for
+                                //   the thin-wall reference look, 2 for a thicker shell).
     int  decim    = -1;         // decimation cluster grid   (-1 => per-cascade default)
     int  tex      = -1;         // UV atlas size in px        (-1 => per-cascade default)
     int  tex_res  = -1;         // texture PBR resolution: -1 => auto (drop dense res-1024 tex to
                                 //   512, whose clean coarse PBR bakes onto the res-1024 mesh
                                 //   without the partial-coverage "skin" speckle); else force 512/1024
+    int  webp     = -1;         // GLB texture encoding: -1 auto (WebP if built with it), 1 on, 0 off (PNG)
     bool f32      = false;      // f32 sparse-conv compute
     bool no_fa    = false;      // disable FlashAttention (manual softmax)
     bool require_gpu = false;   // refuse CPU fallback if no GPU is usable
@@ -52,6 +55,8 @@ struct TrellisParams {
     float gsh = 7.5f;           // shape-SLAT guidance strength
     bool voxply = false;        // dump out/myvox.ply              (debug)
     bool dump_slat = false;     // dump /tmp/hr_slat.bin           (debug)
+    bool dump_bg = false;       // also write the bg-removal cutout as <out>_cutout.png
+    bool bg_only = false;       // background removal only: write the cutout and skip the rest
 
     bool help = false;          // --help requested
 

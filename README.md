@@ -8,6 +8,9 @@ runtime. Optionally driven end-to-end from a text prompt with
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) producing the
 input image.
 
+It ports the reference implementation at
+[microsoft/TRELLIS.2](https://github.com/microsoft/TRELLIS.2).
+
 ```
 ./build/trellis-cli assets/goblin.png out/goblin.glb      # image -> UV-textured GLB (atlas + PBR)
 python tools/render_glb.py out/goblin.glb out/view.png    # quick multi-view render

@@ -9,6 +9,10 @@ struct Model;
 // Returns [3*S*S] float in torch CHW order (== ggml [S,S,3,1]), or empty on failure.
 std::vector<float> preprocess_image(const std::string& path, int S = 512);
 
+// Non-neural background removal: existing alpha if present, else white-bg threshold;
+// bbox-crop + premultiply on black -> square RGB uint8 cutout (size returned in `sz`).
+std::vector<unsigned char> threshold_cutout(const std::string& path, int& sz);
+
 // True when the image carries a real (not all-opaque) alpha channel, i.e. it is
 // pre-matted and needs no background removal.
 bool image_has_alpha(const std::string& path);

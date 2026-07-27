@@ -37,26 +37,52 @@ fn output_path(name: String) -> Result<String, String> {
     Ok(dir.join(name).to_string_lossy().into_owned())
 }
 
-/// Open the output directory in the OS file browser (Explorer / Finder / xdg-open).
-/// AppData\Local is awkward to reach in Explorer, so this button matters.
-#[tauri::command]
-fn open_output_dir() -> Result<(), String> {
-    let dir = config::resolve_output_dir()?;
+/// Open `path` in the OS file browser (Explorer / Finder / xdg-open).
+fn open_in_file_browser(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let mut cmd = std::process::Command::new("explorer");
     #[cfg(target_os = "macos")]
     let mut cmd = std::process::Command::new("open");
     #[cfg(all(unix, not(target_os = "macos")))]
     let mut cmd = std::process::Command::new("xdg-open");
-    cmd.arg(&dir);
+    cmd.arg(path);
     // explorer.exe returns a non-zero exit code even on success; spawn() ignores it.
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Open the output directory in the OS file browser.
+/// AppData\Local is awkward to reach in Explorer, so this button matters.
+#[tauri::command]
+fn open_output_dir() -> Result<(), String> {
+    let dir = config::resolve_output_dir()?;
+    open_in_file_browser(&dir)
+}
+
+/// The logs directory path (whether or not it exists yet).
+#[tauri::command]
+fn logs_dir() -> String {
+    config::logs_dir()
+}
+
+/// Open the logs directory in the OS file browser, creating it if needed.
+#[tauri::command]
+fn open_logs_dir() -> Result<(), String> {
+    let dir = config::resolve_logs_dir()?;
+    open_in_file_browser(&dir)
+}
+
+/// Path of the current/last server launch's log file, if any.
+#[tauri::command]
+fn current_log_path(state: tauri::State<ServerState>) -> Option<String> {
+    server::log_path(state.inner())
 }
 
 #[tauri::command]
 fn restart_server(app: tauri::AppHandle, state: tauri::State<ServerState>) -> Result<(), String> {
     let cfg = config::load().ok_or("no config.json found")?;
-    server::start(&app, &cfg, state.inner())
+    // Explicit restart: the user just changed settings, so never reuse a stale
+    // server on the port — spawn fresh so the new config actually takes effect.
+    server::start(&app, &cfg, state.inner(), false)
 }
 
 #[tauri::command]
@@ -65,6 +91,16 @@ fn server_running(state: tauri::State<ServerState>) -> bool {
 }
 
 fn main() {
+    // WebKitGTK ≥2.42 + the NVIDIA proprietary driver (and some other GPU/driver
+    // combos) render a blank white window through the DMA-BUF path, and can even
+    // crash the compositor on launch. Disabling that path fixes it with no
+    // downside for this app's simple WebGL preview. Only set it if the user
+    // hasn't already, so an explicit override still wins. (Linux only.)
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -75,6 +111,9 @@ fn main() {
             default_output_dir,
             output_path,
             open_output_dir,
+            logs_dir,
+            open_logs_dir,
+            current_log_path,
             restart_server,
             server_running
         ])
@@ -83,7 +122,9 @@ fn main() {
             if let Some(cfg) = config::load() {
                 if !cfg.server_bin.is_empty() {
                     let state = app.state::<ServerState>();
-                    if let Err(e) = server::start(app.handle(), &cfg, state.inner()) {
+                    // Autostart may adopt a server already on the port (manual
+                    // launch / pre-fix orphan) rather than fail to bind.
+                    if let Err(e) = server::start(app.handle(), &cfg, state.inner(), true) {
                         eprintln!("[studio] server autostart failed: {e}");
                     }
                 }

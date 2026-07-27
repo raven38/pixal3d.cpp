@@ -2,7 +2,24 @@
 // Fused kernel: one thread per output element, loops over (Cin, K, K), bilinear-samples x at the
 // per-location deformed positions with zero boundary. No im2col buffer.
 #include "deform_conv.h"
-#include <cuda_runtime.h>
+// Portable across CUDA and HIP: on a HIP compile the toolchain defines __HIP__ /
+// __HIP_PLATFORM_AMD__, so map the handful of runtime calls used below onto hip*.
+// (Mirrors the shim in decimate_qem.cu; the <<<>>> launch works on both.)
+#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__) || defined(GGML_USE_HIP)
+  #include <hip/hip_runtime.h>
+  #define cudaSetDevice           hipSetDevice
+  #define cudaMalloc              hipMalloc
+  #define cudaFree                hipFree
+  #define cudaMemcpy              hipMemcpy
+  #define cudaMemcpyHostToDevice  hipMemcpyHostToDevice
+  #define cudaMemcpyDeviceToHost  hipMemcpyDeviceToHost
+  #define cudaDeviceSynchronize   hipDeviceSynchronize
+  #define cudaError_t             hipError_t
+  #define cudaSuccess             hipSuccess
+  #define cudaGetErrorString      hipGetErrorString
+#else
+  #include <cuda_runtime.h>
+#endif
 #include <cstdio>
 #include <cmath>
 

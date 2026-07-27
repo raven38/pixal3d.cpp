@@ -36,14 +36,18 @@ void print_usage(const char* argv0, bool server) {
         "      --no-texture        geometry only\n"
         "      --xatlas            xatlas UV unwrap (default)\n"
         "      --box-uv            voxel-native box projection (faster)\n"
-        "      --band N            narrow-band DC remesh band width (default 1;\n"
-        "                          2 = thicker offset shell, suppresses the doubled\n"
-        "                          inner skin thin-walled subjects develop at 1)\n"
+        "      --band N            narrow-band DC remesh band width (default: auto —\n"
+        "                          res/512, i.e. 1 @512 / 2 @1024, which suppresses the\n"
+        "                          res-1024 outer-skin speckle; N forces that width)\n"
         "      --decim GRID        legacy cluster-grid decimation (default: quadric\n"
         "                          simplify to 300K faces @1024 / 150K @512; 0 = none)\n"
         "      --atlas PX          UV atlas size (default 2048 @1024 / 1024 @512)\n"
         "      --tex-res N         texture PBR resolution 512/1024 (default: auto — drops\n"
         "                          a dense res-1024 decode to a clean res-512 PBR volume)\n"
+        "      --webp on|off       encode GLB textures as WebP (default: on when built with\n"
+        "                          WebP support; off = PNG)\n"
+        "      --dump-bg           also write the background-removal cutout as <out>_cutout.png\n"
+        "      --bg-only           background removal only: write the cutout and skip the rest\n"
         "      --f32               f32 sparse-conv compute\n"
         "      --no-fa             disable FlashAttention\n"
         "      --require-gpu       refuse CPU fallback\n"
@@ -86,6 +90,11 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--decim")                { const char* v = need(a.c_str()); if (!v) return false; p.decim = atoi(v); }
         else if (a == "--atlas" || a == "--tex"){ const char* v = need(a.c_str()); if (!v) return false; p.tex = atoi(v); }
         else if (a == "--tex-res")              { const char* v = need(a.c_str()); if (!v) return false; p.tex_res = atoi(v); }
+        else if (a == "--webp")                 { const char* v = need(a.c_str()); if (!v) return false;
+                                                  p.webp = (std::strcmp(v,"off")==0 || std::strcmp(v,"0")==0 || std::strcmp(v,"false")==0) ? 0
+                                                         : (std::strcmp(v,"on")==0 || std::strcmp(v,"1")==0 || std::strcmp(v,"true")==0) ? 1 : -1; }
+        else if (a == "--dump-bg")              { p.dump_bg = true; }
+        else if (a == "--bg-only")              { p.bg_only = true; p.dump_bg = true; }
         else if (a == "--f32")                  { p.f32 = true; }
         else if (a == "--no-fa")                { p.no_fa = true; }
         else if (a == "--require-gpu")          { p.require_gpu = true; }

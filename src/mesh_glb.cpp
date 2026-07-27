@@ -278,7 +278,7 @@ bool write_glb(const char* path, const float* verts, int64_t V, const int32_t* f
 bool write_glb_textured(const char* path, const float* verts, int64_t V, const float* uv,
                         const int32_t* faces, int64_t F,
                         const unsigned char* base_rgba, const unsigned char* mr_rgba, int T,
-                        bool double_sided, int64_t seed, const char* copyright) {
+                        bool double_sided, int64_t seed, const char* copyright, bool use_webp) {
     // rotate positions (x,z,-y) + min/max
     std::vector<float> pos((size_t)V*3);
     float mn[3]={FLT_MAX,FLT_MAX,FLT_MAX}, mx[3]={-FLT_MAX,-FLT_MAX,-FLT_MAX};
@@ -333,7 +333,7 @@ bool write_glb_textured(const char* path, const float* verts, int64_t V, const f
     std::vector<uint8_t> pngB, pngM;
     bool webp = false;
 #ifdef TRELLIS_HAVE_WEBP
-    {
+    if (use_webp) {
         uint8_t* ob = nullptr; uint8_t* om = nullptr;
         const size_t nb = WebPEncodeRGBA(base_rgba, T, T, T*4, 80.f, &ob);
         const size_t nm = WebPEncodeRGBA(mr_rgba, T, T, T*4, 80.f, &om);

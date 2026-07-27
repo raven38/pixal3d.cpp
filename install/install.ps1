@@ -22,6 +22,8 @@ param(
   [int]$Port = 8080,
   [string]$Dest = "$env:LOCALAPPDATA\trellis-studio",
   [string]$ModelsDir = "",
+  # Quantized weights: "q8" (~9.5 GB, near-lossless) or "q4" (~6 GB). Default f16.
+  [string]$Quant = "",
   [switch]$SkipModels,
   [switch]$SkipApp,
   [switch]$Yes
@@ -37,6 +39,15 @@ $Models = @("birefnet.gguf", "dinov3.gguf", "ss_flow.gguf", "ss_dec.gguf",
 
 if (-not $ModelsDir) { $ModelsDir = Join-Path $Dest "models" }
 $RuntimeDir = Join-Path $Dest "runtime"
+
+# Quantized weights live in q8/ and q4/ subpaths of the HF repo, same filenames.
+switch ($Quant) {
+  ""   { $WeightsLabel = "f16 (~16.5 GB)" }
+  "q8" { $WeightsLabel = "Q8 (~9.5 GB, near-lossless)" }
+  "q4" { $WeightsLabel = "Q4 (~6 GB, slight quality loss)" }
+  default { Die "invalid -Quant: $Quant (use q8 or q4)" }
+}
+$QuantPath = if ($Quant) { "$Quant/" } else { "" }
 $ConfigDir = Join-Path $env:APPDATA "trellis-studio"
 
 function Log($m)  { Write-Host "==> $m" -ForegroundColor Green }
@@ -71,6 +82,7 @@ if (-not $Backend) {
 Write-Host ""
 Info "install dir : $Dest"
 Info ("models dir  : {0}{1}" -f $ModelsDir, $(if ($SkipModels) { " (skipped)" } else { "" }))
+Info "weights     : $WeightsLabel"
 Info "backend/gpu : $Backend / $Gpu     port: $Port"
 Write-Host ""
 if (-not $Yes) {
@@ -110,9 +122,9 @@ if ($Backend -eq "rocm") {
 if ($SkipModels) {
   Warn "skipping model download (-SkipModels); set the models dir in the app's Settings."
 } else {
-  Log "downloading TRELLIS.2 weights (~16.5 GB, resumable) -> $ModelsDir"
+  Log "downloading TRELLIS.2 weights [$WeightsLabel, resumable] -> $ModelsDir"
   New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
-  foreach ($m in $Models) { Download "$HfBase/$m" (Join-Path $ModelsDir $m) }
+  foreach ($m in $Models) { Download "$HfBase/$QuantPath$m" (Join-Path $ModelsDir $m) }
 }
 
 # ---- 3. desktop app --------------------------------------------------------

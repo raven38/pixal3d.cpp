@@ -46,6 +46,7 @@ Windows):
 | `--port P` | server port (default `8080`) |
 | `--dest DIR` | install location |
 | `--models-dir DIR` | where to store weights (e.g. a bigger drive) |
+| `--quant q8\|q4` | download quantized weights: `q8` ~9.5 GB (near-lossless), `q4` ~6 GB (smaller, slight quality loss). Default is f16 (~16.5 GB). |
 | `--skip-models` | don't download weights (set the folder later in Settings) |
 | `--skip-app` | don't download the desktop app |
 | `-y` / `-Yes` | don't prompt for confirmation |
@@ -106,10 +107,35 @@ folder and the GGUFs into `models/` (or point it at existing ones in Settings),
 and you're set. Delete the folder to uninstall. (Linux still needs system
 `webkit2gtk-4.1`.)
 
+## Where are the logs?
+
+Every server launch is written to a timestamped log file (the last 20 are kept):
+
+| | Linux | Windows |
+|--|-------|---------|
+| installed | `~/.local/share/trellis-studio/logs/` | `%LOCALAPPDATA%\trellis-studio\logs\` |
+| portable | `./data/logs/` next to the app | `.\data\logs\` next to the app |
+
+Open the folder straight from **Settings → Server logs → Open**. The log records
+the exact `--models` path, GPU index and backend the server was launched with,
+plus its full stdout/stderr — attach the newest file to a bug report.
+
 ## Troubleshooting
 
 - **"Server is offline"** right after generating — the pipeline is still loading
   the models; large weights take a moment on the first request.
+- **Blank white window / the desktop flickers on launch** (common on NVIDIA and
+  some Wayland setups) — the app now disables WebKit's DMA-BUF renderer on Linux
+  automatically. If you still hit it, launch with
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1`; to opt back in, set it to `0`.
+- **"Unable to establish IDB database file" / empty gallery** — some WebKitGTK
+  builds can't open IndexedDB. Generations are unaffected: every result is still
+  written to your output folder; only the in-app gallery won't persist across
+  restarts.
+- **Settings changes (e.g. models directory) seem ignored** — an older build
+  could reuse a server left running by a previous crash. Fully quit the app (or
+  reboot) once after updating; the current build kills the server with the app
+  and no longer reuses a stale one when you hit **Save & restart**.
 - **The app can't read the server response / a CORS error appears** — the app
   needs a `trellis-server` build that sends CORS headers (v0.4.4+). The installer
   pulls the *latest* release, so update if you're on an older server bundle.

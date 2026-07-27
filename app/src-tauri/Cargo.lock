@@ -3605,9 +3605,10 @@ dependencies = [
 
 [[package]]
 name = "trellis-studio"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "dirs 5.0.1",
+ "libc",
  "serde",
  "serde_json",
  "tauri",

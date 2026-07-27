@@ -156,7 +156,8 @@ jobs:
             FLAGS="$FLAGS -DGGML_OPENMP=OFF"
           fi
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release $FLAGS ${SPIRV_HEADERS_ROOT:+-DCMAKE_PREFIX_PATH=$SPIRV_HEADERS_ROOT}
-          cmake --build build --target trellis-server -j
+          # Ship both the resident HTTP server and the one-shot CLI (issue #15).
+          cmake --build build --target trellis-server trellis-cli -j
 
       - name: Package
         shell: bash
@@ -165,6 +166,7 @@ jobs:
           mkdir -p dist
           if [ "${{ matrix.os }}" = "windows" ]; then
             cp build/trellis-server.exe dist/
+            cp build/trellis-cli.exe dist/
             cp build/*.dll dist/ 2>/dev/null || true
             if [ "${{ matrix.backend }}" = "cuda" ]; then
               # $CUDA_PATH is a Windows path (backslashes/spaces) that breaks bash
@@ -186,6 +188,7 @@ jobs:
             (cd dist && 7z a -y "../$ASSET" ./* >/dev/null)
           else
             cp build/trellis-server dist/
+            cp build/trellis-cli dist/
             cp -P build/libggml*.so* dist/ 2>/dev/null || true
             # The ROCm runtime comes from the shared TheRock SDK that Lemonade
             # installs per the user's gfx arch (via LD_LIBRARY_PATH), not bundled

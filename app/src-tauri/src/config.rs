@@ -82,6 +82,29 @@ pub fn resolve_output_dir() -> Result<PathBuf, String> {
     Ok(p)
 }
 
+/// Where server launch logs are written: <exe>/data/logs in portable mode, else
+/// <local-data>/trellis-studio/logs. Mirrors `default_output_dir()`.
+pub fn logs_dir() -> String {
+    if let Some(root) = portable_root() {
+        return root.join("data").join("logs").to_string_lossy().into_owned();
+    }
+    dirs::data_local_dir()
+        .map(|d| d.join("trellis-studio").join("logs"))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// The logs dir, created if missing.
+pub fn resolve_logs_dir() -> Result<PathBuf, String> {
+    let dir = logs_dir();
+    if dir.is_empty() {
+        return Err("could not determine a logs directory".to_string());
+    }
+    let p = PathBuf::from(dir);
+    std::fs::create_dir_all(&p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
 pub fn config_path() -> Option<PathBuf> {
     if let Some(root) = portable_root() {
         return Some(root.join("data").join("config.json"));

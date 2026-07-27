@@ -89,21 +89,33 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         }
     }
     vector<float> chw, chw1024;
+    std::vector<unsigned char> cutout; int cut_sz = 0;   // the bg-removal result (for --dump-bg / --bg-only)
     if (birefnet) {
         printf("[1/6] preprocess %s (BiRefNet bg removal, %s)\n", img.c_str(), cascade ? "1024 cascade" : "512");
         // Full BiRefNet (Swin-L backbone + deformable-conv decoder) runs on the GPU. Cutout computed
         // once, normalized for 512 and 1024.
         trellis::Model bm = trellis::Model::load(M + "/birefnet.gguf", gpu);
-        int sz = 0; std::vector<unsigned char> cut = trellis::birefnet_cutout(img, bm, gpu < 0 ? 0 : gpu, sz);
+        cutout = trellis::birefnet_cutout(img, bm, gpu < 0 ? 0 : gpu, cut_sz);
         bm.free();
-        if (cut.empty()) return 1;
-        chw = trellis::normalize_cutout(cut, sz, 512);
-        if (cascade) chw1024 = trellis::normalize_cutout(cut, sz, 1024);
+        if (cutout.empty()) return 1;
+        chw = trellis::normalize_cutout(cutout, cut_sz, 512);
+        if (cascade) chw1024 = trellis::normalize_cutout(cutout, cut_sz, 1024);
     } else {
         printf("[1/6] preprocess %s (%s)\n", img.c_str(), cascade ? "1024 cascade" : "512");
-        chw = trellis::preprocess_image(img, 512);
-        if (chw.empty()) return 1;
-        chw1024 = cascade ? trellis::preprocess_image(img, 1024) : vector<float>();
+        cutout = trellis::threshold_cutout(img, cut_sz);
+        if (cutout.empty()) return 1;
+        chw = trellis::normalize_cutout(cutout, cut_sz, 512);
+        if (cascade) chw1024 = trellis::normalize_cutout(cutout, cut_sz, 1024);
+    }
+
+    // --dump-bg: write the bg-removal cutout next to the output; --bg-only: stop here.
+    if (cfg.dump_bg || cfg.bg_only) {
+        const std::string cut_png = outglb.substr(0, outglb.find_last_of('.')) + "_cutout.png";
+        if (cut_sz > 0 && stbi_write_png(cut_png.c_str(), cut_sz, cut_sz, 3, cutout.data(), cut_sz*3))
+            printf("      bg-removal cutout -> %s\n", cut_png.c_str());
+        else
+            fprintf(stderr, "      [warn] could not write bg-removal cutout to %s\n", cut_png.c_str());
+        if (cfg.bg_only) { printf("[bg-only] done (%.1fs)\n", now() - t0); return 0; }
     }
 
     printf("[2/6] DINOv3 conditioning\n");
@@ -364,9 +376,16 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         // mesh serves both the remesh UDF and the bake's texel snap.
         trellis::TriBvh bvh = trellis::TriBvh::build(mesh.verts.data(), mesh.V(),
                                                      mesh.faces.data(), mesh.F());
+        // The narrow-band remesh offset is eps = band*scale/res, i.e. it shrinks with
+        // resolution. At res-512 (band=1) that offset absorbs the decoder's sub-voxel
+        // "outer-skin" noise; at res-1024 the SAME band=1 halves the world-space offset,
+        // so the noise survives as the issue-#22 speckle. Default band (cfg.band==0)
+        // scales with resolution to keep the offset resolution-independent (512->1,
+        // 1024->2, 1536->3); an explicit --band / per-request band forces that value.
+        int remesh_band = cfg.band > 0 ? cfg.band : std::max(1, so.res / 512);
         trellis::Mesh rm = trellis::remesh_narrow_band_dc(mesh.verts.data(), mesh.V(),
                                                           mesh.faces.data(), mesh.F(),
-                                                          bvh, so.res, cfg.band);
+                                                          bvh, so.res, remesh_band);
         // Clean the narrow-band DC output (drop degenerate faces, unify winding), then drop
         // decode floaters (the reference is a single watertight component; ours shattered into
         // 50+ pieces). The faithful QEM simplifier below handles surface smoothing via its
@@ -409,7 +428,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
             trellis::write_glb_textured(outglb.c_str(), bm.verts.data(), (int64_t)bm.verts.size()/3, bm.uv.data(),
                                         bm.faces.data(), (int64_t)bm.faces.size()/3, bm.base.data(), bm.mr.data(), bm.T,
                                         /*double_sided=*/rm.F() == 0, run_seed,
-                                        cfg.copyright.empty() ? nullptr : cfg.copyright.c_str());
+                                        cfg.copyright.empty() ? nullptr : cfg.copyright.c_str(),
+                                        /*use_webp=*/cfg.webp != 0);
             std::string tex = outglb.substr(0, outglb.find_last_of('.')) + "_base.png";
             stbi_write_png(tex.c_str(), bm.T, bm.T, 4, bm.base.data(), bm.T*4);
             textured = true;
