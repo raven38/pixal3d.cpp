@@ -55,10 +55,10 @@ bool image_has_alpha(const std::string& path) {
     return has_alpha;
 }
 
-std::vector<float> preprocess_image(const std::string& path, int S) {
+std::vector<unsigned char> threshold_cutout(const std::string& path, int& sz) {
     int W, H, ch;
     unsigned char* img = stbi_load(path.c_str(), &W, &H, &ch, 4);   // force RGBA
-    if (!img) { fprintf(stderr, "preprocess: cannot load %s\n", path.c_str()); return {}; }
+    if (!img) { fprintf(stderr, "preprocess: cannot load %s\n", path.c_str()); sz = 0; return {}; }
 
     // alpha: use existing alpha if the image has one and isn't all opaque; else white-bg removal.
     std::vector<float> alpha((size_t)W * H);
@@ -68,9 +68,15 @@ std::vector<float> preprocess_image(const std::string& path, int S) {
         if (has_alpha) alpha[i] = img[4*i+3] / 255.0f;
         else { int mn = std::min({img[4*i], img[4*i+1], img[4*i+2]}); alpha[i] = mn < 232 ? 1.0f : 0.0f; }
     }
-    int sz;
     std::vector<unsigned char> crop = alpha_to_cutout(img, W, H, alpha, sz);
     stbi_image_free(img);
+    return crop;
+}
+
+std::vector<float> preprocess_image(const std::string& path, int S) {
+    int sz;
+    std::vector<unsigned char> crop = threshold_cutout(path, sz);
+    if (crop.empty()) return {};
     return normalize_cutout(crop, sz, S);
 }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(trellis_cpp VERSION 0.5.3 LANGUAGES CXX C)
+project(trellis_cpp VERSION 0.5.4 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -154,10 +154,15 @@ if(TARGET ggml-cuda)
   message(STATUS "trellis.cpp: CUDA backend enabled (${GGML_CUDA_LIB})")
 else()
   # No CUDA kernel in this build. Run BiRefNet's deformable conv on the GPU via a
-  # Vulkan compute shader when ggml is using Vulkan (CPU is minutes at its larger
-  # decoder scales); otherwise on the CPU, std::thread-parallel over output
-  # channels (see deform_conv_cpu.cpp) -- no OpenMP/libomp dependency.
-  target_sources(trellis_core PRIVATE src/deform_conv_cpu.cpp)
+  # Vulkan compute shader when ggml is using Vulkan, or a HIP kernel when ggml is
+  # using HIP (both are minutes on the CPU at the larger decoder scales); otherwise
+  # on the CPU, std::thread-parallel over output channels (deform_conv_cpu.cpp) --
+  # no OpenMP/libomp dependency.
+  # HIP compiles deform_conv.cu below (issue #20); mirror the CUDA branch and skip
+  # the CPU source there so deform_conv2d_run has a single definition.
+  if(NOT TARGET ggml-hip)
+    target_sources(trellis_core PRIVATE src/deform_conv_cpu.cpp)
+  endif()
   if(TARGET ggml-vulkan)
     set(TRELLIS_BUILD_BACKEND "vulkan")
     find_package(Vulkan REQUIRED COMPONENTS glslc)
@@ -238,15 +243,17 @@ if(TARGET ggml-hip)
   if(NOT CMAKE_HIP_ARCHITECTURES)
     set(CMAKE_HIP_ARCHITECTURES "${TRELLIS_HIP_ARCH}")
   endif()
-  set_source_files_properties(src/decimate_qem.cu PROPERTIES LANGUAGE HIP)
-  target_sources(trellis_core PRIVATE src/decimate_qem.cu)
+  # Both the QEM decimation kernel and BiRefNet's deformable conv (issue #20) build
+  # as HIP so ROCm users get GPU BiRefNet instead of the minutes-long CPU fallback.
+  set_source_files_properties(src/decimate_qem.cu src/deform_conv.cu PROPERTIES LANGUAGE HIP)
+  target_sources(trellis_core PRIVATE src/decimate_qem.cu src/deform_conv.cu)
   target_compile_definitions(trellis_core PUBLIC TRELLIS_HAVE_GPU_DECIMATE)
   target_include_directories(trellis_core PRIVATE ${ROCM_PATH}/include)
-  # Force the resolved arch(es) onto the decimation object (and everything linking
+  # Force the resolved arch(es) onto the HIP objects (and everything linking
   # trellis_core), overriding any auto-detected default.
   set_target_properties(trellis_core PROPERTIES HIP_ARCHITECTURES "${TRELLIS_HIP_ARCH}")
-  set_source_files_properties(src/decimate_qem.cu PROPERTIES HIP_ARCHITECTURES "${TRELLIS_HIP_ARCH}")
-  message(STATUS "trellis.cpp: HIP/ROCm backend enabled (GPU decimation via HIP, arch ${TRELLIS_HIP_ARCH})")
+  set_source_files_properties(src/decimate_qem.cu src/deform_conv.cu PROPERTIES HIP_ARCHITECTURES "${TRELLIS_HIP_ARCH}")
+  message(STATUS "trellis.cpp: HIP/ROCm backend enabled (GPU decimation + BiRefNet deform via HIP, arch ${TRELLIS_HIP_ARCH})")
 endif()
 
 target_compile_definitions(trellis_core PRIVATE TRELLIS_BUILD_BACKEND="${TRELLIS_BUILD_BACKEND}")

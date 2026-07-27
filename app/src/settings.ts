@@ -3,7 +3,7 @@
 // (which restarts the server); in the browser we only expose host/port.
 
 import { loadConfig, saveConfig } from "./config";
-import { invoke, isTauri, openOutputDir, pickDirectory } from "./tauri";
+import { invoke, isTauri, logsDir, openLogsDir, openOutputDir, pickDirectory } from "./tauri";
 
 function field(label: string, id: string, value: string, type = "text"): string {
   return `<label class="ctl"><span>${label}</span>
@@ -41,6 +41,7 @@ export async function renderSettings(
         /* leave blank */
       }
     }
+    const logDir = await logsDir();
 
     body.innerHTML = `
       ${ro("Backend", cfg.backend)}
@@ -49,10 +50,23 @@ export async function renderSettings(
       ${dirField("Output folder (generated GLBs are saved here)", "set-output", outputDir)}
       ${field("GPU index (&lt;0 = CPU)", "set-gpu", String(cfg.gpu), "number")}
       ${field("Port", "set-port", String(cfg.port), "number")}
+      <label class="ctl"><span>Server logs (each launch is saved here — attach these to bug reports)</span>
+        <div class="dir-row">
+          <input id="set-logs" type="text" value="${logDir.replace(/"/g, "&quot;")}" readonly />
+          <button id="set-logs-open" class="tool-btn" type="button">Open</button>
+        </div></label>
       <div class="modal-actions">
         <button id="set-restart" class="tool-btn">Restart server</button>
         <button id="set-save" class="primary">Save &amp; restart</button>
       </div>`;
+
+    (body.querySelector("#set-logs-open") as HTMLButtonElement).onclick = async () => {
+      try {
+        await openLogsDir();
+      } catch (e) {
+        alert(`Could not open the logs folder: ${(e as Error).message ?? e}`);
+      }
+    };
 
     const outputInput = body.querySelector("#set-output") as HTMLInputElement;
     (body.querySelector("#set-output-browse") as HTMLButtonElement).onclick = async () => {

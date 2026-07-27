@@ -2,7 +2,7 @@ import "./ui.css";
 import { generate, health } from "./api";
 import { loadConfig } from "./config";
 import { renderSettings } from "./settings";
-import { all, clear as clearStore, del as removeRecord, get as getRecord, newId, put } from "./store";
+import { all, clear as clearStore, del as removeRecord, get as getRecord, isEphemeral, newId, put } from "./store";
 import { isTauri, listen, saveBytes, saveToOutputDir } from "./tauri";
 import { Viewer } from "./viewer";
 import { DEFAULT_PARAMS, type GenParams, type GenRecord } from "./types";
@@ -40,6 +40,7 @@ let generating = false;
 let abort: AbortController | null = null;
 let elapsedTimer: number | null = null;
 let galleryUrls: string[] = [];
+let warnedEphemeral = false;
 
 // ---- controls -> params ----
 function readParams(): GenParams {
@@ -147,10 +148,6 @@ async function doGenerate(): Promise<void> {
     const { glb } = await generate(inputImage, params, abort.signal);
     currentGlb = glb;
 
-    // Persist the result FIRST — before touching the 3D preview — so a WebGL /
-    // model-viewer failure (e.g. "reading 'scene'") can never lose a successful
-    // generation. The gallery and the output folder are written up front; the
-    // interactive preview below is strictly best-effort.
     const rec: GenRecord = {
       id: newId(),
       ts: Date.now(),
@@ -160,13 +157,11 @@ async function doGenerate(): Promise<void> {
       glb,
       thumb: null,
     };
-    await put(rec);
-    activeId = rec.id;
-    setViewerTools(true);
-    viewerCaption.textContent = `${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB`;
-    await refreshGallery();
 
-    // Auto-save the GLB to the configured output folder (Tauri only) — also up front.
+    // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
+    // deliverable and must survive any later failure — a dead gallery DB (some
+    // WebKitGTK builds can't open IndexedDB) or a WebGL/model-viewer crash must
+    // never cost the user a successful generation.
     let savedPath: string | null = null;
     if (isTauri()) {
       try {
@@ -180,7 +175,23 @@ async function doGenerate(): Promise<void> {
     }
     toast(savedPath ? `Saved to ${savedPath}` : "Generation complete", "ok");
 
-    // Best-effort 3D preview + gallery thumbnail — never blocks the save above.
+    // 2) Add it to the gallery. The store falls back to in-memory if IndexedDB
+    // is unavailable, so this never throws and never blocks the save above.
+    await put(rec);
+    if (isEphemeral() && !warnedEphemeral) {
+      warnedEphemeral = true;
+      toast(
+        "Gallery won't persist across restarts (IndexedDB unavailable on this system) — " +
+          "but every generation is still saved to your output folder.",
+        "err",
+      );
+    }
+    activeId = rec.id;
+    setViewerTools(true);
+    viewerCaption.textContent = `${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB`;
+    await refreshGallery();
+
+    // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
     try {
       await viewer.load(glb);
       const thumb = await viewer.thumbnail();
