@@ -51,6 +51,7 @@ void print_usage(const char* argv0, bool server) {
         "      --f32               f32 sparse-conv compute\n"
         "      --no-fa             disable FlashAttention\n"
         "      --require-gpu       refuse CPU fallback\n"
+        "      --threads N         CPU backend threads      (default all cores)\n"
         "      --gss F  --gsh F    guidance strengths\n"
         "      --host H  --port P  trellis-server bind address\n"
         "      --voxply            also dump the voxel point cloud as .ply\n"
@@ -98,6 +99,7 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--f32")                  { p.f32 = true; }
         else if (a == "--no-fa")                { p.no_fa = true; }
         else if (a == "--require-gpu")          { p.require_gpu = true; }
+        else if (a == "--threads")              { const char* v = need(a.c_str()); if (!v) return false; p.threads = atoi(v); }
         else if (a == "--gss")                  { const char* v = need(a.c_str()); if (!v) return false; p.gss = (float)atof(v); }
         else if (a == "--gsh")                  { const char* v = need(a.c_str()); if (!v) return false; p.gsh = (float)atof(v); }
         else if (a == "--host")                 { const char* v = need(a.c_str()); if (!v) return false; p.host = v; }
