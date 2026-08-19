@@ -26,7 +26,9 @@ usage() {
   cat <<EOF
 Trellis Studio installer (Linux)
 
-  --backend cuda|rocm|vulkan   force a runtime (default: auto-detect)
+  --backend cuda|cuda12|rocm|vulkan
+                              force a runtime (default: auto-detect; cuda12 is
+                              for NVIDIA Pascal/Volta GPUs such as the P100)
   --gpu N                      GPU index (default 0; <0 = CPU)
   --port P                     server port (default 8080)
   --dest DIR                   install location (default $DEST)
@@ -79,6 +81,12 @@ for t in curl tar; do command -v "$t" >/dev/null || die "'$t' is required"; done
 # ---- backend detection -----------------------------------------------------
 detect_backend() {
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -qi gpu; then
+    local cc
+    cc="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "$GPU" 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
+    if [ -n "$cc" ] && awk -v cc="$cc" 'BEGIN { exit !(cc >= 6.0 && cc < 7.5) }'; then
+      info "detected NVIDIA compute capability $cc — selecting the CUDA 12 legacy runtime"
+      echo cuda12; return
+    fi
     echo cuda; return
   fi
   if command -v rocminfo >/dev/null 2>&1; then
@@ -99,7 +107,7 @@ if [ -z "$BACKEND" ]; then
 else
   log "backend (forced): ${c_b}${BACKEND}${c_0}"
 fi
-case "$BACKEND" in cuda|rocm|vulkan) ;; *) die "invalid backend: $BACKEND";; esac
+case "$BACKEND" in cuda|cuda12|rocm|vulkan) ;; *) die "invalid backend: $BACKEND";; esac
 
 echo
 info "install dir : $DEST"

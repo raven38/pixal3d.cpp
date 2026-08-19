@@ -259,7 +259,10 @@ cmake --build build -j
 ```
 
 See `.github/workflows/release.yml` for the exact flags the release binaries use
-(GPU target lists, `-DGGML_OPENMP=OFF` on Windows).
+(GPU target lists, `-DGGML_OPENMP=OFF` on Windows). Releases also include a
+`cuda12` variant built with CUDA 12.9 for Pascal/Volta GPUs (compute capability
+6.0/6.1/7.0); the standalone installers select it automatically for devices such
+as the Tesla P100.
 
 ## Layout
 

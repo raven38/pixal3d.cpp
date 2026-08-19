@@ -13,11 +13,13 @@ on:
 permissions:
   contents: write
 
-# Asset names must match Lemonade's media_release_asset():
+# Standard asset names must match Lemonade's media_release_asset():
 #   trellis-<backend>-<os>-x64.<tar.gz|zip>
+# cuda12 is an additional legacy artifact selected by the standalone installer
+# for Pascal/Volta devices; it does not replace Lemonade's current-CUDA asset.
 jobs:
   build:
-    name: ${{ matrix.os }} · ${{ matrix.backend }}
+    name: ${{ matrix.os }} · ${{ matrix.release_backend || matrix.backend }}
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental == true }}
     strategy:
@@ -25,10 +27,12 @@ jobs:
       matrix:
         include:
           - { os: linux,   backend: vulkan, runner: ubuntu-22.04 }
-          - { os: linux,   backend: cuda,   runner: ubuntu-22.04 }
+          - { os: linux,   backend: cuda,   release_backend: cuda,   cuda_version: "13.1.0", cuda_archs: "75;80;86;89;90;120", runner: ubuntu-22.04 }
+          - { os: linux,   backend: cuda,   release_backend: cuda12, cuda_version: "12.9.1", cuda_archs: "60;61;70",          runner: ubuntu-22.04 }
           - { os: linux,   backend: rocm,   runner: ubuntu-22.04,  experimental: true }
           - { os: windows, backend: vulkan, runner: windows-2022 }
-          - { os: windows, backend: cuda,   runner: windows-2022, experimental: true }
+          - { os: windows, backend: cuda,   release_backend: cuda,   cuda_version: "13.1.0", cuda_archs: "75;80;86;89;90;120", runner: windows-2022, experimental: true }
+          - { os: windows, backend: cuda,   release_backend: cuda12, cuda_version: "12.9.1", cuda_archs: "60;61;70",          runner: windows-2022, experimental: true }
           - { os: windows, backend: rocm,   runner: windows-2022, experimental: true }
 
     steps:
@@ -46,7 +50,7 @@ jobs:
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.os }}-${{ matrix.backend }}
+          key: ${{ matrix.os }}-${{ matrix.release_backend || matrix.backend }}
 
       # Linux: the minimal SDK is enough (runner provides spirv-headers).
       - name: Vulkan SDK (Linux)
@@ -79,6 +83,7 @@ jobs:
         if: matrix.backend == 'cuda'
         uses: Jimver/cuda-toolkit@v0.2.30
         with:
+          cuda: ${{ matrix.cuda_version }}
           method: network
 
       # Best-effort ROCm 7.12 (TheRock), matching the version Lemonade pins.
@@ -141,7 +146,7 @@ jobs:
             vulkan) FLAGS="-DGGML_VULKAN=ON" ;;
             # ggml rewrites 12x -> 12xa (arch-specific); Blackwell ships SASS-only
             # (120a can't be virtual), so no PTX fallback entry here.
-            cuda)   FLAGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75;80;86;89;90;120" ;;
+            cuda)   FLAGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=${{ matrix.cuda_archs }}" ;;
             # Popular consumer ISAs: RDNA2 dGPUs, RDNA3 dGPUs + 780M, RDNA3.5 iGPUs, RDNA4.
             rocm)   FLAGS="-DGGML_HIP=ON -DGGML_HIP_GRAPHS=OFF -DGPU_TARGETS=gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201 -DCMAKE_C_COMPILER=$ROCM_CC -DCMAKE_CXX_COMPILER=$ROCM_CXX -DCMAKE_PREFIX_PATH=$HIP_PATH -DCMAKE_HIP_COMPILER=$ROCM_CXX" ;;
           esac
@@ -184,7 +189,7 @@ jobs:
               done
               ls -la dist/*.dll
             fi
-            ASSET="trellis-${{ matrix.backend }}-windows-x64.zip"
+            ASSET="trellis-${{ matrix.release_backend || matrix.backend }}-windows-x64.zip"
             (cd dist && 7z a -y "../$ASSET" ./* >/dev/null)
           else
             cp build/trellis-server dist/
@@ -203,7 +208,7 @@ jobs:
             fi
             sudo apt-get install -y -qq patchelf
             for f in $(find dist -type f); do patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
-            ASSET="trellis-${{ matrix.backend }}-linux-x64.tar.gz"
+            ASSET="trellis-${{ matrix.release_backend || matrix.backend }}-linux-x64.tar.gz"
             tar -C dist -czf "$ASSET" .
           fi
           echo "ASSET=$ASSET" >> "$GITHUB_ENV"

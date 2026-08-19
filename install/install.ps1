@@ -58,7 +58,22 @@ function Die($m)  { Write-Host "error: $m" -ForegroundColor Red; exit 1 }
 # ---- backend detection -----------------------------------------------------
 function Detect-Backend {
   if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
-    try { if (nvidia-smi -L 2>$null) { return "cuda" } } catch {}
+    try {
+      if (nvidia-smi -L 2>$null) {
+        $capText = nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i $Gpu 2>$null |
+          Select-Object -First 1
+        $cap = 0.0
+        if ([double]::TryParse(
+              "$capText".Trim(),
+              [System.Globalization.NumberStyles]::Float,
+              [System.Globalization.CultureInfo]::InvariantCulture,
+              [ref]$cap) -and $cap -ge 6.0 -and $cap -lt 7.5) {
+          Info "detected NVIDIA compute capability $capText — selecting the CUDA 12 legacy runtime"
+          return "cuda12"
+        }
+        return "cuda"
+      }
+    } catch {}
   }
   try {
     $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
@@ -75,7 +90,7 @@ if (-not $Backend) {
   $Backend = Detect-Backend
   Log "auto-detected backend: $Backend"
 } else {
-  if ($Backend -notin @("cuda", "rocm", "vulkan")) { Die "invalid backend: $Backend (use cuda|rocm|vulkan)" }
+  if ($Backend -notin @("cuda", "cuda12", "rocm", "vulkan")) { Die "invalid backend: $Backend (use cuda|cuda12|rocm|vulkan)" }
   Log "backend (forced): $Backend"
 }
 

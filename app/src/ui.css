@@ -105,6 +105,7 @@ body {
   border: 1px solid var(--border); border-radius: 7px; padding: 7px 8px; font-size: 13px;
 }
 .ctl select:focus, .ctl input:focus { outline: none; border-color: var(--accent); }
+.ctl select option { background: var(--panel-2); color: var(--text); }
 
 .primary {
   background: var(--accent); color: #fff; border: none; border-radius: 8px;
