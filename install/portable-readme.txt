@@ -15,6 +15,7 @@ First-time setup
   1. Download the server runtime for your GPU from the releases page and extract
      it into a "runtime" folder next to this app:
        trellis-cuda-<os>-x64      (NVIDIA)
+       trellis-cuda12-<os>-x64    (NVIDIA Pascal/Volta, e.g. Tesla P100)
        trellis-rocm-<os>-x64      (AMD; needs the matching ROCm runtime on PATH)
        trellis-vulkan-<os>-x64    (AMD / Intel / universal fallback)
   2. Put the 10 GGUF files from huggingface.co/ilintar/trellis2-gguf into a

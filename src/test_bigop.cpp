@@ -1,6 +1,6 @@
 // Isolate which GPU op page-faults on a >2^31-element per-voxel decode tensor.
 //   trellis-test-bigop <shape_dec.gguf> <op> [N] [gpu]
-// op: silu | norm | gemm | concat | getrows | submconv | convnext
+// op: silu | norm | gemm | concat | getrows | submconv | convnext | c2s | c2s-dense
 // Prints "<op> N=.. OK" on success; a GPU page fault aborts the process (=> that op is the culprit).
 #include "trellis_model.h"
 #include "sparse.h"
@@ -151,7 +151,7 @@ int main(int argc, char** argv) {
         vector<float> r = run(m, c, y, { {gf, feats.data()}, {gn, nbr.data()} });
         printf("submconv4096 OK  Nr=%d out[0]=%.4f out[last]=%.4f\n", Nr, r[0], r.back());
         ggml_free(c);
-    } else if (op == "stage" || op == "c2s") {
+    } else if (op == "stage" || op == "c2s" || op == "c2s-dense") {
         // stage: decode_unet's stage-0 ConvNeXt (4 chained blocks in ONE graph)
         // c2s:   the coords-to-subdiv at stage 0 (conv1 outputs [Cout*8=4096, N])
         int s = (int)std::cbrt((double)N) + 1;
@@ -160,10 +160,7 @@ int main(int argc, char** argv) {
           for (int y = 0; y < s && (int)coords.size() < N; ++y)
             for (int z = 0; z < s && (int)coords.size() < N; ++z) coords.push_back({x,y,z});
         const int Nr = (int)coords.size();
-        const int C = 1024;
-        vector<float> feats((size_t)C * Nr);
-        for (size_t i = 0; i < feats.size(); ++i) feats[i] = ((i * 2654435761u) & 1023) / 512.0f - 1.0f;
-        if (op == "c2s") {
+        if (op == "c2s" || op == "c2s-dense") {
             // isolate graph1 (conv1 -> [Cout*8, Nr]); minimal subdiv keeps graph2 trivial.
             // TRELLIS_C2S_STAGE picks the real decode stage: later stages are narrower but
             // run at far larger N, which is where a dense object's decode actually lives.
@@ -173,8 +170,9 @@ int main(int argc, char** argv) {
             static const char* PFX[4] = {"blocks.0.4","blocks.1.16","blocks.2.8","blocks.3.4"};
             static const int   CIN[4] = {1024, 512, 256, 128};
             static const int   COUT[4]= { 512, 256, 128,  64};
-            vector<uint8_t> ext((size_t)8 * Nr, 0);
-            for (int o = 0; o < 8; ++o) ext[o] = 1;   // only voxel 0 subdivides -> M=8
+            vector<uint8_t> ext((size_t)8 * Nr, op == "c2s-dense" ? 1 : 0);
+            if (op == "c2s")
+                for (int o = 0; o < 8; ++o) ext[o] = 1;   // only voxel 0 subdivides -> M=8
             vector<float> f2((size_t)CIN[stg] * Nr, 0.1f);
             printf("  stage=%d %s  Cin=%d Cout=%d  conv1=[%d, %d] = %.1f GB\n",
                    stg, PFX[stg], CIN[stg], COUT[stg], COUT[stg]*8, Nr,
@@ -183,6 +181,10 @@ int main(int argc, char** argv) {
             trellis::C2SResult r = trellis::sparse_c2s(m, PFX[stg], f2, CIN[stg], coords, COUT[stg], &ext);
             printf("c2s OK  in Nr=%d -> out M=%zu Cout=%d\n", Nr, r.coords.size(), COUT[stg]);
         } else {
+            const int C = 1024;
+            vector<float> feats((size_t)C * Nr);
+            for (size_t i = 0; i < feats.size(); ++i)
+                feats[i] = ((i * 2654435761u) & 1023) / 512.0f - 1.0f;
             vector<int32_t> nbr = trellis::build_neighbor_table(coords);
             ggml_context* c = mkctx();
             T* gf = ggml_new_tensor_2d(c, GGML_TYPE_F32, C, Nr); ggml_set_input(gf);
