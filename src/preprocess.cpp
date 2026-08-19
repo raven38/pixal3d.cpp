@@ -14,18 +14,21 @@
 namespace trellis {
 
 std::vector<float> normalize_cutout(const std::vector<unsigned char>& rgb, int sz, int S) {
-    std::vector<unsigned char> rs((size_t)S*S*3);
-    stbir_resize_uint8(rgb.data(), sz, sz, 0, rs.data(), S, S, 0, 3);
+    const size_t pixels = (size_t)sz * sz;
+    const int channels = rgb.size() == pixels * 4 ? 4 : 3;
+    if (sz <= 0 || S <= 0 || rgb.size() != pixels * channels) return {};
+    std::vector<unsigned char> rs((size_t)S*S*channels);
+    stbir_resize_uint8(rgb.data(), sz, sz, 0, rs.data(), S, S, 0, channels);
     const float mean[3] = {0.485f,0.456f,0.406f}, std[3] = {0.229f,0.224f,0.225f};
     std::vector<float> out((size_t)3*S*S);
     for (int c = 0; c < 3; ++c) for (int y = 0; y < S; ++y) for (int x = 0; x < S; ++x) {
-        float v = rs[((size_t)y*S + x)*3 + c] / 255.0f;
+        float v = rs[((size_t)y*S + x)*channels + c] / 255.0f;
         out[((size_t)c*S + y)*S + x] = (v - mean[c]) / std[c];
     }
     return out;
 }
 
-// alpha [W*H] (>0.8 = foreground) -> bbox crop (10% margin) + premultiply on black -> square RGB uint8.
+// alpha [W*H] (>0.8 = foreground) -> bbox crop (10% margin) + premultiplied square RGBA uint8.
 static std::vector<unsigned char> alpha_to_cutout(const unsigned char* rgba, int W, int H,
                                                   const std::vector<float>& alpha, int& sz) {
     int xmin = W, ymin = H, xmax = -1, ymax = -1;
@@ -35,12 +38,14 @@ static std::vector<unsigned char> alpha_to_cutout(const unsigned char* rgba, int
     int cx=(xmin+xmax)/2, cy=(ymin+ymax)/2;
     int half=(int)((std::max(xmax-xmin, ymax-ymin)/2 + 1) * 1.10f);
     sz = 2*half;
-    std::vector<unsigned char> crop((size_t)sz*sz*3, 0);
+    std::vector<unsigned char> crop((size_t)sz*sz*4, 0);
     for (int y = 0; y < sz; ++y) for (int x = 0; x < sz; ++x) {
         int sx=cx-half+x, sy=cy-half+y;
         if (sx<0||sy<0||sx>=W||sy>=H) continue;
-        float a = alpha[(size_t)sy*W + sx];
-        for (int c = 0; c < 3; ++c) crop[((size_t)y*sz + x)*3 + c] = (unsigned char)(rgba[((size_t)sy*W + sx)*4 + c] * a);
+        float a = std::clamp(alpha[(size_t)sy*W + sx], 0.0f, 1.0f);
+        const size_t dst = ((size_t)y*sz + x)*4;
+        for (int c = 0; c < 3; ++c) crop[dst + c] = (unsigned char)(rgba[((size_t)sy*W + sx)*4 + c] * a);
+        crop[dst + 3] = (unsigned char)std::lround(255.0f * a);
     }
     return crop;
 }
@@ -84,20 +89,29 @@ std::vector<unsigned char> birefnet_cutout(const std::string& path, const Model&
     int W, H, ch;
     unsigned char* img = stbi_load(path.c_str(), &W, &H, &ch, 4);
     if (!img) { fprintf(stderr, "birefnet_cutout: cannot load %s\n", path.c_str()); sz = 0; return {}; }
-    // resize to 1024 RGBA for the matte + cutout
+    // BiRefNet is evaluated at its fixed square size, but its matte is resized
+    // back to the source dimensions before cropping. Applying it to the 1024x1024
+    // inference image would permanently squash non-square inputs.
     const int R = 1024;
     std::vector<unsigned char> r1024((size_t)R*R*4);
     stbir_resize_uint8(img, W, H, 0, r1024.data(), R, R, 0, 4);
-    stbi_image_free(img);
     // ImageNet-normalized CHW for the matte
     const float mean[3] = {0.485f,0.456f,0.406f}, std[3] = {0.229f,0.224f,0.225f};
     std::vector<float> chw((size_t)3*R*R);
     for (int c = 0; c < 3; ++c) for (int i = 0; i < R*R; ++i)
         chw[(size_t)c*R*R + i] = (r1024[(size_t)i*4 + c] / 255.0f - mean[c]) / std[c];
     std::vector<float> logits = birefnet_matte(bm, chw, gpu);   // [R*R]
-    std::vector<float> alpha((size_t)R*R);
-    for (size_t i = 0; i < alpha.size(); ++i) alpha[i] = 1.0f / (1.0f + std::exp(-logits[i]));
-    return alpha_to_cutout(r1024.data(), R, R, alpha, sz);
+    std::vector<float> alpha1024((size_t)R*R);
+    for (size_t i = 0; i < alpha1024.size(); ++i) alpha1024[i] = 1.0f / (1.0f + std::exp(-logits[i]));
+    std::vector<float> alpha((size_t)W*H);
+    if (!stbir_resize_float(alpha1024.data(), R, R, 0, alpha.data(), W, H, 0, 1)) {
+        stbi_image_free(img);
+        sz = 0;
+        return {};
+    }
+    std::vector<unsigned char> crop = alpha_to_cutout(img, W, H, alpha, sz);
+    stbi_image_free(img);
+    return crop;
 }
 
 } // namespace trellis

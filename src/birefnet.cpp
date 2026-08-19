@@ -8,6 +8,8 @@
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <cmath>
@@ -33,6 +35,10 @@ static std::vector<std::vector<float>> run_graph(const Model& m, ggml_context* c
     for (T* o : outs) { ggml_set_output(o); ggml_build_forward_expand(g, o); }
     ggml_gallocr_t a = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(a, g)) throw std::runtime_error("birefnet alloc");
+    if (getenv("TRELLIS_DBG_ALLOC"))
+        fprintf(stderr, "      [birefnet-alloc] %-48s nodes=%d buffer=%.3f GB\n",
+                outs.empty() ? "" : ggml_get_name(outs.front()), ggml_graph_n_nodes(g),
+                ggml_gallocr_get_buffer_size(a, 0) / 1e9);
     for (auto& [t, d] : ins) ggml_backend_tensor_set(t, d, 0, ggml_nbytes(t));
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("birefnet compute");
     std::vector<std::vector<float>> r;
@@ -252,17 +258,47 @@ struct Feat { std::vector<float> d; int C = 0, H = 0, W = 0; };
 
 // conv2d via ggml; torch[C,H,W] -> [OC,Ho,Wo] (stride 1). bias added if present.
 static Feat conv2d(const Model& m, const std::string& p, const Feat& x, int pad) {
-    Feat o;
-    ggml_context* c = mkctx();
-    T* gx = ggml_new_tensor_3d(c, GGML_TYPE_F32, x.W, x.H, x.C); ggml_set_input(gx);
     T* w = m.get(p + ".weight");
-    int OC = (int)w->ne[3];
-    T* y = ggml_conv_2d(c, w, gx, 1, 1, pad, pad, 1, 1);            // [Wo,Ho,OC]
-    if (m.has(p + ".bias")) y = ggml_add(c, y, ggml_reshape_3d(c, m.get(p + ".bias"), 1, 1, OC));
-    o.C = OC; o.H = (int)y->ne[1]; o.W = (int)y->ne[0];
-    o.d = run_graph(m, c, {y}, { {gx, x.d.data()} })[0];
-    ggml_free(c);
-    return o;
+    const int KW = (int)w->ne[0], KH = (int)w->ne[1], OC = (int)w->ne[3];
+    const int Ho = x.H + 2*pad - KH + 1, Wo = x.W + 2*pad - KW + 1;
+    auto run = [&](const Feat& in, int graph_pad) {
+        Feat r;
+        ggml_context* c = mkctx();
+        T* gx = ggml_new_tensor_3d(c, GGML_TYPE_F32, in.W, in.H, in.C); ggml_set_input(gx);
+        T* y = ggml_conv_2d(c, w, gx, 1, 1, graph_pad, graph_pad, 1, 1);
+        if (m.has(p + ".bias")) y = ggml_add(c, y, ggml_reshape_3d(c, m.get(p + ".bias"), 1, 1, OC));
+        ggml_set_name(y, p.c_str());
+        r.C = OC; r.H = (int)y->ne[1]; r.W = (int)y->ne[0];
+        r.d = run_graph(m, c, {y}, { {gx, in.d.data()} })[0];
+        ggml_free(c);
+        return r;
+    };
+
+    int max_rows = 512;
+    if (const char* e = getenv("TRELLIS_BIREFNET_CONV_ROWS")) max_rows = std::max(1, atoi(e));
+    if (Ho <= max_rows) return run(x, pad);
+
+    Feat out; out.C = OC; out.H = Ho; out.W = Wo;
+    out.d.resize((size_t)OC * Ho * Wo);
+    for (int y0 = 0; y0 < Ho; y0 += max_rows) {
+        const int nr = std::min(max_rows, Ho - y0);
+        // Slice the conceptually zero-padded input, including KH-1 halo rows.
+        // Running this tile with graph_pad=0 produces exactly output rows [y0,y0+nr).
+        Feat tile; tile.C = x.C; tile.H = nr + KH - 1; tile.W = x.W + 2*pad;
+        tile.d.assign((size_t)tile.C * tile.H * tile.W, 0.0f);
+        for (int c = 0; c < x.C; ++c) for (int ty = 0; ty < tile.H; ++ty) {
+            const int sy = y0 + ty - pad;
+            if (sy < 0 || sy >= x.H) continue;
+            std::memcpy(&tile.d[((size_t)c*tile.H + ty)*tile.W + pad],
+                        &x.d[((size_t)c*x.H + sy)*x.W], (size_t)x.W * sizeof(float));
+        }
+        Feat part = run(tile, 0);
+        if (part.H != nr || part.W != Wo) throw std::runtime_error("birefnet: invalid conv stripe shape");
+        for (int c = 0; c < OC; ++c)
+            std::memcpy(&out.d[((size_t)c*Ho + y0)*Wo], &part.d[(size_t)c*nr*Wo],
+                        (size_t)nr * Wo * sizeof(float));
+    }
+    return out;
 }
 static void bn(const Model& m, const std::string& p, Feat& x) {     // folded BN: per-channel scale/shift
     std::vector<float> sc = tensor_to_f32(m.get(p + ".scale")), sh = tensor_to_f32(m.get(p + ".shift"));
