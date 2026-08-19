@@ -5,6 +5,7 @@
 #include "ggml-alloc.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <unordered_map>
 #include <stdexcept>
@@ -174,6 +175,11 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<std::array<int,3>>& coords, int Cout,
                      const std::vector<uint8_t>* ext_subdiv) {
     const int N = (int)coords.size();
+    if (N == 0) throw std::runtime_error("c2s: empty input coordinate set in " + prefix);
+    if (Cin <= 0 || Cout <= 0 || feats_in.size() != (size_t)Cin * N)
+        throw std::runtime_error("c2s: invalid input feature shape in " + prefix);
+    if (ext_subdiv && ext_subdiv->size() != (size_t)8 * N)
+        throw std::runtime_error("c2s: invalid external subdivision mask in " + prefix);
     std::vector<int32_t> nbr = build_neighbor_table(coords);
 
     // ---- graph 1: subdiv [8,N] only. to_subdiv reads the RAW feats (the reference takes it
@@ -182,12 +188,30 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     // the mask externally, so it skips this graph entirely.
     std::vector<float> subdiv;
     if (!ext_subdiv) {
-        GraphRun gr1(m);
-        ggml_context* c = gr1.c;
-        T* gf = ggml_new_tensor_2d(c, GGML_TYPE_F32, Cin, N); ggml_set_input(gf);
-        T* sd = ggml_add(c, mul_mat_rows(c, m.get(prefix + ".to_subdiv.weight"), gf),
-                         m.get(prefix + ".to_subdiv.bias"));
-        subdiv = gr1.run(sd, { {gf, feats_in.data()} });   // [8, N] -- small
+        auto predict_subdiv = [&]() {
+            GraphRun gr1(m);
+            ggml_context* c = gr1.c;
+            T* gf = ggml_new_tensor_2d(c, GGML_TYPE_F32, Cin, N); ggml_set_input(gf);
+            T* sd = ggml_add(c, mul_mat_rows(c, m.get(prefix + ".to_subdiv.weight"), gf),
+                             m.get(prefix + ".to_subdiv.bias"));
+            return gr1.run(sd, { {gf, feats_in.data()} });   // [8, N] -- small
+        };
+        constexpr int kAttempts = 3;
+        for (int attempt = 0; attempt < kAttempts; ++attempt) {
+            subdiv = predict_subdiv();
+            const size_t bad = std::count_if(subdiv.begin(), subdiv.end(),
+                                             [](float x) { return !std::isfinite(x); });
+            if (bad == 0) break;
+            const size_t bad_input = std::count_if(feats_in.begin(), feats_in.end(),
+                                                   [](float x) { return !std::isfinite(x); });
+            if (bad_input != 0)
+                throw std::runtime_error("c2s: non-finite input features in " + prefix);
+            if (attempt + 1 == kAttempts)
+                throw std::runtime_error("c2s: non-finite subdivision logits from finite input in " + prefix);
+            fprintf(stderr,
+                    "      [c2s] %s produced %zu/%zu non-finite subdivision logits; retrying (%d/%d)\n",
+                    prefix.c_str(), bad, subdiv.size(), attempt + 1, kAttempts - 1);
+        }
         if (getenv("TRELLIS_DBG_SUBDIV")) {
             size_t pos = 0; double smin = 0, smax = 0; bool first = true;
             for (float x : subdiv) { if (x > 0.0f) pos++; if (first) { smin = smax = x; first = false; }
@@ -221,6 +245,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     }
     mstart[N] = (int32_t)gidx.size();
     const int M = (int)nc.size();
+    if (M == 0) throw std::runtime_error("c2s: subdivision produced no active voxels in " + prefix);
     std::vector<int32_t> nnbr = build_neighbor_table(nc);
     if (getenv("TRELLIS_DBG_MEM"))
         fprintf(stderr, "      [c2s] %-22s N=%d -> M=%d | host nnbr=%.2f GB feats_in=%.2f GB out=%.2f GB\n",
