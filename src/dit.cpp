@@ -97,8 +97,10 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     //      happened to dodge it; the HR flow (52.7k tok) hits it ~70%. Fix: **zero-pad K/V's
     //      key dim up to a 256 multiple** — zero keys add exp(0-rowmax)~0 (numerically exact),
     //      remove the garbage tile, AND unlock the aligned (Lk%256==0) kernel path.
-    //  (2) Use **BF16** (not F16) for K/V so HR activations can't overflow F16's +-65504 range;
-    //      BF16 shares F32's exponent range and matches the reference's bf16 checkpoints.
+    //  (2) Use **BF16** (not F16) for K/V. CUDA's tensor-core FA kernels still convert BF16
+    //      K/V to F16 internally, so V is power-of-two scaled before the cast and the output is
+    //      scaled back afterward. Attention is linear in V, and this keeps large HR activations
+    //      inside F16's +-65504 range without changing the softmax.
     // set_prec(GGML_PREC_F32) below is LOAD-BEARING, and only became so in ggml 2d6d0b0c.
     // Before it, only fattn-wmma-f16.cu read ggml_flash_attn_ext_get_prec; TILE (what this
     // shape gets on gfx1151), VEC and MMA silently ignored it and accumulated VKQ in half2.
@@ -130,13 +132,15 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
         T* qf = ggml_cont(c, ggml_permute(c, q, 0, 2, 1, 3));  // [hd, Lq, nh]
         if (qf->type != GGML_TYPE_F32) qf = ggml_cast(c, qf, GGML_TYPE_F32);
         T* kf = prep_kv(k);
-        T* vf = prep_kv(v);
+        constexpr float V_SCALE = 1.0f / 256.0f;
+        T* vf = prep_kv(ggml_scale(c, v, V_SCALE));
         // TRELLIS_FA_NOMASK=1: drop the mask. If the output is UNCHANGED, the mask is being
         // ignored and the zero-padded keys are diluting the softmax (exp(0-rowmax) is only
         // negligible when rowmax >> 0), which shrinks every output toward zero.
         static const bool fa_nomask = std::getenv("TRELLIS_FA_NOMASK") != nullptr;
         T* out = ggml_flash_attn_ext(c, qf, kf, vf, fa_nomask ? nullptr : mask, scale, 0.0f, 0.0f);  // [hd, nh, Lq]
         if (!fa_fast) ggml_flash_attn_ext_set_prec(out, GGML_PREC_F32);
+        out = ggml_scale(c, out, 1.0f / V_SCALE);
         return ggml_reshape_2d(c, out, d_model, out->ne[2]);   // [d_model, Lq]
     }
     // Exact SDPA, chunked over QUERIES. The whole reason FA exists here is the [Lk, Lq, nh]
