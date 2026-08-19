@@ -275,6 +275,21 @@ add_executable(trellis-test-shape-flow src/test_shape_flow.cpp)
 target_link_libraries(trellis-test-shape-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-shape-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# Manual CUDA regression for the >2 Gi half2 mask-stride overflow in
+# high-token-count 1024-cascade FlashAttention. The default case needs
+# about 8.1 GiB of VRAM, so keep it out of the routine test suite.
+if(TARGET ggml-cuda)
+  add_executable(trellis-test-fa-mask-overflow src/test_fa_mask_overflow.cpp)
+  target_link_libraries(trellis-test-fa-mask-overflow PRIVATE trellis_core)
+  set_target_properties(trellis-test-fa-mask-overflow PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+  # Small CUDA regression for trellis's V-range protection around the tensor-core
+  # FlashAttention kernels. The optional `raw` mode demonstrates the backend bug.
+  add_executable(trellis-test-fa-bf16-range src/test_fa_bf16_range.cpp)
+  target_link_libraries(trellis-test-fa-bf16-range PRIVATE trellis_core)
+  set_target_properties(trellis-test-fa-bf16-range PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+endif()
+
 add_executable(trellis-test-ss-sample src/test_ss_sample.cpp)
 target_link_libraries(trellis-test-ss-sample PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-sample PROPERTIES BUILD_RPATH "${GGML_RPATH}")
