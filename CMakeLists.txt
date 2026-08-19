@@ -298,6 +298,10 @@ add_executable(trellis-test-birefnet src/test_birefnet.cpp)
 target_link_libraries(trellis-test-birefnet PRIVATE trellis_core)
 set_target_properties(trellis-test-birefnet PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+add_executable(trellis-test-preprocess src/test_preprocess.cpp)
+target_link_libraries(trellis-test-preprocess PRIVATE trellis_core)
+set_target_properties(trellis-test-preprocess PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-deform src/test_deform.cpp)
 target_link_libraries(trellis-test-deform PRIVATE trellis_core)
 set_target_properties(trellis-test-deform PROPERTIES BUILD_RPATH "${GGML_RPATH}")
