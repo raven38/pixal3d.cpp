@@ -52,6 +52,30 @@ jobs:
         with:
           key: ${{ matrix.os }}-${{ matrix.release_backend || matrix.backend }}
 
+      # GitHub's Ubuntu runners prefer azure.archive.ubuntu.com through
+      # /etc/apt/apt-mirrors.txt. A dead Azure mirror can otherwise leave apt
+      # (including the CUDA toolkit action's internal apt-get update) hung until
+      # the six-hour job limit. Use Ubuntu's HTTPS archive and bound retries.
+      - name: Harden Ubuntu package downloads
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu' |
+              sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          for sources in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$sources" ]; then
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$sources"
+            fi
+          done
+          sudo tee /etc/apt/apt.conf.d/99-trellis-network >/dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "30";
+          Acquire::https::Timeout "30";
+          EOF
+
       # Linux: the minimal SDK is enough (runner provides spirv-headers).
       - name: Vulkan SDK (Linux)
         if: matrix.backend == 'vulkan' && matrix.os == 'linux'
@@ -82,6 +106,7 @@ jobs:
       - name: CUDA toolkit
         if: matrix.backend == 'cuda'
         uses: Jimver/cuda-toolkit@v0.2.30
+        timeout-minutes: 60
         with:
           cuda: ${{ matrix.cuda_version }}
           method: network
@@ -260,9 +285,32 @@ jobs:
         with:
           workspaces: app/src-tauri
 
+      # Keep the runner's Azure Ubuntu mirror from hanging apt-get update until
+      # GitHub's six-hour job timeout. See the equivalent runtime-build step.
+      - name: Harden Ubuntu package downloads
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu' |
+              sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          for sources in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$sources" ]; then
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$sources"
+            fi
+          done
+          sudo tee /etc/apt/apt.conf.d/99-trellis-network >/dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "30";
+          Acquire::https::Timeout "30";
+          EOF
+
       # Tauri v2 Linux system dependencies (webkit2gtk 4.1 stack).
       - name: Linux system deps
         if: matrix.os == 'linux'
+        timeout-minutes: 30
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
