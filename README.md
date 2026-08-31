@@ -238,6 +238,12 @@ On Strix Halo, Vulkan is the fastest backend: ROCm requires
 `GGML_CUDA_DISABLE_GRAPHS=1` (ggml's HIP graph capture stalls on these graphs)
 and still trails Vulkan by 10–40 %.
 
+**Apple Silicon (Metal):** verified end-to-end on an Apple M5 (24 GB unified):
+res-512 image → textured GLB in **9:21** with a **5.6 GB** peak RSS, all
+neural stages on Metal (2.4M decoded voxels, 4.8M-face raw mesh). bfloat16 and
+f16 tensor APIs are available from M2 on; on M1 use `TRELLIS_FA_FAST=1`
+(f16 K/V) since the default FlashAttention path casts K/V to bf16.
+
 ## Tools
 
 | tool | purpose |
@@ -255,8 +261,14 @@ GGML is vendored in `thirdparty/ggml`. Pick a backend:
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_VULKAN=ON   # Vulkan
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON    # CUDA
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_HIP=ON     # ROCm
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release                   # macOS: Metal (auto)
 cmake --build build -j
 ```
+
+On **macOS/Apple Silicon** no backend flag is needed — ggml's Metal backend
+defaults ON for Apple builds and the generic device selection picks the GPU.
+The two custom kernels (BiRefNet deformable conv, QEM decimation) run their
+CPU fallbacks there.
 
 See `.github/workflows/release.yml` for the exact flags the release binaries use
 (GPU target lists, `-DGGML_OPENMP=OFF` on Windows). Releases also include a
