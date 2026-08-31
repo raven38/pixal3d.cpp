@@ -348,6 +348,57 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         }
     }
 
+    if (!cfg.dump_post.empty()) {
+        // Machine-readable output for external post-processing pipelines
+        // (simplification budgets / UV / baking done by the caller, e.g.
+        // QtMeshEditor): the CLEANED geometry mesh + the sparse PBR volume it
+        // would be baked from, then exit before decimate/UV/bake/GLB.
+        //
+        // The reference cleanup chain runs first (same as the GLB path):
+        // weld -> fill_small_holes -> narrow-band DC remesh -> clean ->
+        // drop floaters. The raw dual-grid decode is non-manifold at
+        // sub-voxel scale with inconsistently-wound patches — downstream
+        // consumers hit unwrap/simplify/culling pathologies on it — while
+        // the remeshed shell is watertight with consistent winding. Falls
+        // back to the raw decoded mesh if the remesh produces nothing.
+        //
+        // Binary layout matches the TRELLIS_DUMP_POST debug env:
+        // i32 V,F,Mv,res; f32 verts[V*3]; i32 faces[F*3]; i32 coords[Mv*3];
+        // f32 pbr6[Mv*6] (base_color.rgb, metallic, roughness, alpha in [0,1]).
+        trellis::weld_vertices(mesh.verts, mesh.faces, nullptr,
+                               1.0f / ((float)so.res * 8.0f));
+        trellis::fill_small_holes(mesh.faces);
+        trellis::TriBvh dbvh = trellis::TriBvh::build(mesh.verts.data(), mesh.V(),
+                                                      mesh.faces.data(), mesh.F());
+        const int dband = cfg.band > 0 ? cfg.band : std::max(1, so.res / 512);
+        trellis::Mesh rm = trellis::remesh_narrow_band_dc(mesh.verts.data(), mesh.V(),
+                                                          mesh.faces.data(), mesh.F(),
+                                                          dbvh, so.res, dband);
+        if (rm.F() > 0) {
+            trellis::clean_mesh(rm.V(), rm.faces);
+            trellis::drop_small_components(rm.verts, rm.faces, 0.02f);
+        }
+        const std::vector<float>&   dverts = rm.F() > 0 ? rm.verts : mesh.verts;
+        const std::vector<int32_t>& dfaces = rm.F() > 0 ? rm.faces : mesh.faces;
+        FILE* dfp = fopen(cfg.dump_post.c_str(), "wb");
+        if (!dfp) { fprintf(stderr, "cannot write %s\n", cfg.dump_post.c_str()); return 1; }
+        const int dV = (int)dverts.size() / 3, dFc = (int)dfaces.size() / 3;
+        const int Mv = pbr6.empty() ? 0 : (int)pbr_coords->size(), res = pbr_res;
+        fwrite(&dV,4,1,dfp); fwrite(&dFc,4,1,dfp); fwrite(&Mv,4,1,dfp); fwrite(&res,4,1,dfp);
+        fwrite(dverts.data(),4,(size_t)dV*3,dfp);
+        fwrite(dfaces.data(),4,(size_t)dFc*3,dfp);
+        if (Mv) {
+            for (auto& c : *pbr_coords) { int xyz[3] = {c[0],c[1],c[2]}; fwrite(xyz,4,3,dfp); }
+            fwrite(pbr6.data(),4,(size_t)Mv*6,dfp);
+        }
+        fclose(dfp);
+        printf("[7/7] cleaned dump -> %s (V=%d F=%d%s, PBR=%d @res%d)\n",
+               cfg.dump_post.c_str(), dV, dFc,
+               rm.F() > 0 ? " remeshed" : " raw (remesh empty)", Mv, res);
+        printf("done in %.1fs -> %s\n", now() - t0, cfg.dump_post.c_str());
+        return 0;
+    }
+
     printf("[7/7] write %s\n", outglb.c_str());
     bool textured = false;
     if (!pbr6.empty()) {   // UV-baked textured GLB (PBR material)
