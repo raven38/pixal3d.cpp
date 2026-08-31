@@ -47,6 +47,9 @@ void print_usage(const char* argv0, bool server) {
         "      --webp on|off       encode GLB textures as WebP (default: on when built with\n"
         "                          WebP support; off = PNG)\n"
         "      --dump-bg           also write the background-removal cutout as <out>_cutout.png\n"
+        "      --dump-post PATH    write the raw decoded mesh + sparse PBR volume to PATH and\n"
+        "                          exit (skips remesh/decimate/UV/bake/GLB) -- for external\n"
+        "                          post-processing pipelines\n"
         "      --bg-only           background removal only: write the cutout and skip the rest\n"
         "      --f32               f32 sparse-conv compute\n"
         "      --no-fa             disable FlashAttention\n"
@@ -87,6 +90,7 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--no-texture")           { p.texture = false; }
         else if (a == "--xatlas")               { p.xatlas = true; }
         else if (a == "--box-uv")               { p.xatlas = false; }
+        else if (a == "--dump-post")            { const char* v = need(a.c_str()); if (!v) return false; p.dump_post = v; }
         else if (a == "--band")                 { const char* v = need(a.c_str()); if (!v) return false; p.band = atoi(v); }
         else if (a == "--decim")                { const char* v = need(a.c_str()); if (!v) return false; p.decim = atoi(v); }
         else if (a == "--atlas" || a == "--tex"){ const char* v = need(a.c_str()); if (!v) return false; p.tex = atoi(v); }
