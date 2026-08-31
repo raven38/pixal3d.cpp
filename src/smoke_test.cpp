@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     const std::string path = argv[1];
     const int gpu = argc > 2 ? atoi(argv[2]) : 0;
 
-    printf("loading %s on %s\n", path.c_str(), gpu >= 0 ? "CUDA" : "CPU");
+    printf("loading %s on %s\n", path.c_str(), gpu >= 0 ? "GPU" : "CPU");
     trellis::Model m = trellis::Model::load(path, gpu);
 
     printf("arch        : %s\n", m.arch.c_str());

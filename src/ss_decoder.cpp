@@ -27,8 +27,19 @@ static T* conv3d(ggml_context* c, const Model& m, const std::string& p, T* x, in
     T* w = m.get(p + ".weight");
     const int k = (int)w->ne[0];
     const int pad = (k - 1) / 2;
-    T* y = ggml_conv_3d(c, w, x, IC, 1, 1, 1, pad, pad, pad, 1, 1, 1);  // [s0,s1,s2,OC]
     const int64_t OC = w->ne[3] / IC;
+#ifdef __APPLE__
+    // ggml_conv_3d lowers to IM2COL_3D + GEMM; the Metal backend implements
+    // the direct CONV_3D op but not IM2COL_3D, and trellis.cpp runs whole
+    // graphs on one backend (no sched fallback) — so the im2col lowering
+    // aborts on Apple GPUs. Same math, same [k,k,k,IC*OC] / [W,H,D,C]
+    // layouts via the direct op; non-Apple backends keep the validated
+    // im2col path.
+    T* y = ggml_conv_3d_direct(c, w, x, 1, 1, 1, pad, pad, pad, 1, 1, 1,
+                               IC, /*n_batch=*/1, (int)OC);  // [s0,s1,s2,OC]
+#else
+    T* y = ggml_conv_3d(c, w, x, IC, 1, 1, 1, pad, pad, pad, 1, 1, 1);  // [s0,s1,s2,OC]
+#endif
     T* b = ggml_reshape_4d(c, m.get(p + ".bias"), 1, 1, 1, OC);
     return ggml_add(c, y, b);
 }

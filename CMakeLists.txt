@@ -207,6 +207,15 @@ if(TARGET ggml-vulkan)
   target_link_libraries(trellis_core PUBLIC ggml-vulkan)
   message(STATUS "trellis.cpp: Vulkan backend enabled")
 endif()
+if(TARGET ggml-metal)
+  # macOS/Apple Silicon: ggml's Metal backend (GGML_METAL defaults ON for
+  # Apple builds). The generic device-enumeration path in make_backend() picks
+  # the Metal GPU automatically; the two custom kernels (deform_conv,
+  # decimate_qem) run their CPU fallbacks on this backend.
+  set(TRELLIS_BUILD_BACKEND "metal")
+  target_link_libraries(trellis_core PUBLIC ggml-metal)
+  message(STATUS "trellis.cpp: Metal backend enabled")
+endif()
 if(TARGET ggml-hip)
   set(TRELLIS_BUILD_BACKEND "hip")
   target_link_libraries(trellis_core PUBLIC ggml-hip)
