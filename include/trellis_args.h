@@ -58,6 +58,12 @@ struct TrellisParams {
     bool voxply = false;        // dump out/myvox.ply              (debug)
     bool dump_slat = false;     // dump /tmp/hr_slat.bin           (debug)
     bool dump_bg = false;       // also write the bg-removal cutout as <out>_cutout.png
+    std::string dump_post;      // write the raw decoded mesh + sparse PBR volume to this
+                                // path and exit (skips remesh/decimate/UV/bake/GLB) --
+                                // machine-readable output for external post-processing
+                                // pipelines (binary: i32 V,F,Mv,res; f32 verts[V*3];
+                                // i32 faces[F*3]; i32 coords[Mv*3]; f32 pbr6[Mv*6];
+                                // same layout as the TRELLIS_DUMP_POST debug env)
     bool bg_only = false;       // background removal only: write the cutout and skip the rest
 
     bool help = false;          // --help requested
