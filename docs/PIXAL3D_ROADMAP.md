@@ -46,8 +46,8 @@
 
 - [x] SS (`trellis-test-pixal3d-ss-sample`)
 - [x] Shape 512 (`trellis-test-pixal3d-slat-sample`)
-- [ ] Shape 1024
-- [ ] Texture 1024
+- [x] Shape 1024 (`trellis-test-pixal3d-slat-sample --stage shape_hr`)
+- [x] Texture 1024 (`trellis-test-pixal3d-slat-sample --stage tex`)
 - [ ] mesh/GLB
 - [ ] `pixal3d-cli generate`
 - [ ] benchmark native CUDA
