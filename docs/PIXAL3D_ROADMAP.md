@@ -11,8 +11,8 @@
 
 ## M1 — Native baseline
 
-- [x] Build inherited trellis.cpp unchanged (Metal, macOS, 2026-09-06; CUDA on RTX 4090 pending)
-- [ ] Validate CUDA on RTX 4090
+- [x] Build inherited trellis.cpp unchanged (Metal on macOS; clean `2516c48` CUDA build on RTX 4090 at `/mnt/hdd1/pixal3d/pixal3d.cpp-baseline`)
+- [x] Validate CUDA on RTX 4090 (trellis-cli, fa-mask-overflow / fa-bf16-range PASS)
 - [x] Run available component tests (CUDA: c2s/sparse-conv/dinov3/ss-dec OK; shape-dec FAIL on a random-latent stand-in fixture — open)
 - [ ] Generate known-good TRELLIS.2 output
 - [ ] Document ggml fork/patch delta
