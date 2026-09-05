@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -416,6 +417,20 @@ void naf_na2d(const std::vector<float>& q, const std::vector<float>& k, const st
 std::vector<float> naf_upsample(const Model& naf, const float* image, int S,
                                  const float* lr, int C, int h, int w, int T,
                                  NafDebug* dbg) {
+#if defined(TRELLIS_USE_CUDA)
+    // GPU dispatch: ggml encoder + custom neighborhood-attention CUDA kernel
+    // (src/naf_gpu.cpp, src/naf_attn.cu). TRELLIS_NAF_CPU=1 forces this CPU path
+    // for A/B against the GPU one. Falls through to the unchanged CPU body below
+    // whenever the GPU path isn't available (non-CUDA backend, or a config outside
+    // naf_gpu_available()'s preconditions) -- see naf_gpu_available() for exactly
+    // which configs qualify.
+    {
+        const char* force_cpu = std::getenv("TRELLIS_NAF_CPU");
+        const bool cpu_forced = force_cpu && *force_cpu && *force_cpu != '0';
+        if (!cpu_forced && naf_gpu_available(naf, S, T, h, w))
+            return naf_upsample_gpu(naf, image, S, lr, C, h, w, T, dbg);
+    }
+#endif
     // 1. ImageEncoder input: bilinear-downsample only if S > 4T (not hit for
     // S=512, T in {128,512}; implemented per spec anyway).
     int Sp = S;

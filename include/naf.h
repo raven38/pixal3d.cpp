@@ -81,4 +81,17 @@ void naf_na_window(int q, int L, int d, int K, int& r, int& p, int& Lr, int& sta
 void naf_na2d(const std::vector<float>& q, const std::vector<float>& k, const std::vector<float>& v,
               int T, int dy, int dx, int Cv, float scale, std::vector<float>& out);
 
+// ---------------------------------------------------------------------------
+// GPU dispatch (src/naf_gpu.cpp + src/naf_attn.cu), only compiled/linked into
+// CUDA builds (TRELLIS_USE_CUDA -- see CMakeLists.txt). naf_upsample() in
+// naf.cpp calls these automatically (see its dispatch at the top); not meant to
+// be called directly by other code. On non-CUDA backends (Metal, Vulkan,
+// CPU-only) these symbols don't exist and naf_upsample() never references them,
+// so naf_upsample()'s CPU body (below) is the only code that ever runs there --
+// unchanged from before this GPU port.
+bool naf_gpu_available(const Model& naf, int S, int T, int h, int w);
+std::vector<float> naf_upsample_gpu(const Model& naf, const float* image, int S,
+                                     const float* lr, int C, int h, int w, int T,
+                                     NafDebug* dbg);
+
 } // namespace trellis
