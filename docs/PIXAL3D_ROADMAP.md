@@ -13,7 +13,7 @@
 
 - [x] Build inherited trellis.cpp unchanged (Metal on macOS; clean `2516c48` CUDA build on RTX 4090 at `/mnt/hdd1/pixal3d/pixal3d.cpp-baseline`)
 - [x] Validate CUDA on RTX 4090 (trellis-cli, fa-mask-overflow / fa-bf16-range PASS)
-- [x] Run available component tests (CUDA: c2s/sparse-conv/dinov3/ss-dec OK; shape-dec FAIL on a random-latent stand-in fixture — open)
+- [x] Run available component tests (CUDA: c2s/sparse-conv/dinov3/ss-dec OK; the shape-dec FAIL on a random-latent stand-in fixture was an artifact — `trellis-test-pixal3d-shape-decode` matches the real-SLAT reference mesh to 0.001 voxel)
 - [ ] Generate known-good TRELLIS.2 output
 - [ ] Document ggml fork/patch delta
 
