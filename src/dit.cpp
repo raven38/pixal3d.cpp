@@ -230,10 +230,17 @@ static T* modulate(ggml_context* c, T* x, T* scale, T* shift) {
 
 static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
                 T* cos, T* sin, const DiTParams& p, std::map<std::string, T*>* inter = nullptr,
-                T* self_mask = nullptr, T* cross_mask = nullptr) {
+                T* self_mask = nullptr, T* cross_mask = nullptr, T* proj = nullptr) {
     const std::string b = "blocks." + std::to_string(i);
     const int dm = p.d_model;
-    auto dbg = [&](const char* n, T* t) { if (inter && i == 0) { (*inter)[n] = t; ggml_set_name(t, n); } return t; };
+    // Block 0 keeps the historical "blk0_*" names; block 15 is exposed too as a mid-depth probe.
+    auto dbg = [&](const char* n, T* t) {
+        if (inter && (i == 0 || i == 15)) {
+            std::string nm = i == 0 ? std::string(n) : "blk15_" + std::string(n + 5);
+            (*inter)[nm] = t; ggml_set_name(t, nm.c_str());
+        }
+        return t;
+    };
     T* mb = ggml_add(c, m.get(b + ".modulation"), mod);        // [6*d_model]
     auto ch = [&](int j) { return ggml_view_1d(c, mb, dm, (size_t)j * dm * ggml_element_size(mb)); };
     T* shift_msa = ch(0), *scale_msa = ch(1), *gate_msa = ch(2);
@@ -246,8 +253,19 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
     h = ggml_add(c, h, ggml_mul(c, hh, gate_msa));
 
     hh = layernorm(c, h, p.ln_eps, m.get(b + ".norm2.weight"), m.get(b + ".norm2.bias"));
-    hh = cross_attn(c, m, b + ".cross_attn", hh, cond, p, cross_mask);
-    dbg("blk0_cross", hh);
+    // Pixal3D ProjectAttention: the ordinary cross-attn weights move one level deeper
+    // (blocks.N.cross_attn.cross_attn_block.*) alongside a sibling proj_linear.
+    const std::string cross_pre = p.proj_attn ? (b + ".cross_attn.cross_attn_block") : (b + ".cross_attn");
+    T* global_out = cross_attn(c, m, cross_pre, hh, cond, p, cross_mask);
+    dbg("blk0_global_out", global_out);
+    hh = global_out;
+    if (p.proj_attn && proj) {
+        T* proj_out = lin(c, m, b + ".cross_attn.proj_linear", proj);
+        dbg("blk0_proj_out", proj_out);
+        hh = ggml_add(c, hh, proj_out);
+    }
+    dbg("blk0_cross_out", hh);
+    dbg("blk0_cross", hh);   // kept for TRELLIS_DBG_NAN's existing name lookup
     h = ggml_add(c, h, hh);
 
     hh = layernorm(c, h, p.ln_eps);
@@ -260,9 +278,17 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
     return h;
 }
 
+bool dit_detect_proj_attn(const Model& m, DiTParams& p) {
+    T* w = m.try_get("blocks.0.cross_attn.proj_linear.weight");
+    if (!w) { p.proj_attn = false; p.d_proj = 0; return false; }
+    p.proj_attn = true;
+    p.d_proj = (int)w->ne[0];
+    return true;
+}
+
 ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p,
                              T* h0, T* tfreq, T* cond, T* cos, T* sin,
-                             std::map<std::string, T*>* inter) {
+                             std::map<std::string, T*>* inter, T* proj) {
     g_cast_f32 = p.cast_f32;
     auto keep = [&](const char* n, T* t) { if (inter) (*inter)[n] = t; ggml_set_name(t, n); return t; };
 
@@ -281,10 +307,8 @@ ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p
     T* self_mask  = build_pad_mask(c, h0->ne[1], h0->ne[1]);
     T* cross_mask = build_pad_mask(c, cond->ne[1], h0->ne[1]);
     for (int i = 0; i < p.n_blocks; ++i) {
-        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask);
-        if (i == 0) keep("after_block0", h);
-        if (i == 1) keep("after_block1", h);
-        if (i == p.n_blocks - 1) keep("after_block29", h);
+        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask, proj);
+        keep(("after_block" + std::to_string(i)).c_str(), h);
     }
     h = layernorm(c, h, p.final_ln_eps);
     keep("prefinal", h);

@@ -45,8 +45,12 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     gcond_= ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.d_cond, Lc_); ggml_set_input(gcond_);
     gcos_ = ggml_new_tensor_4d(ctx_, GGML_TYPE_F32, 1, half, 1, N_); ggml_set_input(gcos_);
     gsin_ = ggml_new_tensor_4d(ctx_, GGML_TYPE_F32, 1, half, 1, N_); ggml_set_input(gsin_);
+    if (p_.proj_attn) {
+        gproj_ = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.d_proj, N_); ggml_set_input(gproj_);
+    }
     dbg_nan_ = std::getenv("TRELLIS_DBG_NAN") != nullptr;
-    gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_, dbg_nan_ ? &inter_ : nullptr);
+    gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_,
+                            dbg_nan_ ? &inter_ : nullptr, gproj_);
     g_ = ggml_new_graph_custom(ctx_, 32768, false);
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);
@@ -61,13 +65,18 @@ DitRunner::~DitRunner() {
     if (ctx_)   ggml_free(ctx_);
 }
 
-std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scaled, const float* cond) {
+std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scaled, const float* cond,
+                                      const float* proj) {
     std::vector<float> tf; timestep_embedding(t_scaled, tf);
     ggml_backend_tensor_set(gh0_,  xt.data(), 0, xt.size() * 4);
     ggml_backend_tensor_set(gtf_,  tf.data(), 0, tf.size() * 4);
     ggml_backend_tensor_set(gcond_, cond,     0, (size_t)p_.d_cond * Lc_ * 4);
     ggml_backend_tensor_set(gcos_, rcos_.data(), 0, rcos_.size() * 4);   // re-upload (buffers reused across runs)
     ggml_backend_tensor_set(gsin_, rsin_.data(), 0, rsin_.size() * 4);
+    if (gproj_) {
+        if (!proj) throw std::runtime_error("DitRunner: proj_attn model requires a proj tensor");
+        ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
+    }
     if (ggml_backend_graph_compute(m_.backend, g_) != GGML_STATUS_SUCCESS)
         throw std::runtime_error("DitRunner: compute failed");
     std::vector<float> outv = tensor_to_f32(gout_);
@@ -129,8 +138,10 @@ DitRunner* make_sparse_runner(const Model& m, const DiTParams& p,
     return new DitRunner(m, p, (int)coords.size(), n_cond, rcos, rsin);
 }
 
-std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
-                               const float* cond, const float* neg_cond, const SamplerParams& sp,
+std::vector<float> sample_flow(const FlowFwdProj& fwd, std::vector<float> sample,
+                               const float* cond, const float* neg_cond,
+                               const float* proj, const float* neg_proj,
+                               const SamplerParams& sp,
                                std::vector<std::vector<float>>* trace) {
     const float sm = sp.sigma_min;
     const size_t Nst = sample.size();
@@ -171,14 +182,14 @@ std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
         const float gs = (sp.gi0 <= t && t <= sp.gi1) ? sp.guidance_strength : 1.0f;
         const float tscaled = 1000.0f * t;
         if (gs == 1.0f) {
-            pred = fwd(sample, tscaled, cond);
+            pred = fwd(sample, tscaled, cond, proj);
             ++n_fwd;
         } else if (gs == 0.0f) {
-            pred = fwd(sample, tscaled, neg_cond);
+            pred = fwd(sample, tscaled, neg_cond, neg_proj);
             ++n_fwd;
         } else {
-            pos = fwd(sample, tscaled, cond);
-            neg = fwd(sample, tscaled, neg_cond);
+            pos = fwd(sample, tscaled, cond, proj);
+            neg = fwd(sample, tscaled, neg_cond, neg_proj);
             n_fwd += 2;
             for (size_t k = 0; k < Nst; ++k) pred[k] = gs * pos[k] + (1 - gs) * neg[k];
             if (sp.guidance_rescale > 0.0f) {
@@ -215,6 +226,13 @@ std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
            std::chrono::duration<double>(std::chrono::steady_clock::now() - tflow0).count());
     fflush(stdout);
     return sample;
+}
+
+std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
+                               const float* cond, const float* neg_cond, const SamplerParams& sp,
+                               std::vector<std::vector<float>>* trace) {
+    FlowFwdProj f = [&fwd](const std::vector<float>& x, float t, const float* c, const float*) { return fwd(x, t, c); };
+    return sample_flow(f, std::move(sample), cond, neg_cond, nullptr, nullptr, sp, trace);
 }
 
 } // namespace trellis
