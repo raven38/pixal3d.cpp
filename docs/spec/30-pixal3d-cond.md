@@ -108,7 +108,27 @@ after the LR branch: `proj = [lr ‖ hr]` (2048).
 Implementation note: only the R³ projected points (× 4 bilinear corners) are ever read from the NAF map, so an
 on-demand evaluation at those pixels is exact and avoids materialising the 1024×T×T map (1 GB f32 at T=512 per view).
 
-## 5. Validation fixtures
+## 5. Numerical conditioning of the Pixal3D SS flow (measured 2026-09-06)
+
+The MV SS flow develops "massive activations" (|h| up to ~6.5e4 at token 2066 / channels 671, 1425 from
+block 3 on; the SLAT flows sit at 1–5e4), so every per-op rounding error is amplified through the 30
+blocks and the final LayerNorm:
+
+| implementation | per-op error | after_block0 | after_block29 | output |
+|---|---|---|---|---|
+| PyTorch f32 vs f64 (`ss_flow_proj_f64`) | ~6e-8 | 1.3e-6 | 1.7e-4 | 8.7e-4 |
+| C++ ggml CPU, f32 weights, exact SDPA | GELU f16 table ~1e-4 | 1.1e-4 | 8.6e-3 | 8.3e-2 |
+| C++ Metal / CUDA, f32 weights, exact SDPA | F32 GEMM stages inputs as f16 (~3e-4) | 3.5e-4 | 1.6e-2 / 2.9e-2 | 6.3e-2 / 5.6e-2 |
+| C++ CUDA, f16 weights, FlashAttention | + bf16 K/V | 6e-3 | 0.19 | 0.53 |
+
+Block-0 attention / cross-attention / `proj_linear` match to 1–3e-6 on the CPU backend, i.e. the
+wiring is exact; the drift is precision, not logic. Note the checkpoints are stored as **F32**
+(despite `bf16` in the file names), so an f16 GGUF rounds the weights (visible as 2e-4 on `t_emb_mod`).
+Consequence: block-level golden comparisons are only meaningful on the CPU backend; the production
+gate must be end-to-end sampling parity (SS occupancy / SLAT samples) against the reference run in
+its own production dtype (`bfloat16`), with reference-f32-vs-bf16 as the calibration baseline.
+
+## 6. Validation fixtures
 
 `tools/ref_pixal3d_{proj_grid,ss_flow,slat_flow,cond_ss}.py` dump golden tensors (win: `/mnt/hdd1/pixal3d/ref/pixal3d/`);
 C++ tests `trellis-test-proj-grid`, `trellis-test-pixal3d-ss-flow`, `trellis-test-pixal3d-slat-flow`.
