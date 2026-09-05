@@ -149,6 +149,35 @@ POST /generate      multipart/form-data with an "image" file part; optional text
 Launch-time flags (including `--res`) set the per-request defaults; each request can
 override them with its own fields.
 
+### Pixal3D multiview mode
+
+`trellis-cli --views DIR out.glb --models MODELS_DIR --res 1024|1536 [--num-views N] [--seed N]`
+runs the Pixal3D camera-aware multiview cascade instead of single-image TRELLIS.2:
+
+```
+trellis-cli --views assets/mv_images/example --models pixal3d_models --seed 42 --res 1024 out.glb
+```
+
+`DIR` must contain `transforms.json` (Blender/NeRF convention: top-level `mesh_scale` and
+`camera_angle_x` fallback, `frames[]` each with `file_path`, a 4×4 row-major `transform_matrix`
+camera-to-world, and an optional per-frame `camera_angle_x`; frame 0 is the main/front view)
+plus every frame's RGBA image, each with a **real alpha channel already baked in** — this mode
+does no background matting, unlike the single-image path. `--num-views N` uses only the first
+`N` frames. `--views` is mutually exclusive with the positional/`--image` input, and `--res 512`
+is rejected: Pixal3D ships no res-512 texture flow, so the 1024/1536 cascade is mandatory.
+
+`--models DIR` needs `dinov3.gguf`, `pixal3d_naf.gguf`, `pixal3d_ss_flow_mv.gguf`,
+`pixal3d_shape_flow_512_mv.gguf`, `pixal3d_shape_flow_1024_mv.gguf`,
+`pixal3d_tex_flow_1024_mv.gguf`, `ss_dec.gguf`, `shape_dec.gguf`, `tex_dec.gguf` (the same
+`ss_dec`/`shape_dec`/`tex_dec` decoders TRELLIS.2 uses — only the flow DiTs and the DINOv3/NAF
+conditioners are Pixal3D-specific). Per-view DINOv3 features are pixel-aligned-projected into a
+shared 3D grid (`ProjGrid`) and averaged over views (`ProjectAttention`); the shape/texture
+stages additionally fuse in NAF high-resolution image features. See
+`docs/spec/30-pixal3d-cond.md` for the full conditioning spec. Face budget (1M), UV atlas
+(4096px) and remesh band (1) default to the reference pipeline's own values in this mode
+(override with `--decim`/`--atlas`/`--band` as usual); everything after SLAT sampling
+(decode/remesh/decimate/UV/bake/GLB export) is the same TRELLIS.2 postprocess code.
+
 ## Pipeline
 
 ```

@@ -28,6 +28,11 @@ void print_usage(const char* argv0, bool server) {
         "  -s, --seed N            RNG seed                     (default 42)\n"
         "      --res 512|1024|1536 geometry resolution\n"
         "      --max-tokens N      HR token budget              (default 49152)\n"
+        "      --views DIR         Pixal3D multiview mode: DIR has transforms.json + RGBA\n"
+        "                          views (frame 0 = main/front view). Mutually exclusive\n"
+        "                          with the positional/--image input; mandatory cascade\n"
+        "                          (--res 512 is not supported -- no res-512 texture flow)\n"
+        "      --num-views N       use only the first N transforms.json frames (default: all)\n"
         "      --bg-removal MODE   threshold | birefnet   (default: auto -- a pre-matted\n"
         "                          image keeps its alpha; otherwise BiRefNet when its model\n"
         "                          is present. The plain threshold matte cuts out specular\n"
@@ -63,7 +68,10 @@ void print_usage(const char* argv0, bool server) {
 }
 
 bool parse_args(int argc, char** argv, TrellisParams& p) {
-    int positional = 0;
+    // Positionals are collected and only assigned to image/output after the whole argv has
+    // been scanned, since --views (which can appear anywhere) changes what the first bare
+    // positional means (output, not image) -- see the assignment below.
+    std::string pos[2]; int npos = 0;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -85,6 +93,8 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "-s" || a == "--seed")    { const char* v = need(a.c_str()); if (!v) return false; p.seed = (uint32_t)atoi(v); }
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
+        else if (a == "--views")                { const char* v = need(a.c_str()); if (!v) return false; p.views = v; }
+        else if (a == "--num-views")            { const char* v = need(a.c_str()); if (!v) return false; p.num_views = atoi(v); }
         else if (a == "--bg-removal")           { const char* v = need(a.c_str()); if (!v) return false; p.birefnet = (std::strcmp(v, "birefnet") == 0) ? 1 : 0; }
         else if (a == "--birefnet")             { p.birefnet = 1; }
         else if (a == "--no-texture")           { p.texture = false; }
@@ -111,9 +121,19 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--voxply")               { p.voxply = true; }
         else if (a == "--dump-slat")            { p.dump_slat = true; }
         else if (!a.empty() && a[0] == '-')     { fprintf(stderr, "[trellis] unknown option: %s\n", a.c_str()); return false; }
-        else if (positional == 0)               { p.image  = a; positional = 1; }
-        else if (positional == 1)               { p.output = a; positional = 2; }
+        else if (npos < 2)                      { pos[npos++] = a; }
         else                                    { fprintf(stderr, "[trellis] unexpected argument: %s\n", a.c_str()); return false; }
+    }
+
+    // Assign positionals now that --views (if any) is known: normally <image> <out.glb>;
+    // in --views mode there is no positional image, so the lone positional is the output.
+    if (!p.views.empty()) {
+        if (!p.image.empty()) { fprintf(stderr, "[trellis] --views and --image/positional image are mutually exclusive\n"); return false; }
+        if (npos > 1)         { fprintf(stderr, "[trellis] unexpected argument: %s\n", pos[1].c_str()); return false; }
+        if (npos == 1) p.output = pos[0];
+    } else {
+        if (npos >= 1) p.image  = pos[0];
+        if (npos >= 2) p.output = pos[1];
     }
     return true;
 }
