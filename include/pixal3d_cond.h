@@ -2,9 +2,11 @@
 // averaged over views) and proj (ProjGridMV-sampled patch tokens, averaged over views).
 // Ports the "ss" stage of DinoV3ProjMultiViewFeatureExtractor
 // (pixal3d/trainers/flow_matching/mixins/image_conditioned_proj.py) -- see
-// docs/spec/30-pixal3d-cond.md sections 1-3. SLAT stages additionally need NAF
-// (docs/spec/30-pixal3d-cond.md section 4) and are NOT covered here.
+// docs/spec/30-pixal3d-cond.md sections 1-3. Also declares the SLAT-stage
+// (shape/texture) variant, which additionally fuses in NAF high-res features
+// (docs/spec/30-pixal3d-cond.md section 4) -- proj = [lr || hr], 2048-wide.
 #pragma once
+#include <array>
 #include <vector>
 
 namespace trellis {
@@ -42,5 +44,34 @@ std::vector<float> pixal3d_imagenet_normalize(const std::vector<float>& rgb_prem
 // distance0 = norm(views[0].c2w[:3,3]). global and proj are averaged over views.
 Pixal3dCond pixal3d_cond_ss(const Model& dinov3, const std::vector<Pixal3dView>& views,
                              int S, int R, float mesh_scale);
+
+// SLAT-stage (shape or texture) config: S = view image resolution (512 or 1024),
+// R = ProjGrid resolution (32 or 64), naf_T = NAF target resolution (512 for the
+// shape stages, 1024 for the texture stage; see docs/spec/30-pixal3d-cond.md
+// section 2 table).
+struct Pixal3dSlatCondParams {
+    int S;
+    int R;
+    int naf_T;
+    float mesh_scale;
+};
+
+// Computes the Pixal3D SLAT-stage (shape/texture) fused condition from V posed
+// views (view 0 = main/front view). Per view: ImageNet-normalize -> dinov3_encode(S)
+// -> split into CLS+4reg (global) and the [1024,Hp,Wp] patch map (Hp=Wp=S/16, same
+// split as pixal3d_cond_ss) -> lr = proj_grid_sample(patch map, R, S, calc_mat_v);
+// hr = proj_grid_sample(naf_upsample(naf, views[v].rgb_premult (un-normalized,
+// premultiplied), S, patch map, 1024, Hp, Wp, naf_T), R, S, calc_mat_v); proj_v =
+// [lr || hr] (2048-wide per token). global and proj are averaged over views,
+// accumulating one view at a time (never holds all V views' buffers at once).
+Pixal3dCond pixal3d_cond_slat(const Model& dinov3, const Model& naf,
+                               const std::vector<Pixal3dView>& views,
+                               const Pixal3dSlatCondParams& prm);
+
+// Gathers the dense SLAT proj condition [R^3, C] (token k = x*R*R + y*R + z, as
+// produced by pixal3d_cond_slat) at a sparse set of active voxel coords (x,y,z),
+// producing the [N, C] layout the SLAT DiT's SparseTensor feats consume.
+std::vector<float> pixal3d_gather_proj(const std::vector<float>& proj_dense, int R, int C,
+                                        const std::vector<std::array<int, 3>>& coords);
 
 } // namespace trellis
