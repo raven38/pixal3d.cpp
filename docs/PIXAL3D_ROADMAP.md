@@ -31,7 +31,7 @@
 - [ ] DINO-only fallback for bring-up
 - [x] exact NAF feature extraction (`naf.cpp`, T=128/512 parity)
 - [x] neighborhood attention implementation (CPU, NATTEN clamped-window semantics)
-- [ ] high-resolution conditioning parity
+- [x] high-resolution conditioning parity (`pixal3d_cond_slat`, shape_512 fixture rel <=3e-4)
 
 ## M4 — Pixal3D MV
 
@@ -40,12 +40,12 @@
 - [x] per-view projection
 - [x] average fusion (`pixal3d_cond_ss`, 4-view parity rel 2.5e-4)
 - [x] sequential-view memory path (views accumulated one at a time)
-- [ ] MV end-to-end parity
+- [ ] MV end-to-end parity (SS voxel IoU 0.998 and shape-512 latent parity done; HR shape / texture / mesh pending)
 
 ## M5 — Native release candidate
 
-- [ ] SS
-- [ ] Shape 512
+- [x] SS (`trellis-test-pixal3d-ss-sample`)
+- [x] Shape 512 (`trellis-test-pixal3d-slat-sample`)
 - [ ] Shape 1024
 - [ ] Texture 1024
 - [ ] mesh/GLB
