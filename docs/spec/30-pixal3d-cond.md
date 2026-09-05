@@ -108,6 +108,13 @@ after the LR branch: `proj = [lr ‖ hr]` (2048).
 Implementation note: only the R³ projected points (× 4 bilinear corners) are ever read from the NAF map, so an
 on-demand evaluation at those pixels is exact and avoids materialising the 1024×T×T map (1 GB f32 at T=512 per view).
 
+Implementation status: `src/naf.cpp` is the CPU reference (threaded, bit-exact vs the fixture at T=128/512; ~52 s per
+view at T=512 on 32 cores). CUDA builds dispatch to `src/naf_gpu.cpp` (ggml graph for the encoder) + `src/naf_attn.cu`
+(custom neighborhood-attention kernel that indexes the pooled 32×32 key/value maps directly — with an integer
+upsample factor d the dilated window position `start+i` *is* the low-res index); output rel 6.5e-4 vs the fixture,
+~11 s wall at T=512 on a loaded box. `TRELLIS_NAF_CPU=1` forces the CPU path; Vulkan/Metal kernels are still TODO
+(they fall back to CPU).
+
 ## 5. Numerical conditioning of the Pixal3D SS flow (measured 2026-09-06)
 
 The MV SS flow develops "massive activations" (|h| up to ~6.5e4 at token 2066 / channels 671, 1425 from
