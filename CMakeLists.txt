@@ -404,3 +404,7 @@ set_target_properties(trellis-test-pixal3d-slat-sample PROPERTIES BUILD_RPATH "$
 add_executable(trellis-test-pixal3d-shape-decode src/test_pixal3d_shape_decode.cpp)
 target_link_libraries(trellis-test-pixal3d-shape-decode PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-shape-decode PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-pixal3d-tex-decode src/test_pixal3d_tex_decode.cpp)
+target_link_libraries(trellis-test-pixal3d-tex-decode PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-tex-decode PROPERTIES BUILD_RPATH "${GGML_RPATH}")
