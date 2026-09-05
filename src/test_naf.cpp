@@ -8,6 +8,7 @@
 #include "naf.h"
 #include "trellis_model.h"
 #include "npy.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <chrono>
@@ -274,13 +275,20 @@ static bool run_size(const Model& m, int T, const vector<float>& image, int S,
     double secs = std::chrono::duration<double>(t1 - t0).count();
     printf("  naf_upsample(T=%d) runtime: %.2fs\n", T, secs);
 
+    // The GPU encoder path (CUDA builds, unless TRELLIS_NAF_CPU=1) runs its GEMMs at the
+    // backend's f16-staged precision (docs/spec/30 section 5), so its intermediates sit
+    // around 3e-3..7e-3; the final output is still held to 3e-3.
+    const bool gpu_path = std::string(ggml_backend_name(m.backend)).find("CUDA") != std::string::npos
+                          && !std::getenv("TRELLIS_NAF_CPU");
+    const double enc_tol = gpu_path ? 1e-2 : 2e-3;
+    if (gpu_path) printf("  (GPU NAF path: encoder-stage tolerance %.0e)\n", enc_tol);
     bool ok = true;
-    ok &= compare("enc_cat", dbg.enc_cat, enc_cat_ref);
-    ok &= compare("enc_pooled", dbg.enc_pooled, enc_pooled_ref);
-    ok &= compare("q_rope", dbg.q_rope, q_rope_ref);
-    ok &= compare("k_pooled", dbg.k_pooled, k_pooled_ref);
-    ok &= compare("k_up", dbg.k_up, k_up_ref);
-    if (have_v_up) ok &= compare("v_up", dbg.v_up, v_up_ref);
+    ok &= compare("enc_cat", dbg.enc_cat, enc_cat_ref, enc_tol);
+    ok &= compare("enc_pooled", dbg.enc_pooled, enc_pooled_ref, enc_tol);
+    ok &= compare("q_rope", dbg.q_rope, q_rope_ref, enc_tol);
+    ok &= compare("k_pooled", dbg.k_pooled, k_pooled_ref, enc_tol);
+    ok &= compare("k_up", dbg.k_up, k_up_ref, enc_tol);
+    if (have_v_up) ok &= compare("v_up", dbg.v_up, v_up_ref, enc_tol);
     else printf("  %-24s v_up.npy not found -- SKIPPED\n", pfx.c_str());
     ok &= compare("out", out, out_ref, 3e-3);
 

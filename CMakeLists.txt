@@ -147,6 +147,12 @@ if(TARGET ggml-cuda)
   target_sources(trellis_core PRIVATE src/deform_conv.cu)
   # Self-contained CUDA QEM decimation (mirrors the CPU port; uses cub for scan/sort/RLE).
   target_sources(trellis_core PRIVATE src/decimate_qem.cu)
+  # NAF (valeoai/NAF feature upsampler) GPU path: ggml-graph encoder (naf_gpu.cpp,
+  # plain C++/ggml, no CUDA-specific syntax) + a custom neighborhood-attention
+  # kernel (naf_attn.cu). naf_upsample() in naf.cpp dispatches to these only when
+  # compiled here (TRELLIS_USE_CUDA, set below) and the loaded Model is on a CUDA
+  # backend; every other build keeps the original CPU-only naf.cpp path unchanged.
+  target_sources(trellis_core PRIVATE src/naf_gpu.cpp src/naf_attn.cu)
   if(MSVC)
     # CUDA 13.3 CCCL requires MSVC's conforming preprocessor for host compilation.
     target_compile_options(trellis_core PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>")
