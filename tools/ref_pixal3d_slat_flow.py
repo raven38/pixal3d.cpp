@@ -52,6 +52,7 @@ def save(name, t):
     shapes[name] = list(a.shape)
     print(f"  {name:22s} {str(list(a.shape)):20s} mean={a.mean():.5f} std={a.std():.5f} absmax={np.abs(a).max():.5f}")
     assert not np.isnan(a).any(), f"{name} has NaNs"
+    return a
 
 cfg = json.load(open(CKPT + ".json"))["args"]
 print("cfg:", {k: cfg.get(k) for k in (
@@ -100,20 +101,42 @@ caps = {}
 def _feats(o):
     return o.feats if hasattr(o, "feats") else o
 hk = lambda n: (lambda m, i, o: caps.__setitem__(n, _feats(o).detach()))
-model.blocks[0].register_forward_hook(hk("after_block0"))
-model.blocks[-1].register_forward_hook(hk("after_block29"))
+for _i, _blk in enumerate(model.blocks):
+    _blk.register_forward_hook(hk(f"after_block{_i}"))
+model.blocks[0].self_attn.register_forward_hook(hk("blk0_msa_out"))
+model.blocks[0].mlp.register_forward_hook(hk("blk0_mlp_out"))
 model.blocks[0].cross_attn.register_forward_hook(hk("blk0_cross_out"))
 model.blocks[0].cross_attn.cross_attn_block.register_forward_hook(hk("blk0_global_out"))
 model.blocks[0].cross_attn.proj_linear.register_forward_hook(hk("blk0_proj_out"))
+model.blocks[15].self_attn.register_forward_hook(hk("blk15_msa_out"))
+model.blocks[15].mlp.register_forward_hook(hk("blk15_mlp_out"))
+model.blocks[15].cross_attn.register_forward_hook(hk("blk15_cross_out"))
+model.blocks[15].cross_attn.cross_attn_block.register_forward_hook(hk("blk15_global_out"))
+model.blocks[15].cross_attn.proj_linear.register_forward_hook(hk("blk15_proj_out"))
 
 print("\nrunning forward on", DEV, "...")
 with torch.no_grad():
     out = model(x, t, cond)
 
 print("\nintermediates:")
-for k in ("after_block0", "after_block29", "blk0_cross_out", "blk0_global_out", "blk0_proj_out"):
+for k in ("blk0_msa_out", "blk0_mlp_out", "blk0_cross_out", "blk0_global_out", "blk0_proj_out",
+          "blk15_msa_out", "blk15_mlp_out", "blk15_cross_out", "blk15_global_out", "blk15_proj_out"):
     save(k, caps[k])
+
+print("\nper-block outputs (after_block0..%d):" % (len(model.blocks) - 1))
+block_absmax_report = []
+for i in range(len(model.blocks)):
+    name = f"after_block{i}"
+    a = save(name, caps[name])
+    idx = np.unravel_index(np.argmax(np.abs(a)), a.shape)   # a is [N, C]
+    tok, ch = int(idx[0]), int(idx[1])
+    block_absmax_report.append((i, float(np.abs(a).max()), tok, ch))
+
 save("output", out.feats)
+
+print("\nper-block absmax (voxel, channel) summary:")
+for i, amax, tok, ch in block_absmax_report:
+    print(f"  after_block{i:<2d} absmax={amax:12.4f}  at (voxel={tok:5d}, channel={ch:4d})")
 
 meta = {
     "source_commit": "f7cf384",
@@ -123,6 +146,10 @@ meta = {
     "checkpoint": os.path.basename(CKPT),
     "N": N,
     "shapes": shapes,
+    "block_absmax_report": [
+        {"block": i, "absmax": amax, "voxel": tok, "channel": ch}
+        for i, amax, tok, ch in block_absmax_report
+    ],
     "tolerance_note": (
         "Sparse SLAT shape flow with proj conditioning (SparseProjectAttention, "
         "proj_in_channels=2048); f32 weights (cast from bf16 ckpt) on GPU, native "

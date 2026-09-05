@@ -34,12 +34,14 @@ public:
               const std::vector<float>& rope_cos, const std::vector<float>& rope_sin);
     ~DitRunner();
     // xt: [in_ch*N] channel-major. cond: [d_cond*n_cond]. Returns velocity [out_ch*N].
-    std::vector<float> forward(const std::vector<float>& xt, float t_scaled, const float* cond);
+    // proj: [d_proj*N] Pixal3D proj_cond, required iff p.proj_attn (ignored otherwise).
+    std::vector<float> forward(const std::vector<float>& xt, float t_scaled, const float* cond,
+                               const float* proj = nullptr);
     int N() const { return N_; }
 private:
     const Model& m_; DiTParams p_; int N_, Lc_;
     ggml_context* ctx_ = nullptr; ggml_cgraph* g_ = nullptr; ggml_gallocr_t alloc_ = nullptr;
-    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_;
+    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr;
     std::vector<float> rcos_, rsin_;   // re-uploaded each forward (gallocr may reuse input buffers)
     std::map<std::string, ggml_tensor*> inter_;   // [dbg] named intermediates for NaN localization
     bool dbg_nan_ = false, dbg_done_ = false;
@@ -55,6 +57,17 @@ DitRunner* make_sparse_runner(const Model& m, const DiTParams& p,
 using FlowFwd = std::function<std::vector<float>(const std::vector<float>&, float, const float*)>;
 std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
                                const float* cond, const float* neg_cond,
+                               const SamplerParams& sp,
+                               std::vector<std::vector<float>>* trace = nullptr);
+
+// Pixal3D ProjectAttention variant: the forward functor also takes the proj_cond pointer, threaded
+// from `proj`/`neg_proj` the same way `cond`/`neg_cond` are. The FlowFwd overload above wraps this
+// one with proj = nullptr. neg_proj is typically all-zeros (proj_linear(0) = bias).
+using FlowFwdProj = std::function<std::vector<float>(const std::vector<float>&, float,
+                                                      const float*, const float*)>;
+std::vector<float> sample_flow(const FlowFwdProj& fwd, std::vector<float> sample,
+                               const float* cond, const float* neg_cond,
+                               const float* proj, const float* neg_proj,
                                const SamplerParams& sp,
                                std::vector<std::vector<float>>* trace = nullptr);
 
