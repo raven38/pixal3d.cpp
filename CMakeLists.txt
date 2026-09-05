@@ -108,6 +108,7 @@ add_library(trellis_core STATIC
   src/decimate_qem.cpp
   src/proj_grid.cpp
   src/pixal3d_cond.cpp
+  src/naf.cpp
 )
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)
 target_compile_definitions(trellis_core PRIVATE TRELLIS_GIT_COMMIT="${TRELLIS_GIT_COMMIT}" TRELLIS_GIT_DIRTY=${TRELLIS_GIT_DIRTY} TRELLIS_BUILD_TIMESTAMP="${TRELLIS_BUILD_TIMESTAMP_UTC}" TRELLIS_APP_VERSION="${TRELLIS_APP_VERSION}")
@@ -377,3 +378,7 @@ set_target_properties(trellis-test-proj-grid PROPERTIES BUILD_RPATH "${GGML_RPAT
 add_executable(trellis-test-pixal3d-cond-ss src/test_pixal3d_cond_ss.cpp)
 target_link_libraries(trellis-test-pixal3d-cond-ss PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-cond-ss PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-naf src/test_naf.cpp)
+target_link_libraries(trellis-test-naf PRIVATE trellis_core)
+set_target_properties(trellis-test-naf PROPERTIES BUILD_RPATH "${GGML_RPATH}")
