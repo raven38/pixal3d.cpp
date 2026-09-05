@@ -16,10 +16,10 @@ from PIL import Image
 from safetensors.torch import load_file
 import timm
 
-W = "/media/ilintar/D_SSD/models/trellis2/dinov3/model.safetensors"
-OUT = "/media/ilintar/D_SSD/models/trellis2/ref/dinov3"; os.makedirs(OUT, exist_ok=True)
+W = os.environ.get("DINOV3_CKPT_WEIGHTS", "/media/ilintar/D_SSD/models/trellis2/dinov3/model.safetensors")
+OUT = os.environ.get("OUT", "/media/ilintar/D_SSD/models/trellis2/ref/dinov3"); os.makedirs(OUT, exist_ok=True)
 DEV = os.environ.get("REF_DEV", "cuda:1")
-IMG = sys.argv[1] if len(sys.argv) > 1 else "/devel/alt/trellis.cpp/assets/goblin.png"
+IMG = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("DINOV3_REF_IMG", "/devel/alt/trellis.cpp/assets/goblin.png")
 SIZE = 512
 
 m = timm.create_model("vit_large_patch16_dinov3", pretrained=False, num_classes=0, img_size=SIZE)

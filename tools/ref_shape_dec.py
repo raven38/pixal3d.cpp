@@ -6,8 +6,8 @@ no spconv). Synthetic shape latent at res 32 -> dual-grid head [M,7] at res 512.
 import os, json, struct
 import numpy as np, torch, torch.nn.functional as F
 
-CK = "/media/ilintar/D_SSD/models/trellis2/ckpts/shape_dec_next_dc_f16c32_fp16"
-OUT = "/media/ilintar/D_SSD/models/trellis2/ref/shape_dec"; os.makedirs(OUT, exist_ok=True)
+CK = os.environ.get("SHAPE_DEC_CKPT", "/media/ilintar/D_SSD/models/trellis2/ckpts/shape_dec_next_dc_f16c32_fp16")
+OUT = os.environ.get("OUT", "/media/ilintar/D_SSD/models/trellis2/ref/shape_dec"); os.makedirs(OUT, exist_ok=True)
 
 SD = {}
 with open(CK + ".safetensors", "rb") as fh:

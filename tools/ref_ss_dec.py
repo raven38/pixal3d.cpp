@@ -5,14 +5,14 @@
 import os, sys, json
 os.environ["ATTN_BACKEND"] = "sdpa"
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-sys.path.insert(0, "/tmp/TRELLIS.2")
+sys.path.insert(0, os.environ.get("TRELLIS2_REPO", "/tmp/TRELLIS.2"))
 import numpy as np, torch
 from safetensors.torch import load_file
 from trellis2.models.sparse_structure_vae import SparseStructureDecoder
 
-CK = "/media/ilintar/D_SSD/models/trellis2/tilarge/ckpts/ss_dec_conv3d_16l8_fp16"
-ZIN = "/media/ilintar/D_SSD/models/trellis2/ref/ss_sample/samples.npy"
-OUT = "/media/ilintar/D_SSD/models/trellis2/ref/ss_dec"; os.makedirs(OUT, exist_ok=True)
+CK = os.environ.get("SS_DEC_CKPT", "/media/ilintar/D_SSD/models/trellis2/tilarge/ckpts/ss_dec_conv3d_16l8_fp16")
+ZIN = os.environ.get("SS_DEC_ZIN", "/media/ilintar/D_SSD/models/trellis2/ref/ss_sample/samples.npy")
+OUT = os.environ.get("OUT", "/media/ilintar/D_SSD/models/trellis2/ref/ss_dec"); os.makedirs(OUT, exist_ok=True)
 DEV = os.environ.get("REF_DEV", "cuda:1")
 
 cfg = json.load(open(CK + ".json"))["args"]; cfg["use_fp16"] = False

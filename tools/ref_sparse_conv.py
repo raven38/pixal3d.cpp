@@ -11,8 +11,8 @@ confirmed from conv_spconv.py (standard correlation) + the final visual mesh.
 import os, sys, json, struct
 import numpy as np, torch, torch.nn.functional as F
 
-CK = "/media/ilintar/D_SSD/models/trellis2/ckpts/shape_dec_next_dc_f16c32_fp16"
-OUT = "/media/ilintar/D_SSD/models/trellis2/ref/sparse_conv"; os.makedirs(OUT, exist_ok=True)
+CK = os.environ.get("SHAPE_DEC_CKPT", "/media/ilintar/D_SSD/models/trellis2/ckpts/shape_dec_next_dc_f16c32_fp16")
+OUT = os.environ.get("OUT", "/media/ilintar/D_SSD/models/trellis2/ref/sparse_conv"); os.makedirs(OUT, exist_ok=True)
 BLK = "blocks.3.0"   # ConvNeXt at C=128
 
 def load_st_f32(path, keys):

@@ -7,8 +7,8 @@ feature redistribution, conv2 on new coords, skip repeat_interleave.
 import os, json, struct
 import numpy as np, torch, torch.nn.functional as F
 
-CK = "/media/ilintar/D_SSD/models/trellis2/ckpts/shape_dec_next_dc_f16c32_fp16"
-OUT = "/media/ilintar/D_SSD/models/trellis2/ref/c2s"; os.makedirs(OUT, exist_ok=True)
+CK = os.environ.get("SHAPE_DEC_CKPT", "/media/ilintar/D_SSD/models/trellis2/ckpts/shape_dec_next_dc_f16c32_fp16")
+OUT = os.environ.get("OUT", "/media/ilintar/D_SSD/models/trellis2/ref/c2s"); os.makedirs(OUT, exist_ok=True)
 P = "blocks.3.4"   # C2S 128 -> 64
 
 def load(path, keys):

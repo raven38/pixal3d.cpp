@@ -16,8 +16,13 @@ import json, struct, sys, os
 import numpy as np
 import gguf
 
-MODELS = "/media/ilintar/D_SSD/models/trellis2"
-OUT = f"{MODELS}/gguf"
+MODELS = os.environ.get("TRELLIS_MODELS", "/media/ilintar/D_SSD/models/trellis2")
+OUT = os.environ.get("TRELLIS_GGUF_OUT", f"{MODELS}/gguf")
+# ss_dec and dinov3 live under directory layouts that don't line up with MODELS on
+# every host (e.g. the Pixal3D snapshot has no tilarge/ subfolder, and the DINOv3
+# timm checkpoint lives in the HF cache) -> dedicated overrides, same defaults as before.
+SS_DEC_CKPT = os.environ.get("TRELLIS_SS_DEC_CKPT", f"{MODELS}/tilarge/ckpts/ss_dec_conv3d_16l8_fp16")
+DINOV3_CKPT = os.environ.get("TRELLIS_DINOV3_CKPT", f"{MODELS}/dinov3")
 
 # component -> (safetensors path, config json path or None, gguf arch tag)
 MANIFEST = {
@@ -35,12 +40,21 @@ MANIFEST = {
                        f"{MODELS}/ckpts/shape_dec_next_dc_f16c32_fp16.json",       "trellis2-shape-dec"),
     "tex_dec":        (f"{MODELS}/ckpts/tex_dec_next_dc_f16c32_fp16.safetensors",
                        f"{MODELS}/ckpts/tex_dec_next_dc_f16c32_fp16.json",         "trellis2-tex-dec"),
-    "ss_dec":         (f"{MODELS}/tilarge/ckpts/ss_dec_conv3d_16l8_fp16.safetensors",
-                       f"{MODELS}/tilarge/ckpts/ss_dec_conv3d_16l8_fp16.json",     "trellis2-ss-dec"),
-    "dinov3":         (f"{MODELS}/dinov3/model.safetensors",
-                       f"{MODELS}/dinov3/config.json",                             "dinov3-vitl16"),
+    "ss_dec":         (f"{SS_DEC_CKPT}.safetensors",
+                       f"{SS_DEC_CKPT}.json",                                      "trellis2-ss-dec"),
+    "dinov3":         (f"{DINOV3_CKPT}/model.safetensors",
+                       f"{DINOV3_CKPT}/config.json",                               "dinov3-vitl16"),
     "birefnet":       (f"{MODELS}/birefnet/model.safetensors",
                        f"{MODELS}/birefnet/config.json",                           "birefnet-swinl"),
+    # Pixal3D multiview flow DiTs (reuse TRELLIS.2's ckpt dir layout under MODELS/ckpts).
+    "pixal3d_ss_flow_mv":         (f"{MODELS}/ckpts/ss_flow_img_dit_1_3B_64_bf16_mv.safetensors",
+                       f"{MODELS}/ckpts/ss_flow_img_dit_1_3B_64_bf16_mv.json",     "pixal3d-ss-flow"),
+    "pixal3d_shape_flow_512_mv":  (f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_512_bf16_mv.safetensors",
+                       f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_512_bf16_mv.json", "pixal3d-slat-flow"),
+    "pixal3d_shape_flow_1024_mv": (f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16_mv.safetensors",
+                       f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16_mv.json", "pixal3d-slat-flow"),
+    "pixal3d_tex_flow_1024_mv":   (f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.safetensors",
+                       f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.json", "pixal3d-slat-flow"),
 }
 
 
@@ -69,6 +83,11 @@ def read_safetensors(path):
                 arr = np.frombuffer(buf, dtype="<i8").astype(np.int64)
             elif dt == "I32":
                 arr = np.frombuffer(buf, dtype="<i4").astype(np.int32)
+            elif dt == "C64":
+                # complex RoPE phase buffers (Pixal3D stores rope_phases persistently);
+                # the C++ side recomputes RoPE tables on the host, so skip them.
+                print(f"  skipping {name} (dtype {dt}, shape {shape})")
+                continue
             else:
                 raise ValueError(f"unhandled dtype {dt} for {name}")
             arr = arr.reshape(shape) if shape else arr.reshape(())
