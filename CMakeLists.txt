@@ -106,6 +106,7 @@ add_library(trellis_core STATIC
   src/tri_bvh.cpp
   src/remesh_dc.cpp
   src/decimate_qem.cpp
+  src/proj_grid.cpp
 )
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)
 target_compile_definitions(trellis_core PRIVATE TRELLIS_GIT_COMMIT="${TRELLIS_GIT_COMMIT}" TRELLIS_GIT_DIRTY=${TRELLIS_GIT_DIRTY} TRELLIS_BUILD_TIMESTAMP="${TRELLIS_BUILD_TIMESTAMP_UTC}" TRELLIS_APP_VERSION="${TRELLIS_APP_VERSION}")
@@ -365,3 +366,9 @@ set_target_properties(trellis-server PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 add_executable(trellis-test-ss-full src/test_ss_full.cpp)
 target_link_libraries(trellis-test-ss-full PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-full PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+
+
+add_executable(trellis-test-proj-grid src/test_proj_grid.cpp)
+target_link_libraries(trellis-test-proj-grid PRIVATE trellis_core)
+set_target_properties(trellis-test-proj-grid PROPERTIES BUILD_RPATH "${GGML_RPATH}")
