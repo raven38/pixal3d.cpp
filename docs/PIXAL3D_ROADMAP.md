@@ -40,7 +40,7 @@
 - [x] per-view projection
 - [x] average fusion (`pixal3d_cond_ss`, 4-view parity rel 2.5e-4)
 - [x] sequential-view memory path (views accumulated one at a time)
-- [x] MV end-to-end parity (per-stage: SS voxel IoU 0.998, shape-512/HR and texture latents, shape/tex decoders; `trellis-cli --views` GLB matches the reference GLB's bbox axis-for-axis, 946k vs 976k faces; open: flat metallic channel vs a small metallic region in one reference sample)
+- [x] MV end-to-end parity (per-stage: SS voxel IoU 0.998, shape-512/HR and texture latents, shape/tex decoders; `trellis-cli --views` GLB matches the reference GLB's bbox axis-for-axis, 946k vs 976k faces; the flat metallic channel matches 2 of 3 reference seeds — the seed-42 reference's small metallic region is a sampling outlier)
 
 ## M5 — Native release candidate
 
