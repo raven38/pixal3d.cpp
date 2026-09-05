@@ -23,6 +23,7 @@ OUT = os.environ.get("TRELLIS_GGUF_OUT", f"{MODELS}/gguf")
 # timm checkpoint lives in the HF cache) -> dedicated overrides, same defaults as before.
 SS_DEC_CKPT = os.environ.get("TRELLIS_SS_DEC_CKPT", f"{MODELS}/tilarge/ckpts/ss_dec_conv3d_16l8_fp16")
 DINOV3_CKPT = os.environ.get("TRELLIS_DINOV3_CKPT", f"{MODELS}/dinov3")
+NAF_CKPT = os.environ.get("TRELLIS_NAF_CKPT", f"{MODELS}/naf/naf")
 
 # component -> (safetensors path, config json path or None, gguf arch tag)
 MANIFEST = {
@@ -55,6 +56,7 @@ MANIFEST = {
                        f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16_mv.json", "pixal3d-slat-flow"),
     "pixal3d_tex_flow_1024_mv":   (f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.safetensors",
                        f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.json", "pixal3d-slat-flow"),
+    "pixal3d_naf": (f"{NAF_CKPT}.safetensors", f"{NAF_CKPT}.json", "pixal3d-naf"),
 }
 
 
