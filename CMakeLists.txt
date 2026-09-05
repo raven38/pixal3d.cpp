@@ -396,3 +396,7 @@ set_target_properties(trellis-test-pixal3d-cond-slat PROPERTIES BUILD_RPATH "${G
 add_executable(trellis-test-pixal3d-ss-sample src/test_pixal3d_ss_sample.cpp)
 target_link_libraries(trellis-test-pixal3d-ss-sample PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-ss-sample PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-pixal3d-slat-sample src/test_pixal3d_slat_sample.cpp)
+target_link_libraries(trellis-test-pixal3d-slat-sample PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-slat-sample PROPERTIES BUILD_RPATH "${GGML_RPATH}")
