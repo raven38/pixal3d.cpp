@@ -18,6 +18,11 @@ extern int  g_cpu_threads;      // defined in trellis_model.cpp (TRELLIS_THREADS
 // launch defaults, then per request to apply overrides (resolution, bg removal, ...).
 struct TrellisParams {
     std::string image;                                          // input image (image->3D)
+    std::string views;          // Pixal3D multiview mode: directory with transforms.json +
+                                 // RGBA views (--views DIR). Mutually exclusive with `image`;
+                                 // non-empty selects the Pixal3D cascade instead of TRELLIS.2.
+    int num_views = 0;           // --num-views N: use only the first N transforms.json frames
+                                 // (0/unset = all frames).
     std::string output = "model.glb";                           // output .glb
     std::string copyright;                                      // glTF asset.copyright metadata
     std::string models = "models";              // GGUF dir; override with --models DIR

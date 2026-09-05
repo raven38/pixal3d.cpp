@@ -35,12 +35,12 @@
 
 ## M4 — Pixal3D MV
 
-- [ ] transforms.json parser
+- [x] transforms.json parser (`include/transforms_json.h`/`src/transforms_json.cpp`, wired into `trellis-cli --views`)
 - [x] camera convention tests (calc_mat exact vs reference)
 - [x] per-view projection
 - [x] average fusion (`pixal3d_cond_ss`, 4-view parity rel 2.5e-4)
 - [x] sequential-view memory path (views accumulated one at a time)
-- [ ] MV end-to-end parity (SS voxel IoU 0.998 and shape-512 latent parity done; HR shape / texture / mesh pending)
+- [x] MV end-to-end parity (per-stage: SS voxel IoU 0.998, shape-512/HR and texture latents, shape/tex decoders; `trellis-cli --views` GLB matches the reference GLB's bbox axis-for-axis, 946k vs 976k faces; open: flat metallic channel vs a small metallic region in one reference sample)
 
 ## M5 — Native release candidate
 
@@ -48,9 +48,9 @@
 - [x] Shape 512 (`trellis-test-pixal3d-slat-sample`)
 - [x] Shape 1024 (`trellis-test-pixal3d-slat-sample --stage shape_hr`)
 - [x] Texture 1024 (`trellis-test-pixal3d-slat-sample --stage tex`)
-- [ ] mesh/GLB
-- [ ] `pixal3d-cli generate`
-- [ ] benchmark native CUDA
+- [x] mesh/GLB (`trellis-cli --views`, reference postprocess defaults: 1M faces, 4096 atlas, band 1)
+- [x] `pixal3d-cli generate` → implemented as `trellis-cli --views DIR out.glb` (single shared pipeline binary)
+- [x] benchmark native CUDA: RTX 4090, 4 views, 1024 cascade = 11.5 min wall / 9.9 GB host RSS with the GPU NAF (reference PyTorch low_vram: 5.2 min); HR shape 236 s and texture 171 s dominate
 
 ## M6 — ggml WebGPU
 

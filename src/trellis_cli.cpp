@@ -14,6 +14,12 @@
 #include "remesh_dc.h"
 #include "stb_image_write.h"
 #include "trellis_run.h"
+#include "pixal3d_cond.h"
+#include "transforms_json.h"
+// Declarations only (no *_IMPLEMENTATION define here) -- stbi_load/stbir_resize_uint8 are
+// implemented once in preprocess.cpp, part of trellis_core, which this binary links against.
+#include "stb_image.h"
+#include "stb_image_resize.h"
 
 #include <cstdio>
 #include <random>
@@ -23,6 +29,7 @@
 #include <set>
 #include <array>
 #include <cmath>
+#include <cstring>
 
 using std::vector;
 static double now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
@@ -44,8 +51,463 @@ static const float SHAPE_MEAN[32]={0.781296f,0.018091f,-0.495192f,-0.558457f,1.0
 static const float SHAPE_STD[32]={5.972266f,4.706852f,5.445010f,5.209927f,5.320220f,4.547237f,5.020802f,5.444004f,5.226681f,5.683095f,4.831436f,5.286469f,5.652043f,5.367606f,5.525084f,4.730578f,4.805265f,5.124013f,5.530808f,5.619001f,5.103930f,5.417670f,5.269677f,5.547194f,5.634698f,5.235274f,6.110351f,5.511298f,6.237273f,4.879207f,5.347008f,5.405691f};
 static const float TEX_MEAN[32]={3.501659f,2.212398f,2.226094f,0.251093f,-0.026248f,-0.687364f,0.439898f,-0.928075f,0.029398f,-0.339596f,-0.869527f,1.038479f,-0.972385f,0.126042f,-1.129303f,0.455149f,-1.209521f,2.069067f,0.544735f,2.569128f,-0.323407f,2.293000f,-1.925608f,-1.217717f,1.213905f,0.971588f,-0.023631f,0.106750f,2.021786f,0.250524f,-0.662387f,-0.768862f};
 static const float TEX_STD[32]={2.665652f,2.743913f,2.765121f,2.595319f,3.037293f,2.291316f,2.144656f,2.911822f,2.969419f,2.501689f,2.154811f,3.163343f,2.621215f,2.381943f,3.186697f,3.021588f,2.295916f,3.234985f,3.233086f,2.260140f,2.874801f,2.810596f,3.292720f,2.674999f,2.680878f,2.372054f,2.451546f,2.353556f,2.995195f,2.379849f,2.786195f,2.775190f};
+// Verified equal (2026-09-06) to pipeline_mv.json's shape_slat_normalization / tex_slat_normalization
+// (task spec's quoted mean/std prefixes match SHAPE_MEAN/SHAPE_STD/TEX_MEAN/TEX_STD above byte-for-byte)
+// -- Pixal3D reuses the same TRELLIS.2 SLAT normalization tables, so no separate table is needed here.
+
+// ===========================================================================================
+// Pixal3D multiview mode (--views DIR): V posed RGBA views -> GLB, via the same TRELLIS.2
+// postprocess tail (decode/remesh/decimate/UV/bake/GLB) but with ProjectAttention-conditioned
+// flow sampling (docs/spec/30-pixal3d-cond.md) instead of single-image DINOv3 cross-attention.
+// A separate function (not a branch inside trellis_run) so the existing TRELLIS.2 code above
+// is untouched byte-for-byte; the shared postprocess calls below are the SAME trellis:: API
+// calls TRELLIS.2 uses (dual_grid.cpp/remesh_dc.cpp/decimate_qem.cpp/uv_bake.cpp/mesh_glb.cpp
+// are not modified for this feature).
+// ===========================================================================================
+
+// Decodes one view file to RGBA8 host memory (no resize). has_alpha follows preprocess.cpp's
+// image_has_alpha convention: a real (not all-255) alpha channel, since this mode does no
+// matting -- a flat/opaque alpha means the caller should error out, not silently proceed.
+static std::vector<unsigned char> mv_load_rgba(const std::string& path, int& W, int& H, bool& has_alpha) {
+    int ch; unsigned char* img = stbi_load(path.c_str(), &W, &H, &ch, 4);
+    if (!img) { has_alpha = false; return {}; }
+    has_alpha = false;
+    for (size_t i = 0; i < (size_t)W * H; ++i) if (img[4*i+3] < 250) { has_alpha = true; break; }
+    std::vector<unsigned char> out(img, img + (size_t)W * H * 4);
+    stbi_image_free(img);
+    return out;
+}
+
+// inference_mv.to_cond_tensor: resize to SxS then premultiply RGB by alpha -> [3,S,S] in [0,1],
+// NOT ImageNet-normalized (pixal3d_cond_ss/slat normalize internally per view). The reference
+// uses PIL LANCZOS; this repo's resize helper (preprocess.cpp's normalize_cutout) is stb_image_resize's
+// stbir_resize_uint8, whose default filter is NOT Lanczos (roughly Catmull-Rom-like upsampling /
+// a box-ish downsampling per stb_image_resize.h) -- noted here as a known, unverified source of
+// small pixel-level divergence from the PyTorch reference at the resize step.
+static std::vector<float> mv_resize_premult(const std::vector<unsigned char>& rgba, int W, int H, int S) {
+    std::vector<unsigned char> rs((size_t)S * S * 4);
+    stbir_resize_uint8(rgba.data(), W, H, 0, rs.data(), S, S, 0, 4);
+    std::vector<float> out((size_t)3 * S * S);
+    for (int y = 0; y < S; ++y) for (int x = 0; x < S; ++x) {
+        const size_t si = ((size_t)y * S + x) * 4;
+        const float a = rs[si + 3] / 255.0f;
+        for (int c = 0; c < 3; ++c) out[(size_t)c * S * S + (size_t)y * S + x] = (rs[si + c] / 255.0f) * a;
+    }
+    return out;
+}
+
+// Loads transforms.json + every frame's view at both 512 and 1024 (each file decoded once,
+// then resized twice -- mirrors inference_mv.load_views without the rembg fallback: every
+// view here must already carry a real alpha channel). Returns false (stderr message already
+// printed) on any error: missing/malformed transforms.json, missing camera_angle_x, a view
+// with no real alpha channel, or an unreadable image file.
+static bool mv_load_views(const trellis::TrellisParams& cfg,
+                           std::vector<trellis::Pixal3dView>& v512,
+                           std::vector<trellis::Pixal3dView>& v1024,
+                           float& mesh_scale) {
+    trellis::TransformsFile tf;
+    if (!trellis::load_transforms_json(cfg.views + "/transforms.json", tf)) return false;
+
+    const int nframes = (int)tf.frames.size();
+    const int use_n = (cfg.num_views > 0) ? std::min(cfg.num_views, nframes) : nframes;
+    mesh_scale = tf.mesh_scale;
+    v512.clear(); v1024.clear();
+    v512.reserve(use_n); v1024.reserve(use_n);
+
+    for (int i = 0; i < use_n; ++i) {
+        const trellis::TransformsFrame& fr = tf.frames[i];
+        float fov = 0.0f;
+        if (fr.has_camera_angle_x) fov = fr.camera_angle_x;
+        else if (tf.has_camera_angle_x) fov = tf.camera_angle_x;
+        else { fprintf(stderr, "[trellis] view %d (%s): no camera_angle_x (per-frame or top-level)\n", i, fr.file_path.c_str()); return false; }
+
+        const std::string path = cfg.views + "/" + fr.file_path;
+        int W, H; bool has_alpha;
+        std::vector<unsigned char> rgba = mv_load_rgba(path, W, H, has_alpha);
+        if (rgba.empty()) { fprintf(stderr, "[trellis] view %d: cannot load %s\n", i, path.c_str()); return false; }
+        if (!has_alpha) {
+            fprintf(stderr, "[trellis] view %d (%s): no real alpha channel -- --views mode does not matte"
+                            " (pre-matted RGBA views only)\n", i, path.c_str());
+            return false;
+        }
+
+        trellis::Pixal3dView a{}, b{};
+        a.rgb_premult = mv_resize_premult(rgba, W, H, 512);  a.fov_x = fov;
+        b.rgb_premult = mv_resize_premult(rgba, W, H, 1024); b.fov_x = fov;
+        std::memcpy(a.c2w, fr.transform_matrix, 16 * sizeof(float));
+        std::memcpy(b.c2w, fr.transform_matrix, 16 * sizeof(float));
+        v512.push_back(std::move(a));
+        v1024.push_back(std::move(b));
+    }
+    return true;
+}
+
+// Applies the same net final-frame rotation inference_mv.py's `rot = [[-1,0,0],[0,0,-1],
+// [0,-1,0]]` (glb.apply_transform(rot), applied once to the ALREADY-EXPORTED reference GLB)
+// produces, but composed for THIS codebase's export path. mesh_glb.cpp's own internal
+// Zup->glTF-Yup conversion ((x,y,z)->(x,z,-y), applied inside write_glb/write_glb_textured,
+// unchanged/untouched here) still runs on top of whatever we pass it, so this is the
+// pre-transform P on the SAME Zup vertex arrays TRELLIS.2 always passes to those writers such
+// that mesh_glb(P(v)) == rot(mesh_glb(v)): P(x,y,z) = (-x, z, y). Solved by composing
+// M(x,y,z)=(x,z,-y) with rot and verified 2026-09-06 against the reference GLB's measured
+// bbox (tools/glb_metrics.py): before this fix, ours (x,y,z) extents (0.758,0.989,0.848) vs
+// reference (0.757,0.845,0.987) -- matching up to a y<->z swap, which P corrects (both
+// P and mesh_glb's own conversion have det=+1, so winding/normals need no extra flip).
+// Applied only in --views mode, at the very end (after baking, so it can never desync the
+// UV-baked texture from a voxel-index-space PBR sample -- see mv_gather_proj's coordinate
+// contract, untouched here).
+static void mv_apply_reference_frame(std::vector<float>& verts) {
+    for (size_t i = 0; i + 2 < verts.size(); i += 3) {
+        const float x = verts[i], y = verts[i + 1], z = verts[i + 2];
+        verts[i] = -x; verts[i + 1] = z; verts[i + 2] = y;
+    }
+}
+
+// One sparse Pixal3D ProjectAttention shape-SLAT flow sample (shape 512 or shape HR): loads
+// the checkpoint, verifies it is a Pixal3D checkpoint (detected proj_in matches the fused
+// [lr||hr] 2048-wide condition), samples, frees the model. Empty return = error (already
+// logged) -- never a legitimate zero-length result since coords is always non-empty here.
+static std::vector<float> mv_shape_flow(const std::string& path, const trellis::TrellisParams& cfg,
+                                        bool F32, int gpu,
+                                        const std::vector<std::array<int,3>>& coords,
+                                        const float* cnd, const float* ncnd, int lc,
+                                        const float* proj, const float* nproj,
+                                        std::vector<float>& noise_buf) {
+    const int n = (int)coords.size();
+    trellis::Model m = trellis::Model::load(path, gpu);
+    trellis::DiTParams p; p.in_ch = 32; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
+    if (!trellis::dit_detect_proj_attn(m, p)) {
+        fprintf(stderr, "[trellis] %s: not a Pixal3D ProjectAttention checkpoint (missing"
+                        " blocks.0.cross_attn.proj_linear.weight)\n", path.c_str());
+        m.free(); return {};
+    }
+    if (p.d_proj != 2048) {
+        fprintf(stderr, "[trellis] %s: proj_in=%d, expected 2048 ([lr||hr] fused condition)\n", path.c_str(), p.d_proj);
+        m.free(); return {};
+    }
+    trellis::DitRunner* run = trellis::make_sparse_runner(m, p, coords, lc);
+    trellis::FlowFwdProj fwd = [&](const std::vector<float>& x, float ts, const float* c, const float* pj) {
+        return run->forward(x, ts, c, pj);
+    };
+    trellis::SamplerParams sp; sp.steps = 12; sp.guidance_strength = cfg.gsh; sp.guidance_rescale = 0.5f;
+    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f;
+    std::vector<float> out = trellis::sample_flow(fwd, noise_buf, cnd, ncnd, proj, nproj, sp);
+    delete run; m.free();
+    return out;
+}
+
+static int trellis_run_mv(const trellis::TrellisParams& cfg) {
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    uint32_t run_seed = cfg.seed;
+    if (run_seed == 0) {
+        std::random_device rd;
+        run_seed = (uint32_t(rd()) << 16) ^ uint32_t(rd()) ^
+                   uint32_t(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+        if (run_seed == 0) run_seed = 1;
+        fprintf(stderr, "[trellis] generating model with seed %u (auto)\n", run_seed);
+    } else {
+        fprintf(stderr, "[trellis] generating model with seed %u\n", run_seed);
+    }
+    const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;
+    trellis::g_no_fa = cfg.no_fa;
+    trellis::g_require_gpu = cfg.require_gpu;
+    trellis::g_cpu_threads = cfg.threads;
+    const std::string& outglb = cfg.output;
+    const std::string& M = cfg.models;
+    const int gpu = cfg.gpu;
+    std::mt19937 rng(run_seed); std::normal_distribution<float> randn(0.f, 1.f);
+    auto noise = [&](size_t n){ vector<float> v(n); for (auto& x : v) x = randn(rng); return v; };
+    double t0 = now();
+
+    if (!cfg.cascade) {
+        fprintf(stderr, "[trellis] --views mode requires --res 1024 or 1536 (Pixal3D has no res-512"
+                        " texture flow; the cascade is mandatory)\n");
+        return 1;
+    }
+    const bool do_tex = cfg.texture;
+
+    printf("[1/6] Pixal3D multiview: load %s\n", cfg.views.c_str());
+    std::vector<trellis::Pixal3dView> views512, views1024;
+    float mesh_scale = 1.0f;
+    if (!mv_load_views(cfg, views512, views1024, mesh_scale)) return 1;
+    const int V = (int)views512.size();
+    printf("      V=%d views, mesh_scale=%.4f\n", V, mesh_scale);
+    double t_stage = now();
+
+    printf("[2/6] SS proj conditioning + flow\n");
+    vector<std::array<int,3>> coords;
+    {
+        trellis::Pixal3dCond c;
+        { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
+          c = trellis::pixal3d_cond_ss(dino, views512, 512, 16, mesh_scale);
+          dino.free(); }
+        vector<float> neg_g(c.global.size(), 0.0f), neg_p(c.proj.size(), 0.0f);
+
+        trellis::Model m = trellis::Model::load(M + "/pixal3d_ss_flow_mv.gguf", gpu);
+        trellis::DiTParams p; p.in_ch = 8; p.out_ch = 8; p.d_cond = 1024; p.cast_f32 = F32;
+        if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] pixal3d_ss_flow_mv.gguf: not a Pixal3D checkpoint\n"); return 1; }
+        trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, c.n_global);
+        trellis::FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* cn, const float* pj){ return run->forward(x, ts, cn, pj); };
+        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
+        vector<float> z = trellis::sample_flow(fwd, noise(8*4096), c.global.data(), neg_g.data(), c.proj.data(), neg_p.data(), sp);
+        delete run; m.free();
+        vector<float> zdec(8*4096);
+        for (int cc = 0; cc < 8; ++cc) for (int spx = 0; spx < 4096; ++spx) zdec[(size_t)cc*4096 + spx] = z[cc + 8*spx];
+        trellis::Model d = trellis::Model::load(M + "/ss_dec.gguf", gpu);
+        vector<float> logits = trellis::ss_decode(d, zdec); d.free();
+        coords = trellis::ss_coords(logits, 64, 32);
+    }
+    if (cfg.voxply) { FILE*f=fopen("out/myvox.ply","wb"); fprintf(f,"ply\nformat binary_little_endian 1.0\nelement vertex %zu\nproperty float x\nproperty float y\nproperty float z\nelement face 0\nproperty list uchar int vertex_indices\nend_header\n",coords.size()); for(auto&c:coords){float pp[3]={(c[0]+0.5f)/32-0.5f,(c[1]+0.5f)/32-0.5f,(c[2]+0.5f)/32-0.5f}; fwrite(pp,4,3,f);} fclose(f); }
+    printf("      active voxels @res32 = %d  (%.1fs)\n", (int)coords.size(), now() - t_stage);
+    if (coords.empty()) { fprintf(stderr, "no voxels produced\n"); return 1; }
+    t_stage = now();
+
+    printf("[3/6] shape SLAT flow (LR 512 -> upsample -> HR %d cascade, max_tok=%d)\n", cfg.hr_res, cfg.max_tokens);
+    vector<float> lr_norm, lr_dn;
+    {
+        trellis::Pixal3dCond c;
+        { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
+          trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
+          trellis::Pixal3dSlatCondParams prm{512, 32, 512, mesh_scale};
+          c = trellis::pixal3d_cond_slat(dino, naf, views512, prm);
+          dino.free(); naf.free(); }
+        vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, 32, c.d_proj, coords);
+        c.proj.clear(); c.proj.shrink_to_fit();
+        vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
+        vector<float> nz = noise((size_t)32 * coords.size());
+        lr_norm = mv_shape_flow(M + "/pixal3d_shape_flow_512_mv.gguf", cfg, F32, gpu, coords,
+                                c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
+        if (lr_norm.empty()) return 1;
+    }
+    lr_dn.resize(lr_norm.size());
+    for (size_t n = 0; n < coords.size(); ++n) for (int c = 0; c < 32; ++c)
+        lr_dn[(size_t)c + 32*n] = lr_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
+    slat_stats("LR slat (res32, MV)", lr_dn);
+    printf("      LR shape SLAT (%.1fs)\n", now() - t_stage); t_stage = now();
+
+    vector<std::array<int,3>> hr_coords;
+    { trellis::Model m = trellis::Model::load(M + "/shape_dec.gguf", gpu);
+      hr_coords = trellis::shape_upsample(m, lr_dn, coords); m.free(); }
+    int hr_res = cfg.hr_res;
+    vector<std::array<int,3>> shc;
+    for (;;) {
+        // Pixal3DImageTo3DPipeline.run()'s OWN inlined 1024_cascade/1536_cascade
+        // quantization (verified against tools/ref_pixal3d_hr_sample.py's fixture,
+        // 2026-09-06) -- NOT the TRELLIS.2 sample_shape_slat_cascade() helper's formula
+        // (int() truncation, grid_res, no round) that trellis_cli.cpp's single-image
+        // cascade path below still uses unchanged. Two differences: round() instead of
+        // truncation, and (grid_res - 1) instead of grid_res as the scale. For
+        // hr_res==1024 the token-budget check never actually fires -- the reference's
+        // own break condition is `... or actual_hr_resolution == 1024`, so only
+        // 1536_cascade ever backs off; 1024_cascade always quantizes once at grid 64.
+        const int gi = hr_res / 16;
+        const float gm1 = (float)(gi - 1);
+        std::set<std::array<int,3>> q;
+        for (auto& c : hr_coords)
+            q.insert({ (int)std::lround((c[0]+0.5f)/512.f*gm1),
+                       (int)std::lround((c[1]+0.5f)/512.f*gm1),
+                       (int)std::lround((c[2]+0.5f)/512.f*gm1) });
+        if ((int)q.size() < cfg.max_tokens || hr_res == 1024) {
+            shc.assign(q.begin(), q.end());
+            printf("      upsampled coords @res512=%d -> quantized @res%d (grid %d, Pixal3D round/grid-1 formula) = %d tokens\n",
+                   (int)hr_coords.size(), hr_res, gi, (int)shc.size());
+            break;
+        }
+        printf("      res%d (grid %d) -> %d tokens >= %d, backing off -128\n", hr_res, gi, (int)q.size(), cfg.max_tokens);
+        hr_res -= 128;
+    }
+    const int grid = hr_res / 16;
+    const int RES = hr_res;
+
+    vector<float> slat_norm;
+    {
+        trellis::Pixal3dCond c;
+        { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
+          trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
+          trellis::Pixal3dSlatCondParams prm{1024, grid, 512, mesh_scale};
+          c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
+          dino.free(); naf.free(); }
+        vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
+        c.proj.clear(); c.proj.shrink_to_fit();
+        vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
+        vector<float> nz = noise((size_t)32 * shc.size());
+        slat_norm = mv_shape_flow(M + "/pixal3d_shape_flow_1024_mv.gguf", cfg, F32, gpu, shc,
+                                  c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
+        if (slat_norm.empty()) return 1;
+    }
+    const int N = (int)shc.size();
+    vector<float> slat_dn(slat_norm.size());
+    for (int n = 0; n < N; ++n) for (int c = 0; c < 32; ++c)
+        slat_dn[(size_t)c + 32*n] = slat_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
+    slat_stats("HR slat (MV)", slat_dn);
+    if (cfg.dump_slat) {
+        FILE* f = fopen("/tmp/hr_slat.bin", "wb");
+        if (f) { int n = N, res = RES; fwrite(&n,4,1,f); fwrite(&res,4,1,f);
+            for (auto& c : shc) { int xyz[3] = {c[0],c[1],c[2]}; fwrite(xyz,4,3,f); }
+            fwrite(slat_dn.data(),4,slat_dn.size(),f); fclose(f);
+            printf("      [dump] /tmp/hr_slat.bin: N=%d res=%d feats=%zu\n", n, res, slat_dn.size()); }
+    }
+    printf("      HR shape SLAT (%.1fs)\n", now() - t_stage); t_stage = now();
+
+    printf("[4/6] FlexiDualGrid shape decode -> mesh @res%d\n", RES);
+    trellis::Mesh mesh;
+    trellis::ShapeOut so;
+    {
+        trellis::Model m = trellis::Model::load(M + "/shape_dec.gguf", gpu);
+        so = trellis::shape_decode(m, slat_dn, shc, RES); m.free();
+        printf("      decoded voxels @res%d = %d\n", so.res, (int)so.coords.size());
+        mesh = trellis::dual_grid_to_mesh(so);
+    }
+    printf("      mesh V=%d F=%d\n", mesh.V(), mesh.F());
+    { const int nh = trellis::fill_holes(mesh.verts, mesh.faces, 3e-2f);
+      if (nh) printf("      filled %d small holes -> V=%d F=%d\n", nh, mesh.V(), mesh.F()); }
+    printf("      shape decode (%.1fs)\n", now() - t_stage); t_stage = now();
+
+    vector<float> colors, pbr6;
+    const vector<std::array<int,3>>* pbr_coords = &so.coords;
+    const int pbr_res = so.res;
+    if (do_tex) {
+        printf("[5/6] texture SLAT flow (HR %d, NAF@1024) + PBR decode\n", RES);
+        vector<float> texlat;
+        {
+            trellis::Pixal3dCond c;
+            { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
+              trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
+              trellis::Pixal3dSlatCondParams prm{1024, grid, 1024, mesh_scale};
+              c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
+              dino.free(); naf.free(); }
+            vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
+            c.proj.clear(); c.proj.shrink_to_fit();
+            vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
+
+            trellis::Model m = trellis::Model::load(M + "/pixal3d_tex_flow_1024_mv.gguf", gpu);
+            trellis::DiTParams p; p.in_ch = 64; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
+            if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] pixal3d_tex_flow_1024_mv.gguf: not a Pixal3D checkpoint\n"); return 1; }
+            trellis::DitRunner* run = trellis::make_sparse_runner(m, p, shc, c.n_global);
+            // Tex flow needs the proj-aware sample_flow overload (ProjectAttention DiT).
+            trellis::FlowFwdProj fwdp = [&](const vector<float>& st, float ts, const float* cn, const float* pj) {
+                vector<float> x64((size_t)64 * N);
+                for (int n = 0; n < N; ++n) {
+                    for (int k = 0; k < 32; ++k) x64[(size_t)k + 64*n]      = st[(size_t)k + 32*n];
+                    for (int k = 0; k < 32; ++k) x64[(size_t)32 + k + 64*n] = slat_norm[(size_t)k + 32*n];
+                }
+                return run->forward(x64, ts, cn, pj);
+            };
+            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6f; sp.gi1=0.9f; sp.rescale_t=3.0f;
+            texlat = trellis::sample_flow(fwdp, noise((size_t)32*N), c.global.data(), neg_g.data(), proj_sp.data(), neg_p.data(), sp);
+            delete run; m.free();
+            for (int n = 0; n < N; ++n) for (int cc = 0; cc < 32; ++cc) texlat[(size_t)cc + 32*n] = texlat[(size_t)cc + 32*n]*TEX_STD[cc] + TEX_MEAN[cc];
+        }
+        {
+            trellis::Model m = trellis::Model::load(M + "/tex_dec.gguf", gpu);
+            vector<float> pbr = trellis::tex_decode(m, texlat, shc, so.subs); m.free();
+            const int Mv = (int)pbr_coords->size();
+            colors.resize((size_t)Mv * 3); pbr6.resize((size_t)Mv * 6);
+            auto cl = [](float v){ return v < 0 ? 0.f : (v > 1 ? 1.f : v); };
+            for (int i = 0; i < Mv; ++i) {
+                for (int k = 0; k < 6; ++k) pbr6[(size_t)i*6 + k] = cl(pbr[(size_t)k + 6*i] * 0.5f + 0.5f);
+                for (int k = 0; k < 3; ++k) colors[(size_t)i*3 + k] = pbr6[(size_t)i*6 + k];
+            }
+            printf("      PBR voxels=%d @res%d\n", Mv, pbr_res);
+        }
+        if (colors.size() != (size_t)mesh.V() * 3) {
+            if (colors.size() < (size_t)mesh.V() * 3) colors.resize((size_t)mesh.V() * 3, 0.5f);
+            else colors.clear();
+        }
+        printf("      texture SLAT + decode (%.1fs)\n", now() - t_stage); t_stage = now();
+    }
+
+    // ---- shared TRELLIS.2 postprocess tail (unchanged: same trellis:: calls as the
+    // single-image cascade path below, just invoked from this second call site) ----
+    if (!cfg.dump_post.empty()) {
+        trellis::weld_vertices(mesh.verts, mesh.faces, nullptr, 1.0f / ((float)so.res * 8.0f));
+        trellis::fill_small_holes(mesh.faces);
+        trellis::TriBvh dbvh = trellis::TriBvh::build(mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F());
+        // MV mode default: remesh_band=1 (inference_mv.py's o_voxel.postprocess.to_glb(remesh_band=1)
+        // default), not TRELLIS.2's res/512 auto-scale -- unless the user passes --band.
+        const int dband = cfg.band > 0 ? cfg.band : 1;
+        trellis::Mesh rm = trellis::remesh_narrow_band_dc(mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(), dbvh, so.res, dband);
+        if (rm.F() > 0) { trellis::clean_mesh(rm.V(), rm.faces); trellis::drop_small_components(rm.verts, rm.faces, 0.02f); }
+        const std::vector<float>& dverts = rm.F() > 0 ? rm.verts : mesh.verts;
+        const std::vector<int32_t>& dfaces = rm.F() > 0 ? rm.faces : mesh.faces;
+        FILE* dfp = fopen(cfg.dump_post.c_str(), "wb");
+        if (!dfp) { fprintf(stderr, "cannot write %s\n", cfg.dump_post.c_str()); return 1; }
+        const int dV = (int)dverts.size()/3, dFc = (int)dfaces.size()/3;
+        const int Mv = pbr6.empty() ? 0 : (int)pbr_coords->size(), res = pbr_res;
+        fwrite(&dV,4,1,dfp); fwrite(&dFc,4,1,dfp); fwrite(&Mv,4,1,dfp); fwrite(&res,4,1,dfp);
+        fwrite(dverts.data(),4,(size_t)dV*3,dfp); fwrite(dfaces.data(),4,(size_t)dFc*3,dfp);
+        if (Mv) { for (auto& c : *pbr_coords) { int xyz[3]={c[0],c[1],c[2]}; fwrite(xyz,4,3,dfp); } fwrite(pbr6.data(),4,(size_t)Mv*6,dfp); }
+        fclose(dfp);
+        printf("[6/6] cleaned dump -> %s (V=%d F=%d%s, PBR=%d @res%d)\n", cfg.dump_post.c_str(), dV, dFc,
+               rm.F() > 0 ? " remeshed" : " raw (remesh empty)", Mv, res);
+        printf("done in %.1fs -> %s\n", now() - t0, cfg.dump_post.c_str());
+        return 0;
+    }
+
+    printf("[6/6] write %s\n", outglb.c_str());
+    bool textured = false;
+    if (!pbr6.empty()) {
+        const bool boxuv = !cfg.xatlas;
+        // MV mode defaults (unless overridden by --atlas/--tex, --decim): atlas 4096 and a
+        // 1,000,000-face quadric target, matching inference_mv.py's o_voxel.postprocess.to_glb(
+        // texture_size=4096, decimation_target=1_000_000) -- TRELLIS.2's 2048/300K stay as-is below.
+        const int T = cfg.tex >= 0 ? cfg.tex : 4096;
+        trellis::weld_vertices(mesh.verts, mesh.faces, colors.empty() ? nullptr : &colors, 1.0f / ((float)so.res * 8.0f));
+        trellis::fill_small_holes(mesh.faces);
+        trellis::TriBvh bvh = trellis::TriBvh::build(mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F());
+        int remesh_band = cfg.band > 0 ? cfg.band : 1;   // MV default: 1 (see dump_post branch above)
+        trellis::Mesh rm = trellis::remesh_narrow_band_dc(mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(), bvh, so.res, remesh_band);
+        if (rm.F() > 0) {
+            trellis::clean_mesh(rm.V(), rm.faces);
+            int ndrop = trellis::drop_small_components(rm.verts, rm.faces, 0.02f);
+            printf("  remesh postproc: dropped %d floater comps -> V=%d F=%d\n", ndrop, rm.V(), rm.F());
+        }
+        const std::vector<float>& sverts = rm.F() > 0 ? rm.verts : mesh.verts;
+        const std::vector<int32_t>& sfaces = rm.F() > 0 ? rm.faces : mesh.faces;
+        std::vector<float> dv, dp; std::vector<int32_t> df;
+        if (cfg.decim > 0) {
+            trellis::decimate_cluster(sverts, (int)sverts.size()/3, sfaces, (int)sfaces.size()/3, {}, cfg.decim, dv, df, dp);
+        } else if (cfg.decim == 0) {
+            dv = sverts; df = sfaces;
+        } else {
+            trellis::decimate_qem(sverts, (int)sverts.size()/3, sfaces, (int)sfaces.size()/3, 1000000, dv, df);
+            trellis::weld_vertices(dv, df, nullptr, 1.0f / ((float)so.res * 8.0f));
+            trellis::fill_small_holes(df);
+            int ndrop2 = trellis::drop_small_components(dv, df, 0.03f);
+            if (ndrop2) printf("  decimated postproc: dropped %d more comps -> F=%d\n", ndrop2, (int)df.size()/3);
+        }
+        const int dV = (int)dv.size()/3, dF = (int)df.size()/3;
+        trellis::VoxelPbr vox{pbr_coords, &pbr6, pbr_res, &bvh};
+        const std::vector<float> no_vp;
+        trellis::BakedMesh bm = boxuv ? trellis::uv_box_project(dv, dV, df, dF, no_vp, T, &vox)
+                                      : trellis::uv_bake(dv, dV, df, dF, no_vp, T, &vox);
+        if (!boxuv && !bm.ok()) bm = trellis::uv_chart_project(dv, dV, df, dF, no_vp, T, &vox);
+        if (bm.ok()) {
+            mv_apply_reference_frame(bm.verts);   // baking (UVs/atlas) is done -- safe to rotate now
+            trellis::write_glb_textured(outglb.c_str(), bm.verts.data(), (int64_t)bm.verts.size()/3, bm.uv.data(),
+                                        bm.faces.data(), (int64_t)bm.faces.size()/3, bm.base.data(), bm.mr.data(), bm.T,
+                                        /*double_sided=*/rm.F() == 0, run_seed,
+                                        cfg.copyright.empty() ? nullptr : cfg.copyright.c_str(),
+                                        /*use_webp=*/cfg.webp != 0);
+            std::string tex = outglb.substr(0, outglb.find_last_of('.')) + "_base.png";
+            stbi_write_png(tex.c_str(), bm.T, bm.T, 4, bm.base.data(), bm.T*4);
+            textured = true;
+            printf("      textured GLB (atlas %d, +%s)\n", bm.T, tex.c_str());
+        } else printf("      uv_bake failed; falling back to vertex colors\n");
+    }
+    mv_apply_reference_frame(mesh.verts);   // matches inference_mv.py's post-hoc glb.apply_transform(rot)
+    if (!textured)
+        trellis::write_glb(outglb.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(),
+                           colors.empty() ? nullptr : colors.data(), run_seed,
+                           cfg.copyright.empty() ? nullptr : cfg.copyright.c_str());
+    std::string ply = outglb.substr(0, outglb.find_last_of('.')) + ".ply";
+    trellis::write_ply(ply.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(), colors.empty() ? nullptr : colors.data());
+    printf("done in %.1fs -> %s (+ %s)\n", now() - t0, outglb.c_str(), ply.c_str());
+    return 0;
+}
 
 int trellis_run(const trellis::TrellisParams& cfg) {
+    if (!cfg.views.empty()) return trellis_run_mv(cfg);
     // Unbuffered, not line-buffered: MSVCRT treats _IOLBF as full buffering, which
     // swallows stage progress when piped (e.g. under Lemonade) if the process crashes.
     setvbuf(stdout, nullptr, _IONBF, 0);
