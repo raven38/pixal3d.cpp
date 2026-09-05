@@ -4,14 +4,14 @@
 
 - [x] Create private `raven38/pixal3d.cpp`
 - [x] Preserve full `pwilkin/trellis.cpp` Git history on `main`
-- [ ] Configure local remotes as `origin=raven38/pixal3d.cpp`, `upstream=pwilkin/trellis.cpp`
+- [x] Configure local remotes as `origin=raven38/pixal3d.cpp`, `upstream=pwilkin/trellis.cpp`
 - [x] Add Pixal3D planning documents
-- [ ] Record exact trellis.cpp and ggml baseline SHAs
-- [ ] Keep upstream MIT notices
+- [x] Record exact trellis.cpp and ggml baseline SHAs (see `PIXAL3D_UPSTREAM_POLICY.md`)
+- [x] Keep upstream MIT notices (`LICENSE` retained)
 
 ## M1 — Native baseline
 
-- [ ] Build inherited trellis.cpp unchanged
+- [x] Build inherited trellis.cpp unchanged (Metal, macOS, 2026-09-06; CUDA on RTX 4090 pending)
 - [ ] Validate CUDA on RTX 4090
 - [ ] Run available component tests
 - [ ] Generate known-good TRELLIS.2 output

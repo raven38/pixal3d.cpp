@@ -11,6 +11,15 @@ upstream  https://github.com/pwilkin/trellis.cpp.git
 
 `origin` is the private development repository. `upstream` remains read-only and is used to inspect and selectively integrate trellis.cpp improvements.
 
+## Baseline (recorded 2026-09-06)
+
+| component | ref |
+|---|---|
+| trellis.cpp base (last upstream-shared commit) | `2516c48` — "Merge pull request #44 from fernandotonon/macos-metal" |
+| `thirdparty/ggml` submodule | `737e88f25d4f62254f3b7a726fd9663036cc94da` (`pwilkin/ggml` branch `trellis-patches`, v0.15.1-10) |
+| Pixal3D reference source | `TencentARC/Pixal3D` `f7cf384` ("feat: support multi-view image input") |
+| Pixal3D weights | HF `TencentARC/Pixal3D` snapshot `b0cb2e1b794cab9aa0ac38a95d794a4d9337437f` (MV DiTs + decoders) |
+
 ## Sync policy
 
 Before native Pixal3D parity:
