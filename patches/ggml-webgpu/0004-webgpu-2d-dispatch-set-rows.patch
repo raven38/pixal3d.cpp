@@ -1,0 +1,81 @@
+diff --git a/src/ggml-webgpu/ggml-webgpu.cpp b/src/ggml-webgpu/ggml-webgpu.cpp
+index c7c1d9e5..adfdf49c 100644
+--- a/src/ggml-webgpu/ggml-webgpu.cpp
++++ b/src/ggml-webgpu/ggml-webgpu.cpp
+@@ -1357,8 +1357,10 @@ static std::optional<webgpu_encoded_op> ggml_webgpu_set_rows(webgpu_context & ct
+     } else {
+         threads = src->ne[0] * src->ne[1] * src->ne[2] * src->ne[3];
+     }
+-    uint32_t wg_x = CEIL_DIV(threads, decisions->wg_size);
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, 1);
++    uint32_t wg_x, wg_y;
++    compute_2d_workgroups(CEIL_DIV(threads, decisions->wg_size),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ // Workgroup size is a common constant
+diff --git a/src/ggml-webgpu/wgsl-shaders/set_rows.wgsl b/src/ggml-webgpu/wgsl-shaders/set_rows.wgsl
+index 09f2f0ed..a371b278 100644
+--- a/src/ggml-webgpu/wgsl-shaders/set_rows.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/set_rows.wgsl
+@@ -66,13 +66,16 @@ struct Params {
+ var<uniform> params: Params;
+ 
+ @compute @workgroup_size(WG_SIZE)
+-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+-    if (gid.x >= (params.ne3 * params.ne2 * params.n_rows * params.ne0) / VEC_SIZE) {
++fn main(@builtin(global_invocation_id) gid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
++    // threads are dispatched on a 2D grid (thread = x + nx*WG_SIZE*y)
++    let tid = gid.x + (num_wg.x * WG_SIZE) * gid.y;
++    if (tid >= (params.ne3 * params.ne2 * params.n_rows * params.ne0) / VEC_SIZE) {
+         return;
+     }
+ 
+     let elems_per_row = params.ne0 / VEC_SIZE;
+-    var i = gid.x / elems_per_row;
++    var i = tid / elems_per_row;
+ 
+     let i_src3 = i / (params.ne2 * params.n_rows);
+ 
+@@ -103,6 +106,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+     let i_dst_row = params.offset_dst + idx_val * params.stride_dst1 + i_src2 * params.stride_dst2 + i_src3 * params.stride_dst3;
+     let i_src_row = params.offset_src + i_src1 * params.stride_src1 + i_src2 * params.stride_src2 + i_src3 * params.stride_src3;
+ 
+-    let col_idx = gid.x % elems_per_row;
++    let col_idx = tid % elems_per_row;
+     dst[i_dst_row / VEC_SIZE + col_idx] = DST_TYPE(src[i_src_row / VEC_SIZE + col_idx]);
+ }
+diff --git a/src/ggml-webgpu/wgsl-shaders/set_rows_quant.wgsl b/src/ggml-webgpu/wgsl-shaders/set_rows_quant.wgsl
+index 876e65b6..5526cde9 100644
+--- a/src/ggml-webgpu/wgsl-shaders/set_rows_quant.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/set_rows_quant.wgsl
+@@ -170,7 +170,10 @@ fn quantize_block(src_block: u32, dst_word_idx: u32, block_byte_offset: u32) {
+ }
+ 
+ @compute @workgroup_size(WG_SIZE)
+-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
++fn main(@builtin(global_invocation_id) gid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
++    // threads are dispatched on a 2D grid (thread = x + nx*WG_SIZE*y)
++    let tid = gid.x + (num_wg.x * WG_SIZE) * gid.y;
+     let blocks_per_row = params.ne0 / BLOCK_SIZE;
+ #ifdef PAIR_BLOCKS
+     let blocks_per_invocation = 2u;
+@@ -179,12 +182,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+ #endif
+     let invocations_per_row = blocks_per_row / blocks_per_invocation;
+     let total_invocations = params.ne3 * params.ne2 * params.n_rows * invocations_per_row;
+-    if (gid.x >= total_invocations) {
++    if (tid >= total_invocations) {
+         return;
+     }
+ 
+-    var i = gid.x / invocations_per_row;
+-    let block_in_row = (gid.x % invocations_per_row) * blocks_per_invocation;
++    var i = tid / invocations_per_row;
++    let block_in_row = (tid % invocations_per_row) * blocks_per_invocation;
+ 
+     let i_src3 = i / (params.ne2 * params.n_rows);
+     i = i % (params.ne2 * params.n_rows);
