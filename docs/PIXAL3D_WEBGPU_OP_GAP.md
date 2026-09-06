@@ -494,7 +494,158 @@ partly garbage). No new op type was added to the backend.
 
 Not exercised / still open after this stage: everything in §8's list (FLASH_ATTN_EXT F16 tile
 path, BF16, IM2COL_3D/CONV_3D) plus the sparse-decoder ops (§5 B8-B11: no missing op type, but
-1.2-1.6 GB tensors and the single-buffer `PAD`+`CPY` pattern). `SET_ROWS` remains 1D-dispatched
-(fine below 65535 workgroups). NAF at S=1024 / T=512 (shape-1024 conditioning) would use the
+1.2-1.6 GB tensors and the single-buffer `PAD`+`CPY` pattern). `SET_ROWS` was still 1D-dispatched at
+this point (fixed by patch 0004, §10.1). NAF at S=1024 / T=512 (shape-1024 conditioning) would use the
 `POOL_2D` lowering with k=2 and d = 8 blocks -- the lowering is validated at k=4 (T=128) and the
 block formulation at d = 4 and 16; DINOv3's 1.08 GB score tensor at S=1024 is untiled.
+
+## 10. Backend preparation for the sparse decoder (2026-09-06, `feat/webgpu-sparse-backend-prep`)
+
+Independent of the Shape-1024 model work: no new op type, no decoder port. One backend limitation
+fixed (`SET_ROWS` dispatch), regression coverage for the large tensor patterns the sparse decoder
+will exercise, and the allocation trace of `docs/PIXAL3D_WEBGPU_MEMORY.md` §8. Adapter for every
+number below: Apple M1 Pro, native Dawn 18eb229 (`build-webgpu`, `-DGGML_WEBGPU=ON -DGGML_METAL=OFF`)
+and Chrome 152 (`web/ops/`), `maxComputeWorkgroupsPerDimension` 65535,
+`maxComputeInvocationsPerWorkgroup` 1024, `maxStorageBufferBindingSize` = `maxBufferSize` = 4 GiB − 4 B.
+
+### 10.1 `SET_ROWS`: root cause and fix (`patches/ggml-webgpu/0004`)
+
+`ggml_webgpu_set_rows` computed `threads` = `rows × ne0/4` (f32/f16 dst with `ne0 % 4 == 0`, the
+`VEC4` shader variant), `rows × ne0` (any other `ne0`, e.g. the DiT RoPE scatter with `ne0 = 1`) or
+`rows × blocks_per_row[/2]` (quantized dst), then dispatched `CEIL_DIV(threads, WG_SIZE)` workgroups
+on **x only** (`ggml_backend_webgpu_build(..., wg_x, 1)`), and both shaders (`set_rows.wgsl`,
+`set_rows_quant.wgsl`) indexed by `gid.x` alone. `WG_SIZE` is `maxComputeInvocationsPerWorkgroup`
+(1024 here, 256 on a spec-floor adapter), so the op broke once `threads > 65535 × WG_SIZE`:
+**67.1M threads on this adapter, 16.8M on a 256-invocation one** -- it is a thread-count limit, not
+a row-count one. In rows: 65536 rows of 4096 f32, 4M rows of 64, 22.4M rows of 3, or the DiT RoPE
+`[1,64,12,L]` scatter past L = 87381 tokens (at the spec floor: L > 21845, i.e. *inside* the
+Shape-1024 range of ~17.5k tokens only by a 20 % margin). Measured on the unpatched build
+(`trellis-webgpu-ops` with 0001-0003 only): `[4096,65535]` (65535 workgroups) bit-exact,
+`[4096,65536]` (65536 workgroups) →
+
+```
+ggml_webgpu: Device error! Reason: 2, Message: Dispatch workgroup count X (65536) exceeds max
+compute workgroups per dimension (65535). - While encoding [ComputePassEncoder].DispatchWorkgroups(65536, 1, 1)
+```
+
+followed by `GGML_ABORT` from the backend's uncaptured-error callback (native Dawn aborts; in a
+browser the same validation error drops the whole command buffer, i.e. the §9 silent skip).
+
+Fix (same mechanism as 0003 and as the upstream `cpy`/binary encoders): the encoder calls
+`compute_2d_workgroups(CEIL_DIV(threads, WG_SIZE), maxComputeWorkgroupsPerDimension, wg_x, wg_y)`
+and both shaders take `@builtin(num_workgroups)` and linearize
+`tid = gid.x + num_wg.x * WG_SIZE * gid.y`; the bound check, the row/column decomposition and the
+I64 high-word check are unchanged (`tid` replaces `gid.x` verbatim), so semantics are identical.
+`tid` stays in u32: the grid is over-provisioned by at most `wg_y − 1 < 65535` workgroups, so
+`tid < threads + 65535 × WG_SIZE`, which cannot wrap while `threads` itself fits the encoder's
+existing `uint32_t` (4.29 G threads = 17 GB of f32 rows -- beyond any buffer this backend can
+bind). No CUDA/Vulkan/Metal file is touched (the patch is `src/ggml-webgpu/` only, applied at
+configure time like 0001-0003); the shaders are shared by the native Dawn and Emscripten builds.
+
+### 10.2 Regression coverage (`trellis-webgpu-ops`, WebGPU vs ggml-cpu, identical inputs)
+
+`set_rows` cases write into a prefilled dst (`ggml_set_rows` returns a view of it), so the
+comparison covers written **and untouched** rows; indices are a deterministic permutation with row
+0 and row n−1 forced in (boundary), or, for the dup case, `hash(i) % n_dst` with every writer's
+source row derived from its target row (ggml leaves the winner among duplicate indices
+unspecified -- the CPU reference is thread-order dependent -- so the test makes all writers agree).
+Native Dawn, patch 0004 applied; `--only`/`--budget-mb` select subsets:
+
+| case (src shape, dst rows) | workgroups (WG 1024) | out | max\|d\| | mean\|d\| | before 0004 |
+|---|---|---|---|---|---|
+| `[1024,65534]` → 65534 rows | 16384 | 256 MB | 0 | 0 | pass |
+| `[4096,65535]` → 65535 rows | **65535** (limit) | 1024 MB | 0 | 0 | pass |
+| `[4096,65536]` → 65536 rows | **65536** | 1024 MB | 0 | 0 | **abort** (above) |
+| `[64,4194304]` → 4M rows | 65536 | 1024 MB | 0 | 0 | abort |
+| `[16,16777216]` → 16M rows | 65536 | 1024 MB | 0 | 0 | abort |
+| `[3,22369622]` → **22.4M rows** (`ne0 = 3`, non-vec4 path) | 65536 | 256 MB | 0 | 0 | abort |
+| `[64,4620541]` → 4620542 rows (sparse-decoder stage-3 `[Cout, M]` layout) | 72196 | 1128 MB | 0 | 0 | abort |
+| RoPE `[1,64,12,87384]` → `[1,128,12,87384]`, idx `[64]` broadcast over (nh, L) | 65538 | 512 MB | 0 | 0 | abort |
+| `[4096,65536]` → **f16** dst | 65536 | 512 MB | 0 | 0 | abort |
+| `[4096,65536]`, **I64** idx (error-buffer variant) | 65536 | 1024 MB | 0 | 0 | abort |
+| dup idx `[256,200000]` → 50000 rows (4 writers/row avg) | 13 | 49 MB | 0 | 0 | pass |
+| **Q8_0** dst `[256,70000]` (quant shader, `PAIR_BLOCKS`) | 274 | 18 MB (dequantized) | 0 | 0 | pass |
+
+Maximum row count exercised: 22,369,622 rows (dst 22.4M rows, `ne0 = 3`); largest workgroup
+count 72,196 (`wg_y = 2`). Every case is bit-exact, including the f32→f16 conversion and the Q8_0
+quantization (the WGSL and CPU quantizers round identically on these inputs). The quantized shader
+cannot reach the limit on this adapter within memory (it needs 67M rows × ≥ 32 elements ≥ 8.6 GB of
+f32 source), so its 2D path is exercised only at `wg_y = 1`; it is the same three-line change as
+the f32 shader. Browser results: §10.4. The 17 pre-existing cases (0003 shapes, NAF mul_mats,
+1 GB `cont`) still pass with identical numbers (spec 31 §10.2 table).
+
+### 10.3 Sparse-decoder `PAD` → `CPY`(view) pattern at real size
+
+`sparse_c2s` seeds one `[Cout, M(+1)]` buffer with `ggml_pad` from chunk 0 and writes every later
+chunk with `ggml_cpy` into a row-offset view, the copies rooted explicitly (§5 B9). Reproduced
+with the res-1024 stage-3 dims from the CUDA trace (§5: `[64,3080029]` → `[64,4620541]`, 394 MB
+chunk views) and scaled up:
+
+| case | seed / chunks | out | result |
+|---|---|---|---|
+| `[64,100000]`, 4 chunks | pad 30000 + 3 cpy | 24 MB | bit-exact |
+| `[64,4620541]` (c2s `hraw`) | pad 3080029 + cpy 1540512 (394 MB view at +788 MB) | 1128 MB | bit-exact |
+| `[64,4620541]` (conv2 `out`) | pad 1000000 + 4 cpy of 1M rows (256 MB each) | 1128 MB | bit-exact |
+| `[64,8388608]` | pad + 7 cpy of 1048576 rows | **2048 MB** | bit-exact |
+| `[64,12582912]` | pad + 11 cpy of 1048576 rows | **3072 MB** (6 GB resident with the chunk inputs) | bit-exact |
+| `cont(view_2d)` `[64,1540512]` at byte offset 788 MB of a `[64,4620541]` input | | 376 MB | bit-exact |
+| `cont(view_2d)` `[512,300000]` at byte offset 614 MB of a `[512,600000]` input (ConvNeXt chunk read) | | 586 MB | bit-exact |
+
+Finding: with 0003's `cpy` fix the pattern is correct at every layout the decoder produces on this
+adapter, up to a 3 GiB seed buffer; no new bug reproduced, nothing to fix. The remaining ceiling is
+the one already recorded in §5 B9 and confirmed in code: `supports_op` rejects any node whose
+`ggml_nbytes` exceeds `maxStorageBufferBindingSize` (`ggml-webgpu.cpp` ~L4099), so a `[64, M]` f32
+seed buffer is unsupported from M = 16,777,216 (exactly 4 GiB > 4 GiB − 4 B) here, and from
+M = 524,288 (128 MiB) on a spec-floor adapter -- the buffer split is a graph-construction change,
+not a kernel bug, and stays deferred (`docs/PIXAL3D_WEBGPU_MEMORY.md` §8).
+
+### 10.4 Browser (Chrome 152, `web/ops/`)
+
+Same source file compiled to WASM (`web/smoke/CMakeLists.txt` target `pixal3d-webgpu-ops-wasm` →
+`web/ops/pixal3d_ops.{js,wasm}`, entry `webgpu_ops_run(args)`, page `web/ops/index.html?args=…`,
+driver `web/ops/run_playwright.js`, Chrome 152.0.7977.82, JSPI). The wasm heap holds the CPU
+reference and both result vectors, so the browser run is budgeted (`--budget-mb 1200 --only
+set_rows --only [64,100000]`; 12 s wall):
+
+| case | workgroups | out | max\|d\| | mean\|d\| | result |
+|---|---|---|---|---|---|
+| `[1024,65534]` | 16384 | 256 MB | 0 | 0 | PASS |
+| `[3,22369622]` (22.4M rows, `ne0 = 3`) | **65536** | 256 MB | 0 | 0 | PASS |
+| RoPE `[1,64,12,87384]`, idx `[64]` broadcast | **65538** | 512 MB | 0 | 0 | PASS |
+| dup idx `[256,200000]` → 50000 | 13 | 49 MB | 0 | 0 | PASS |
+| Q8_0 dst `[256,70000]` | 274 | 18 MB | 1.2e-2 | 4.7e-8 | PASS (tol 2e-2) |
+| pad+cpy `[64,100000]` 4 chunks | | 24 MB | 0 | 0 | PASS |
+| `[4096,65535]`, `[4096,65536]`, `[64,4194304]`, `[16,16777216]`, `[64,4620541]`, f16, I64 (≥ 1.5 GB each) | | | | | SKIP (budget) |
+
+So the two shapes that need the 2D dispatch and fit a browser tab (65536 and 65538 workgroups)
+pass bit-exact in Chrome, on the same shader source the native run uses. The Q8_0 case is the one
+non-exact row: 5 of 17.9M dequantized values differ by one quantization step (Chrome's Tint and
+the CPU quantizer round ties differently; native Dawn was exact) -- a rounding, not a dispatch,
+difference. The f16-dst case (1024 MB src + 512 MB dst) was tried at `--budget-mb 1600` and
+failed with `std::bad_alloc` while staging its 1 GiB host vector in the wasm heap (the entry
+catches and prints C++ exceptions); that is the harness's heap, not the backend, so the ≥ 1.5 GB
+cases are native-only. Note for `?args=`: the entry splits on spaces, so `--only` patterns must
+not contain one (`[64,100000]`, not `pad+cpy [64,100000]`).
+The existing browser smoke (`web/smoke`, rebuilt from the same patched submodule tree) still
+passes (`RESULT: PASS`, gelu/silu graphs rel ≤ 2.6e-4, 64 MiB round trip exact).
+
+### 10.5 Remaining backend limits that would block the shape decoder
+
+None of the ops the decoder uses is missing (§5 B8-B11 stand: GET_ROWS, MUL_MAT, NORM, SILU,
+ADD, MUL, CONCAT, REPEAT, PAD, CPY, SET_ROWS are all dtype-supported and now all
+2D-dispatched). What remains is size, on two adapter classes:
+
+- **This adapter (4 GiB binding)**: nothing blocks. The largest decoder tensors at res 1024
+  (`docs/PIXAL3D_WEBGPU_MEMORY.md` §8: 1.57 GB `[512,768000]`, 1.19 GB `[64,4649838]` PAD seeds)
+  bind and compute; a 3 GiB seed buffer and a 22.4M-row SET_ROWS are verified. The only hard edge
+  is `ggml_nbytes(node) > maxStorageBufferBindingSize` → `supports_op = false` (4 GiB − 4 B), first
+  reached by a `[64, M]` f32 buffer at M = 16,777,216 voxels, 3.6× the densest object seen. The
+  C2S stage-3 graph asks gallocr for 5.98 GB (two `GPUBuffer` chunks); whether Chrome grants that
+  much device memory to one tab is unmeasured (the Shape-1024 sampling job holds the GPU).
+- **Spec-floor adapter (128 MiB binding, WG_SIZE 256)**: every `[C, N]` stage tensor from stage 2
+  on, the `[Cout, M+1]` seed buffers and the `[M, 27]` neighbor tables exceed the binding limit --
+  the §5 B9 buffer split plus a `kBlockChunkBytes` retune to ≤ 100 MiB are needed before any
+  decoder graph runs; and the DiT RoPE SET_ROWS hits the (now handled) 2D path at L > 21845
+  tokens, i.e. the fix in §10.1 is required there for Shape-1024-sized token counts.
+- **Harness**: `--budget-mb` skips oversized cases; the browser build cannot host the ≥ 1.5 GB
+  cases (wasm heap), so those stay native-only.

@@ -347,3 +347,85 @@ Findings:
   `GPUBuffer` in 4.8 s; the wasm heap holds the fixture arrays (the 257 MB `s512_z_proj.npy`
   reference for the parity print is the largest) and stays under 1 GB. `-sMAXIMUM_MEMORY` is
   4 GiB, unchanged.
+
+## 8. Measured: sparse shape-decoder allocation trace (2026-09-06, `feat/webgpu-sparse-backend-prep`)
+
+Backend-preparation task, independent of the Shape-1024 model work; the decoder itself is
+unchanged. `trellis_graph_alloc_trace` (`src/graph_dump.cpp`, declared in
+`include/graph_dump.h`) is called from the two sparse-decoder graph runners
+(`shape_decoder.cpp::run1`, `sparse.cpp::GraphRun::run`) right after `ggml_gallocr_alloc_graph`
+and is a no-op unless env `TRELLIS_DBG_ALLOC_TRACE` is set. For every graph it prints the
+graph-allocated tensors (input leafs and non-view nodes -- what gallocr places; weights and views
+excluded) at or above `TRELLIS_DBG_ALLOC_TRACE_MIN_MB` (default 64; `=all` prints every one) as
+`op / name / shape / dtype / bytes`, the ten largest, and a summary line: sum of allocations,
+largest single allocation, a **simultaneously-live estimate** (interval sweep: each tensor is live
+from its producing node to its last consumer, inputs and the output for the whole graph; gallocr's
+in-place reuse is not modelled, so it is an upper bound) and gallocr's actual buffer size.
+`trellis-shape-dec-alloc-trace <shape_dec.gguf> <coords.npy> <slat.npy> [gpu] [res]`
+(`src/shape_dec_alloc_trace.cpp`) runs `shape_decode` on any coords/latent pair with the trace
+on. No-behavior-change check: `trellis-test-pixal3d-shape-decode` on the `slat_sample` fixture
+with and without the env gives byte-identical metrics (V=1188470 F=2383624, worst symmetric mean
+2.4704e-06, PASS); the trace only adds stderr lines.
+
+Run on the RTX 4090 (CUDA build) with the real Pixal3D `shape_dec.gguf` (0.95 GB f16) on the
+**Shape-1024 latent** (`hr_sample`: `hr_coords.npy` N = 17,489 voxels at res 64 →
+M = 4,649,837 voxels at res 1024, i.e. the density the op-gap trace saw), stage graphs in
+execution order (`largest` = largest single allocation; `live est.` = the sweep; `gallocr` =
+measured buffer):
+
+| graph (tag) | nodes | allocs | largest single allocation | live est. | gallocr | Σ allocs |
+|---|---|---|---|---|---|---|
+| `from_latent` N=17489 | 2 | 3 | 71.6 MB `[1024,17489]` f32 (ADD) | 0.14 GB | 0.07 GB | 0.15 GB |
+| ConvNeXt stage 0 (C=1024, 4 blocks) N=17489 | 812 | 590 | 287 MB `[4096,17489]` f32 (MLP hidden, SILU) | 0.65 GB | 0.51 GB | 29.0 GB |
+| C2S stage 0 conv N=17489 → M=71261 | 402 | 291 | 287 MB `[4096,17489]` f32 (conv1 tap ADD) | 1.01 GB | 0.88 GB | 31.0 GB |
+| ConvNeXt stage 1 (C=512, 16 blocks) N=71261 | 3248 | 2354 | 584 MB `[2048,71261]` f32 (MLP hidden) | 1.33 GB | 1.04 GB | 234 GB |
+| C2S stage 1 conv N=71261 → M=288165 | 402 | 291 | 584 MB `[2048,71261]` f32 (conv1) | 2.08 GB | 1.79 GB | 62.5 GB |
+| ConvNeXt stage 2 (C=256, 8 blocks) N=288165 | 1624 | 1178 | **1.18 GB `[1024,288165]` f32** (MLP hidden: MUL_MAT/ADD/SILU ×8 blocks, 24 allocations ≥ 1 GB) | 2.69 GB | 2.10 GB | 237 GB |
+| C2S stage 2 conv N=288165 → M=1158936 | 602 | 430 | **1.18 GB `[1024,288165]` f32** (conv1 `[Cout·8, N]` tap MUL_MAT/ADD ×27, 54 allocations ≥ 1 GB) | 4.30 GB | 3.71 GB | 126 GB |
+| ConvNeXt stage 3 (C=128, 4 blocks) N=1158936 | 1628 | 1178 | **1.57 GB `[512,768000]` f32** (MLP hidden chunk; 12 allocations ≥ 1 GB, plus `[512,390936]` 801 MB tail chunk) | 4.46 GB | 3.28 GB | 243 GB |
+| C2S stage 3 subdiv N=1158936 | 8 | 7 | 593 MB `[128,1158936]` f32 (input) | 1.14 GB | 1.14 GB | 1.30 GB |
+| **C2S stage 3 conv N=1158936 → M=4649837** | 1392 | 981 | **1.57 GB `[512,768000]` f32** (conv1 chunk MUL_MAT/ADD ×27 taps; 58 allocations ≥ 1 GB) | **6.97 GB** | **5.98 GB** | 254 GB |
+| `output_layer` (5 × 1M-row chunks) | 3 | 4 | 256 MB `[64,1000000]` f32 (NORM) | 0.51 GB | 0.51 GB | 0.57 GB |
+
+The tensors "estimated at ~1.2-1.6 GB" in §4/op-gap §5 are therefore exactly:
+
+- **`[1024, 288165]` f32 = 1,180,323,840 B (1.18 GB)** -- stage 2's 4C = 1024-wide ConvNeXt MLP
+  hidden (`mlp.0` MUL_MAT → bias ADD → SILU, then `mlp.2` input) in each of the 8 blocks, and
+  stage-2 C2S `conv1`'s `[Cout·8 = 1024, N]` per-tap gather-matmul outputs and running-sum ADDs
+  (27 taps). Both are single-chunk because `kBlockChunkBytes` (1.5 GB) / (1024 × 4 B) = 384k rows
+  > N = 288,165.
+- **`[512, 768000]` f32 = 1,572,864,000 B (1.57 GB)** -- the same two roles at stage 3
+  (4C = 512 / `Cout·8` = 512), where N = 1,158,936 exceeds the budget and is chunked at
+  1.5 GB / (512 × 4 B) = 768,000 rows (two chunks: 768,000 + 390,936, the latter 801 MB).
+- **`[64, 4649838]` f32 = 1.19 GB** -- stage-3 C2S `hraw` (PAD seed, then NORM and SILU of it,
+  three allocations) and **`[64, 4649837]` = 1.19 GB** the conv2 `out` PAD seed: the
+  §5-B9 single-buffer pattern, sized by M, not by any chunk budget.
+- Next tier: `[128, 1158937]` CONCAT (sentinel-row pad of the stage-3 input, 593 MB, five of
+  them), the stage-3 input `[128, 1158936]` 566 MB, the conv2 neighbor table `[4649837, 27]` i32
+  479 MB (input), 27 `[64, 1000000]` GET_ROWS gathers per conv2 chunk (256 MB), and the skip
+  REPEAT `[4,16,1000000]` 256 MB.
+
+Same run on the res-512 fixture (`slat_sample`, N = 4377 → M = 1,188,470): largest allocation
+0.61 GB (`[512,295441]`, stage 3), C2S stage-3 gallocr 1.99 GB, everything else ≤ 1.09 GB.
+
+Implications for the WebGPU port (decision input for tiling/chunking, nothing implemented here):
+
+- **The 1.2-1.6 GB tensors are budget-driven, not structural**: every one of them is a
+  `[4C, chunk]` / `[Cout·8, chunk]` intermediate whose row count comes from `kBlockChunkBytes`
+  (1.5 GB, tuned for 24 GB VRAM; `TRELLIS_BLOCK_CHUNK_MB` / `TRELLIS_C2S_CHUNK_MB` already
+  override it). Lowering the budget shrinks them linearly with no numerical change; the cost is
+  more chunks (graph nodes: each ConvNeXt chunk ≈ 145 nodes, each C2S chunk ≈ 135, against the
+  65,536 / 262,144-node contexts and the 24 / 64 chunk caps in `sparse.cpp`). On this 4 GiB-binding
+  adapter they need no change at all.
+- **What does scale with M and is not chunked**: the `[Cout, M+1]` PAD seed buffers (1.19 GB at
+  M = 4.65M -- op-gap §10.3 verifies the PAD→CPY pattern bit-exact up to a 3 GiB seed), the
+  `[C, N]` stage inputs/outputs, the `[Ci, N+1]` sentinel CONCATs and the `[M, 27]` i32 neighbor
+  tables. These are the tensors that decide whether a buffer split is needed: on a spec-floor
+  adapter (128 MiB binding) every one of them is over the limit from stage 2 on
+  (`supports_op` rejects any node whose `ggml_nbytes` exceeds `maxStorageBufferBindingSize`), on
+  this adapter none of them is.
+- **Per-graph peaks**: the C2S stage-3 graph asks gallocr for 5.98 GB (live estimate 6.97 GB;
+  the 14 % gap is gallocr's in-place reuse). ggml-alloc splits a graph buffer into chunks of
+  `ggml_backend_buft_get_max_size` (= `maxStorageBufferBindingSize` on WebGPU), so 5.98 GB
+  becomes two `GPUBuffer`s here; whether Chrome grants ~7 GB of device buffers per tab is the
+  open question for the port and was not measured (the Shape-1024 sampling job holds the GPU).
