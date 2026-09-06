@@ -170,6 +170,32 @@ std::vector<float> proj_grid_sample(const float* fmap, int C, int H, int W,
     return out;
 }
 
+void proj_grid_bilinear_taps(int H, int W, int R, int S, const Camera& cam,
+                              std::vector<int32_t> idx[4], std::vector<float> w[4]) {
+    std::vector<float> pix, norm;
+    std::vector<uint8_t> valid;
+    proj_grid_project(R, S, cam, pix, norm, valid);
+    const size_t N = norm.size() / 2;
+    for (int t = 0; t < 4; ++t) { idx[t].resize(N); w[t].resize(N); }
+    auto clampi = [](long x, long lo, long hi) { return x < lo ? lo : (x > hi ? hi : x); };
+    for (size_t k = 0; k < N; ++k) {
+        // Same arithmetic as grid_sample_bilinear (torch grid_sample, align_corners=False,
+        // padding_mode='border'), with the four corner fetches split out.
+        const float nx = norm[k * 2 + 0], ny = norm[k * 2 + 1];
+        double u = (((double)nx + 1.0) * (double)W - 1.0) / 2.0;
+        double v = (((double)ny + 1.0) * (double)H - 1.0) / 2.0;
+        long x0 = (long)std::floor(u), y0 = (long)std::floor(v);
+        long x1 = x0 + 1, y1 = y0 + 1;
+        double wx = u - (double)x0, wy = v - (double)y0;
+        long cx0 = clampi(x0, 0, W - 1), cx1 = clampi(x1, 0, W - 1);
+        long cy0 = clampi(y0, 0, H - 1), cy1 = clampi(y1, 0, H - 1);
+        idx[0][k] = (int32_t)(cy0 * W + cx0); w[0][k] = (float)((1.0 - wx) * (1.0 - wy));
+        idx[1][k] = (int32_t)(cy0 * W + cx1); w[1][k] = (float)(wx * (1.0 - wy));
+        idx[2][k] = (int32_t)(cy1 * W + cx0); w[2][k] = (float)((1.0 - wx) * wy);
+        idx[3][k] = (int32_t)(cy1 * W + cx1); w[3][k] = (float)(wx * wy);
+    }
+}
+
 void mv_calc_mats(const float* c2w, int V, float distance0, std::vector<float>& calc) {
     calc.assign((size_t)V * 16, 0.f);
     double Fp[16];
