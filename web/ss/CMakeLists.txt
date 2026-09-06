@@ -52,11 +52,11 @@ target_link_options(pixal3d-webgpu-ss-wasm PRIVATE
   "-sALLOW_MEMORY_GROWTH=1"
   "-sINITIAL_MEMORY=268435456"
   "-sMAXIMUM_MEMORY=4294967296"
-  "-sEXPORTED_FUNCTIONS=[_pixal3d_ss_run,_pixal3d_ss_latent,_pixal3d_ss_latent_size,_pixal3d_ss_steps,_pixal3d_ss_n_steps,_pixal3d_shape512_run,_pixal3d_shape512_latent,_pixal3d_shape512_latent_size,_pixal3d_shape512_steps,_pixal3d_shape512_n_steps,_malloc,_free]"
+  "-sEXPORTED_FUNCTIONS=[_pixal3d_ss_run,_pixal3d_ss_latent,_pixal3d_ss_latent_size,_pixal3d_ss_steps,_pixal3d_ss_n_steps,_pixal3d_shape512_run,_pixal3d_shape512_latent,_pixal3d_shape512_latent_size,_pixal3d_shape512_steps,_pixal3d_shape512_n_steps,_pixal3d_texture_run,_pixal3d_texture_latent,_pixal3d_texture_latent_size,_pixal3d_texture_steps,_pixal3d_texture_n_steps,_malloc,_free]"
   "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPF32]"
   "-sMODULARIZE=1"
   "-sEXPORT_NAME=createPixal3dSS"
-  "-sJSPI_EXPORTS=[pixal3d_ss_run,pixal3d_shape512_run]"
+  "-sJSPI_EXPORTS=[pixal3d_ss_run,pixal3d_shape512_run,pixal3d_texture_run]"
   "-sENVIRONMENT=worker"
 )
 
