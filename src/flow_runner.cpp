@@ -5,6 +5,7 @@
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -186,7 +187,8 @@ std::vector<float> sample_flow(const FlowFwdProj& fwd, std::vector<float> sample
         fflush(stdout);
     };
     progress(0);
-    for (int i = 0; i < sp.steps; ++i) {
+    const int step_end = sp.step_end < 0 ? sp.steps : std::min(sp.step_end, sp.steps);
+    for (int i = std::max(0, sp.step_begin); i < step_end; ++i) {
         const float t = ts[i], tprev = ts[i + 1];
         const float gs = (sp.gi0 <= t && t <= sp.gi1) ? sp.guidance_strength : 1.0f;
         const float tscaled = 1000.0f * t;
