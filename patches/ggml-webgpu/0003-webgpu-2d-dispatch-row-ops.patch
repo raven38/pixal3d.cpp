@@ -1,0 +1,363 @@
+diff --git a/src/ggml-webgpu/ggml-webgpu.cpp b/src/ggml-webgpu/ggml-webgpu.cpp
+index 0b605fa8..eb2af676 100644
+--- a/src/ggml-webgpu/ggml-webgpu.cpp
++++ b/src/ggml-webgpu/ggml-webgpu.cpp
+@@ -848,8 +848,10 @@ static webgpu_encoded_op ggml_webgpu_pad(webgpu_context & ctx, ggml_tensor * src
+         ggml_webgpu_make_tensor_bind_group_entry(ctx, 1, dst),
+     };
+ 
+-    uint32_t wg_x = CEIL_DIV(ne, decisions->wg_size);
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x);
++    uint32_t wg_x, wg_y;
++    compute_2d_workgroups(CEIL_DIV(ne, decisions->wg_size),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ static webgpu_encoded_op ggml_webgpu_solve_tri(webgpu_context & ctx,
+@@ -1394,9 +1396,11 @@ static webgpu_encoded_op ggml_webgpu_get_rows(webgpu_context & ctx,
+     uint32_t blocks_per_row = (uint32_t) (dst->ne[0] / (src->type == GGML_TYPE_F32 && dst->ne[0] % 4 == 0 ? 4 : 1));
+     uint32_t total_rows     = (uint32_t) (dst->ne[1] * dst->ne[2] * dst->ne[3]);
+     uint32_t total_threads  = float_parallel ? blocks_per_row * total_rows : total_rows;
+-    uint32_t wg_x           = CEIL_DIV(total_threads, decisions->wg_size);
++    uint32_t wg_x, wg_y;
++    compute_2d_workgroups(CEIL_DIV(total_threads, decisions->wg_size),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
+ 
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ static void ggml_webgpu_quantize_q8_dispatch(webgpu_context &                    ctx,
+@@ -2362,8 +2366,10 @@ static webgpu_encoded_op ggml_webgpu_concat(webgpu_context & ctx,
+         entries.push_back(ggml_webgpu_make_tensor_bind_group_entry(ctx, 2, dst));
+     }
+ 
+-    uint32_t wg_x = CEIL_DIV(ne, decisions->wg_size);
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x);
++    uint32_t wg_x, wg_y;
++    compute_2d_workgroups(CEIL_DIV(ne, decisions->wg_size),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ static webgpu_encoded_op ggml_webgpu_repeat(webgpu_context & ctx, ggml_tensor * src0, ggml_tensor * dst) {
+@@ -2397,8 +2403,10 @@ static webgpu_encoded_op ggml_webgpu_repeat(webgpu_context & ctx, ggml_tensor *
+ 
+     webgpu_pipeline pipeline  = ctx->shader_lib->get_repeat_pipeline(shader_lib_ctx);
+     auto *          decisions = static_cast<ggml_webgpu_generic_shader_decisions *>(pipeline.context.get());
+-    uint32_t        wg_x      = CEIL_DIV(ne, decisions->wg_size);
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x);
++    uint32_t        wg_x, wg_y;
++    compute_2d_workgroups(CEIL_DIV(ne, decisions->wg_size),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ static std::optional<webgpu_encoded_op> ggml_webgpu_rms_norm_mul(webgpu_context & ctx,
+@@ -2514,7 +2522,10 @@ static webgpu_encoded_op ggml_webgpu_row_norm(webgpu_context & ctx, ggml_tensor
+     if (!decisions->inplace) {
+         entries.push_back(ggml_webgpu_make_tensor_bind_group_entry(ctx, 1, dst));
+     }
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, ggml_nrows(src));
++    uint32_t wg_x, wg_y;
++    compute_2d_workgroups((uint32_t) ggml_nrows(src),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ static webgpu_encoded_op ggml_webgpu_rope(webgpu_context & ctx,
+@@ -2769,7 +2780,10 @@ static webgpu_encoded_op ggml_webgpu_soft_max(webgpu_context & ctx,
+         entries.push_back(ggml_webgpu_make_tensor_bind_group_entry(ctx, binding_num, dst));
+     }
+ 
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, ggml_nrows(dst));
++    uint32_t wg_x, wg_y;
++    compute_2d_workgroups((uint32_t) ggml_nrows(dst),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ static webgpu_encoded_op ggml_webgpu_argmax(webgpu_context & ctx, ggml_tensor * src, ggml_tensor * dst) {
+@@ -2965,7 +2979,8 @@ static webgpu_encoded_op ggml_webgpu_sum_rows(webgpu_context & ctx, ggml_tensor
+                                      total_sum ? 0 : (uint32_t) (src->nb[3] / ggml_type_size(src->type)),
+                                      total_sum ? static_cast<uint32_t>(ggml_nelements(src)) : (uint32_t) src->ne[0],
+                                      total_sum ? 1 : (uint32_t) src->ne[1],
+-                                     total_sum ? 1 : (uint32_t) src->ne[2] };
++                                     total_sum ? 1 : (uint32_t) src->ne[2],
++                                     total_sum ? 1 : (uint32_t) ggml_nrows(dst) };
+ 
+     std::vector<wgpu::BindGroupEntry> entries = { ggml_webgpu_make_tensor_bind_group_entry(ctx, 0, src),
+                                                   ggml_webgpu_make_tensor_bind_group_entry(ctx, 1, dst) };
+@@ -2977,8 +2992,10 @@ static webgpu_encoded_op ggml_webgpu_sum_rows(webgpu_context & ctx, ggml_tensor
+ 
+     webgpu_pipeline pipeline = ctx->shader_lib->get_sum_rows_pipeline(shader_lib_ctx);
+ 
+-    uint32_t wg_x = total_sum ? 1 : ggml_nrows(dst);
+-    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x);
++    uint32_t wg_x, wg_y;
++    compute_2d_workgroups(total_sum ? 1 : (uint32_t) ggml_nrows(dst),
++                          ctx->global_ctx->capabilities.limits.maxComputeWorkgroupsPerDimension, wg_x, wg_y);
++    return ggml_backend_webgpu_build(ctx, pipeline, params, entries, wg_x, wg_y);
+ }
+ 
+ static bool ggml_webgpu_can_fuse_rms_norm_mul(const struct ggml_cgraph * cgraph, int node_idx) {
+diff --git a/src/ggml-webgpu/wgsl-shaders/concat.wgsl b/src/ggml-webgpu/wgsl-shaders/concat.wgsl
+index eb901bf0..3cbca920 100644
+--- a/src/ggml-webgpu/wgsl-shaders/concat.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/concat.wgsl
+@@ -54,10 +54,13 @@ var<storage, read_write> dst: array<DataType>;
+ var<uniform> params: Params;
+ #endif
+ @compute @workgroup_size(WG_SIZE)
+-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
++fn main(@builtin(global_invocation_id) gid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
+ 
+-    if (gid.x < params.ne) {
+-        var i = gid.x;
++    // elements are dispatched on a 2D grid (element = x + nx*WG_SIZE*y)
++    let tid = gid.x + (num_wg.x * WG_SIZE) * gid.y;
++    if (tid < params.ne) {
++        var i = tid;
+         let i3 = i / (params.ne2 * params.ne1 * params.ne0);
+         i = i % (params.ne2 * params.ne1 * params.ne0);
+         let i2 = i / (params.ne1 * params.ne0);
+@@ -73,9 +76,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+                              ni[2] * params.stride_src0_2 +
+                              ni[3] * params.stride_src0_3;
+ #ifdef SRC_OVERLAP
+-            dst[params.offset_dst + gid.x] = merged_src[params.offset_src0 + src_i];
++            dst[params.offset_dst + tid] = merged_src[params.offset_src0 + src_i];
+ #else
+-            dst[params.offset_dst + gid.x] = src0[params.offset_src0 + src_i];
++            dst[params.offset_dst + tid] = src0[params.offset_src0 + src_i];
+ #endif
+         } else {
+             ni[params.dim] -= params.src0_nedim;
+@@ -84,9 +87,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+                              ni[2] * params.stride_src1_2 +
+                              ni[3] * params.stride_src1_3;
+ #ifdef SRC_OVERLAP
+-            dst[params.offset_dst + gid.x] = merged_src[params.offset_src1 + src_i];
++            dst[params.offset_dst + tid] = merged_src[params.offset_src1 + src_i];
+ #else
+-            dst[params.offset_dst + gid.x] = src1[params.offset_src1 + src_i];
++            dst[params.offset_dst + tid] = src1[params.offset_src1 + src_i];
+ #endif
+         }
+     }
+diff --git a/src/ggml-webgpu/wgsl-shaders/cpy.wgsl b/src/ggml-webgpu/wgsl-shaders/cpy.wgsl
+index 67f1dc09..4f188a1a 100644
+--- a/src/ggml-webgpu/wgsl-shaders/cpy.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/cpy.wgsl
+@@ -51,12 +51,15 @@ var<uniform> params: Params;
+ @compute @workgroup_size(WG_SIZE)
+ fn main(
+     @builtin(global_invocation_id) gid: vec3<u32>,
++    @builtin(num_workgroups)       num_wg: vec3<u32>,
+ ) {
+-    if (gid.x >= params.ne) {
++    // the encoder dispatches a 2D grid (compute_2d_workgroups); element = x + nx*WG_SIZE*y
++    let tid = gid.x + (num_wg.x * WG_SIZE) * gid.y;
++    if (tid >= params.ne) {
+         return;
+     }
+ 
+-    var i = gid.x;
++    var i = tid;
+     let i3 = i / (params.src_ne2 * params.src_ne1 * params.src_ne0);
+     i = i % (params.src_ne2 * params.src_ne1 * params.src_ne0);
+     let i2 = i / (params.src_ne1 * params.src_ne0);
+@@ -64,7 +67,7 @@ fn main(
+     let i1 = i / params.src_ne0;
+     let i0 = i % params.src_ne0;
+ 
+-    var j = gid.x;
++    var j = tid;
+     let j3 = j / (params.dst_ne2 * params.dst_ne1 * params.dst_ne0);
+     j = j % (params.dst_ne2 * params.dst_ne1 * params.dst_ne0);
+     let j2 = j / (params.dst_ne1 * params.dst_ne0);
+diff --git a/src/ggml-webgpu/wgsl-shaders/get_rows.wgsl b/src/ggml-webgpu/wgsl-shaders/get_rows.wgsl
+index 78d61a93..3abfa8e6 100644
+--- a/src/ggml-webgpu/wgsl-shaders/get_rows.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/get_rows.wgsl
+@@ -715,17 +715,20 @@ struct Params {
+ var<uniform> params: Params;
+ 
+ @compute @workgroup_size(WG_SIZE)
+-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
++fn main(@builtin(global_invocation_id) gid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
++    // threads are dispatched on a 2D grid (thread = x + nx*WG_SIZE*y)
++    let tid = gid.x + (num_wg.x * WG_SIZE) * gid.y;
+ #ifdef FLOAT_PARALLEL
+     let blocks_per_row = params.ne0 / BLOCK_SIZE;
+     let row_count = params.n_rows * params.ne2 * params.ne3;
+ 
+-    if (gid.x >= blocks_per_row * row_count) {
++    if (tid >= blocks_per_row * row_count) {
+         return;
+     }
+ 
+-    let block_idx = gid.x % blocks_per_row;
+-    var row_idx = gid.x / blocks_per_row;
++    let block_idx = tid % blocks_per_row;
++    var row_idx = tid / blocks_per_row;
+     let i_dst3 = row_idx / (params.ne2 * params.n_rows);
+ 
+     row_idx = row_idx % (params.ne2 * params.n_rows);
+@@ -745,10 +748,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+ 
+     copy_elements(i_src_row, i_dst_row, block_idx);
+ #else
+-    if (gid.x >= params.n_rows * params.ne2 * params.ne3) {
++    if (tid >= params.n_rows * params.ne2 * params.ne3) {
+         return;
+     }
+-    var i = gid.x;
++    var i = tid;
+     let i_dst3 = i / (params.ne2 * params.n_rows);
+ 
+     i = i % (params.ne2 * params.n_rows);
+diff --git a/src/ggml-webgpu/wgsl-shaders/pad.wgsl b/src/ggml-webgpu/wgsl-shaders/pad.wgsl
+index ea63b9a7..c9a5f680 100644
+--- a/src/ggml-webgpu/wgsl-shaders/pad.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/pad.wgsl
+@@ -45,12 +45,15 @@ fn wrap_around(idx: i32, n: u32) -> u32 {
+ }
+ 
+ @compute @workgroup_size(WG_SIZE)
+-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+-    if (gid.x >= params.ne) {
++fn main(@builtin(global_invocation_id) gid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
++    // elements are dispatched on a 2D grid (element = x + nx*WG_SIZE*y)
++    let tid = gid.x + (num_wg.x * WG_SIZE) * gid.y;
++    if (tid >= params.ne) {
+         return;
+     }
+ 
+-    var i = gid.x;
++    var i = tid;
+     let dst_plane = params.dst_ne2 * params.dst_ne1 * params.dst_ne0;
+     let i3 = i / dst_plane;
+     i = i % dst_plane;
+@@ -82,5 +85,5 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+     }
+ #endif
+ 
+-    dst[params.offset_dst + gid.x] = value;
++    dst[params.offset_dst + tid] = value;
+ }
+diff --git a/src/ggml-webgpu/wgsl-shaders/repeat.wgsl b/src/ggml-webgpu/wgsl-shaders/repeat.wgsl
+index 6e2a1a8b..95ea22ad 100644
+--- a/src/ggml-webgpu/wgsl-shaders/repeat.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/repeat.wgsl
+@@ -42,9 +42,12 @@ var<storage, read_write> dst: array<DataType>;
+ var<uniform> params: Params;
+ 
+ @compute @workgroup_size(WG_SIZE)
+-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+-    if (gid.x < params.ne) {
+-        var i = gid.x;
++fn main(@builtin(global_invocation_id) gid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
++    // elements are dispatched on a 2D grid (element = x + nx*WG_SIZE*y)
++    let tid = gid.x + (num_wg.x * WG_SIZE) * gid.y;
++    if (tid < params.ne) {
++        var i = tid;
+         let i3 = i / (params.ne2 * params.ne1 * params.ne0);
+         i = i % (params.ne2 * params.ne1 * params.ne0);
+         let i2 = i / (params.ne1 * params.ne0);
+@@ -62,6 +65,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+                            a_i2 * params.stride_src0_2 +
+                            a_i3 * params.stride_src0_3;
+ 
+-        dst[params.offset_dst + gid.x] = src0[params.offset_src0 + a_index];
++        dst[params.offset_dst + tid] = src0[params.offset_src0 + a_index];
+     }
+ }
+diff --git a/src/ggml-webgpu/wgsl-shaders/row_norm.wgsl b/src/ggml-webgpu/wgsl-shaders/row_norm.wgsl
+index 5eaf5e7b..0495293f 100644
+--- a/src/ggml-webgpu/wgsl-shaders/row_norm.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/row_norm.wgsl
+@@ -54,10 +54,14 @@ var<workgroup> scratch: array<f32, WG_SIZE * 2u>;
+ 
+ @compute @workgroup_size(WG_SIZE)
+ fn main(@builtin(workgroup_id) wid: vec3<u32>,
+-        @builtin(local_invocation_id) lid: vec3<u32>) {
++        @builtin(local_invocation_id) lid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
+ 
+-    // one thread per row
+-    var i = wid.x;
++    // one workgroup per row; rows are dispatched on a 2D grid (row = x + nx*y)
++    var i = wid.x + num_wg.x * wid.y;
++    if (i >= params.ne1 * params.ne2 * params.ne3) {
++        return;
++    }
+     let i3 = i / (params.ne2 * params.ne1);
+     i = i % (params.ne2 * params.ne1);
+     let i2 = i / params.ne1;
+diff --git a/src/ggml-webgpu/wgsl-shaders/soft_max.wgsl b/src/ggml-webgpu/wgsl-shaders/soft_max.wgsl
+index 10edf136..14916953 100644
+--- a/src/ggml-webgpu/wgsl-shaders/soft_max.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/soft_max.wgsl
+@@ -158,9 +158,14 @@ var<workgroup> scratch: array<f32, WG_SIZE>;
+ 
+ @compute @workgroup_size(WG_SIZE)
+ fn main(@builtin(workgroup_id) wid: vec3<u32>,
+-        @builtin(local_invocation_id) lid: vec3<u32>) {
++        @builtin(local_invocation_id) lid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
+ 
+-    var i = wid.x;
++    // one workgroup per row; rows are dispatched on a 2D grid (row = x + nx*y)
++    var i = wid.x + num_wg.x * wid.y;
++    if (i >= params.ne / params.ne0) {
++        return;
++    }
+     let i3 = i / (params.ne2 * params.ne1);
+     i = i % (params.ne2 * params.ne1);
+     let i2 = i / params.ne1;
+diff --git a/src/ggml-webgpu/wgsl-shaders/sum_rows.wgsl b/src/ggml-webgpu/wgsl-shaders/sum_rows.wgsl
+index 6ea2de9b..982303a0 100644
+--- a/src/ggml-webgpu/wgsl-shaders/sum_rows.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/sum_rows.wgsl
+@@ -15,7 +15,8 @@ struct Params {
+ 
+     ne0: u32,
+     ne1: u32,
+-    ne2: u32
++    ne2: u32,
++    n_rows: u32
+ };
+ 
+ @group(0) @binding(2)
+@@ -25,9 +26,15 @@ var<workgroup> shared_sum: array<f32, WG_SIZE>;
+ 
+ @compute @workgroup_size(WG_SIZE)
+ fn main(@builtin(workgroup_id) wid: vec3<u32>,
+-        @builtin(local_invocation_id) lid: vec3<u32>) {
++        @builtin(local_invocation_id) lid: vec3<u32>,
++        @builtin(num_workgroups) num_wg: vec3<u32>) {
+ 
+-    var i = wid.x;
++    // one workgroup per row; rows are dispatched on a 2D grid (row = x + nx*y)
++    let row = wid.x + num_wg.x * wid.y;
++    if (row >= params.n_rows) {
++        return;
++    }
++    var i = row;
+     let i3 = i / (params.ne2 * params.ne1);
+     i = i % (params.ne2 * params.ne1);
+     let i2 = i / params.ne1;
+@@ -50,6 +57,6 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
+     }
+ 
+     if (lid.x == 0) {
+-        dst[params.offset_dst + wid.x] = shared_sum[0];
++        dst[params.offset_dst + row] = shared_sum[0];
+     }
+ }
