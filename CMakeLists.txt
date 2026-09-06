@@ -491,4 +491,10 @@ if(GGML_WEBGPU)
     find_package(Dawn REQUIRED)
     target_link_libraries(trellis-webgpu-smoke PRIVATE dawn::webgpu_dawn)
   endif()
+  # Op regression for patches/ggml-webgpu/0003 (2D dispatch of row-parallel ops) and the batched
+  # mul_mat shapes of the NAF attention graph: WebGPU vs ggml-cpu on identical inputs.
+  add_executable(trellis-webgpu-ops src/test_webgpu_ops.cpp)
+  target_include_directories(trellis-webgpu-ops PRIVATE ${GGML_DIR}/include)
+  target_link_libraries(trellis-webgpu-ops PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+  set_target_properties(trellis-webgpu-ops PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 endif()
