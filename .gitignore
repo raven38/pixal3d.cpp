@@ -30,6 +30,9 @@ dumps/
 # WASM smoke build artifacts (scripts/build_wasm_smoke.sh)
 web/smoke/pixal3d_smoke.js
 web/smoke/pixal3d_smoke.wasm
+# WASM op-regression build artifacts (web/smoke/CMakeLists.txt target pixal3d-webgpu-ops-wasm)
+web/ops/pixal3d_ops.js
+web/ops/pixal3d_ops.wasm
 build-wasm/
 build-webgpu/
 # WASM SS build artifacts (scripts/build_wasm_ss.sh)

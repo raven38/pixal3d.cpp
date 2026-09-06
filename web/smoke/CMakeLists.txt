@@ -55,3 +55,29 @@ set_target_properties(pixal3d-webgpu-smoke-wasm PROPERTIES
   OUTPUT_NAME "pixal3d_smoke"
   SUFFIX ".js"
 )
+
+# Browser build of the op regression (src/test_webgpu_ops.cpp, web/ops/): the same cases as the
+# native trellis-webgpu-ops, entered through webgpu_ops_run(args). Same JSPI/emdawnwebgpu wiring
+# as the smoke test; the wasm heap may grow to 4 GB because the CPU reference of a 1 GB case
+# lives in it too (pass --budget-mb to keep cases under what the tab can hold).
+add_executable(pixal3d-webgpu-ops-wasm ${CMAKE_CURRENT_SOURCE_DIR}/../../src/test_webgpu_ops.cpp)
+target_include_directories(pixal3d-webgpu-ops-wasm PRIVATE ${GGML_DIR}/include)
+target_link_libraries(pixal3d-webgpu-ops-wasm PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+target_compile_options(pixal3d-webgpu-ops-wasm PRIVATE "-fwasm-exceptions")
+target_link_options(pixal3d-webgpu-ops-wasm PRIVATE
+  "--use-port=emdawnwebgpu"
+  "-sJSPI"
+  "-fwasm-exceptions"
+  "-sALLOW_MEMORY_GROWTH=1"
+  "-sMAXIMUM_MEMORY=4GB"
+  "-sEXPORTED_FUNCTIONS=[_webgpu_ops_run,_malloc,_free]"
+  "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString]"
+  "-sMODULARIZE=1"
+  "-sEXPORT_NAME=createPixal3dOps"
+  "-sJSPI_EXPORTS=[webgpu_ops_run]"
+)
+set_target_properties(pixal3d-webgpu-ops-wasm PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../ops"
+  OUTPUT_NAME "pixal3d_ops"
+  SUFFIX ".js"
+)
