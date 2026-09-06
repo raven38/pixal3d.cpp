@@ -160,6 +160,7 @@ struct GraphRun {
         for (ggml_tensor* r : roots) ggml_build_forward_expand(g, r);
         ggml_build_forward_expand(g, out);
         trellis_graph_dump(tag, g);
+        check_graph_supported(m.backend, g, tag);   // WebGPU: throw rather than silently skip a node
         alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
         if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("c2s: alloc failed");
         if (getenv("TRELLIS_DBG_ALLOC"))
