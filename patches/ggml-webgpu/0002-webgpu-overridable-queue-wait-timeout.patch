@@ -1,0 +1,17 @@
+diff --git a/src/ggml-webgpu/ggml-webgpu.cpp bb/src/ggml-webgpu/ggml-webgpu.cpp
+index 6232bae..65208a0 100644
+--- a/src/ggml-webgpu/ggml-webgpu.cpp
++++ b/src/ggml-webgpu/ggml-webgpu.cpp
+@@ -97,7 +97,12 @@ static inline uint32_t ggml_webgpu_u32_from_f32(float value) {
+ 
+ #define WEBGPU_DEFAULT_COMMAND_SUBMIT_BATCH_SIZE 64u
+ #define WEBGPU_NUM_PARAM_SLOT_SAFETY_MARGIN      10u
++// Ceiling on one queue/event wait. A single graph submission can legitimately take longer than
++// the upstream 30 s on slow adapters (a 30-block DiT forward in a browser), so builds may
++// override it: -DWEBGPU_RUNTIME_WAIT_TIMEOUT_MS=600000u.
++#ifndef WEBGPU_RUNTIME_WAIT_TIMEOUT_MS
+ #define WEBGPU_RUNTIME_WAIT_TIMEOUT_MS           30000u
++#endif
+ #define WEBGPU_RUNTIME_WAIT_TIMEOUT_NS           (WEBGPU_RUNTIME_WAIT_TIMEOUT_MS * 1e6)
+ #define WEBGPU_PARAMS_BUF_SIZE_BYTES             128  // enough for 32 parameters
+ #define WEBGPU_SET_ROWS_ERROR_BUF_SIZE_BYTES     4
