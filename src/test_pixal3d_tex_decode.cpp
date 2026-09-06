@@ -20,14 +20,22 @@
 // Channel layout (docs/spec/11-tex_dec.md): [0:3]=base_color RGB, [3]=metallic, [4]=roughness,
 // [5]=alpha.
 //
-//   trellis-test-pixal3d-tex-decode <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> [gpu]
+//   trellis-test-pixal3d-tex-decode <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> [gpu] [--res R]
+//                                   [--dump-attrs PREFIX] [--ext-attrs PREFIX]
+//
+// --dump-attrs PREFIX writes PREFIXattrs.npy ([M,6] f32, PRE *0.5+0.5, i.e. tex_decode()'s raw
+// return) and PREFIXcoords.npy ([M,3] i32, this run's final coords); --ext-attrs PREFIX scores
+// such a dump (e.g. the browser run's, web/tex_decode/run_playwright.js) instead of decoding --
+// one scorer for CUDA, native WebGPU and Chrome (docs/spec/31-webgpu-bringup.md §12).
 #include "trellis_model.h"
 #include "shape_decoder.h"
 #include "npy.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -79,66 +87,114 @@ static uint64_t coord_key(int x, int y, int z) {
     return ((uint64_t)(uint32_t)(x + (1 << 20)) << 42) | ((uint64_t)(uint32_t)(y + (1 << 20)) << 21) | (uint32_t)(z + (1 << 20));
 }
 
-struct ChanStats { double max_abs = 0, mean_abs = 0, ref_mean = 0, ref_var = 0; };
+// Running min/max/mean/std of one channel (two-pass-free: sum / sum of squares in double).
+struct Moments {
+    double mn = 1e30, mx = -1e30, sum = 0, sq = 0; int64_t n = 0;
+    void add(double v) { mn = std::min(mn, v); mx = std::max(mx, v); sum += v; sq += v * v; ++n; }
+    double mean() const { return n ? sum / n : 0; }
+    double std() const { if (!n) return 0; double m = mean(); return std::sqrt(std::max(0.0, sq / n - m * m)); }
+};
 
 int main(int argc, char** argv) {
     if (argc < 4) {
-        fprintf(stderr, "usage: %s <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> [gpu]\n", argv[0]);
+        fprintf(stderr, "usage: %s <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> [gpu] [--res R] [--dump-attrs PREFIX] [--ext-attrs PREFIX]\n", argv[0]);
         return 1;
     }
     const string shape_gguf = argv[1], tex_gguf = argv[2], fdir = argv[3];
-    const int gpu = argc > 4 ? atoi(argv[4]) : 0;
+    int gpu = 0, res_override = 0;
+    string dump_prefix, ext_prefix;
+    for (int i = 4; i < argc; ++i) {
+        string a = argv[i];
+        if (a == "--res" && i + 1 < argc) res_override = atoi(argv[++i]);
+        else if (a == "--dump-attrs" && i + 1 < argc) dump_prefix = argv[++i];
+        else if (a == "--ext-attrs" && i + 1 < argc) ext_prefix = argv[++i];
+        else gpu = atoi(argv[i]);
+    }
     printf("fixture_dir=%s gpu=%d\n", fdir.c_str(), gpu);
 
     // production default: fp16 torso (no --f32, no TRELLIS_F32W) -- both shape_dec and tex_dec
     // checkpoints declare use_fp16=True and the fixture leaves the decoders at that default.
     if (getenv("TRELLIS_F32W")) { trellis::g_sparse_cast_f32 = true; printf("(TRELLIS_F32W: f32 weight compute -- NOT production default)\n"); }
 
-    I32Array co = load_npy_i32(fdir + "/hr_coords.npy");                // [Nh,4] (b,x,y,z)
-    npy::Array shape_slat = npy::load(fdir + "/f32_shape_slat.npy");    // [Nh,32] denormalized
+    auto exists = [](const string& p) { FILE* f = fopen(p.c_str(), "rb"); if (!f) return false; fclose(f); return true; };
+    const string coords_path = exists(fdir + "/coords.npy") ? fdir + "/coords.npy" : fdir + "/hr_coords.npy";
+    const string shape_path = exists(fdir + "/f32_slat.npy") ? fdir + "/f32_slat.npy" : fdir + "/f32_shape_slat.npy";
+    I32Array co = load_npy_i32(coords_path);                            // [Nh,4] (b,x,y,z)
+    npy::Array shape_slat = npy::load(shape_path);                      // [Nh,32] denormalized
     npy::Array tex_slat   = npy::load(fdir + "/f32_tex_slat.npy");      // [Nh,32] denormalized
     npy::Array ref_attrs  = npy::load(fdir + "/f32_tex_attrs.npy");     // [Nt,6] already *0.5+0.5
     I32Array   ref_coords = load_npy_i32(fdir + "/f32_tex_coords.npy"); // [Nt,3]
 
     const int64_t Nh = co.shape.empty() ? 0 : co.shape[0];
     if (shape_slat.shape[0] != Nh || tex_slat.shape[0] != Nh) {
-        fprintf(stderr, "slat rows (shape=%lld tex=%lld) != hr_coords Nh=%lld\n",
+        fprintf(stderr, "slat rows (shape=%lld tex=%lld) != coords Nh=%lld\n",
                 (long long)shape_slat.shape[0], (long long)tex_slat.shape[0], (long long)Nh);
         return 1;
     }
     const int cw = (int)co.shape[1], c0 = cw - 3;
     vector<array<int,3>> coords0(Nh);
-    for (int64_t i = 0; i < Nh; ++i)
+    int cmax = 0;
+    for (int64_t i = 0; i < Nh; ++i) {
         coords0[i] = { co.data[i*cw + c0], co.data[i*cw + c0 + 1], co.data[i*cw + c0 + 2] };
+        cmax = std::max({ cmax, coords0[i][0], coords0[i][1], coords0[i][2] });
+    }
+    const int in_res = cmax < 32 ? 32 : 64;
+    const int resolution = res_override > 0 ? res_override : in_res * 16;
     // [N,32] row-major == ggml [32,N] channel-major (ne0=32): direct flat copy, no transpose.
     vector<float> shape_latent(shape_slat.data.begin(), shape_slat.data.begin() + (size_t)32 * Nh);
     vector<float> tex_latent(tex_slat.data.begin(), tex_slat.data.begin() + (size_t)32 * Nh);
 
-    printf("input: Nh=%lld HR sparse-token voxels @grid-64\n", (long long)Nh);
+    printf("input: Nh=%lld HR sparse-token voxels @grid-%d (%s) -> decode @res%d\n", (long long)Nh, in_res, coords_path.c_str(), resolution);
 
-    // ---- Stage A: shape_decode @res1024 -- only to obtain so.subs (guide_subs for tex_decode)
-    // and so.coords (which must equal the tex decoder's own upsampled coords, since both share
-    // the identical subdivision masks starting from the identical input coords0). ----
-    trellis::ShapeOut so;
-    {
-        trellis::Model m = trellis::Model::load(shape_gguf, gpu);
-        printf("loaded shape_dec: %s (%zu tensors)\n", m.arch.c_str(), m.tensors.size());
-        so = trellis::shape_decode(m, shape_latent, coords0, /*resolution=*/1024);
-        m.free();
+    vector<float> pbr;                    // [6*M] channel-major == [M,6] row-major, PRE *0.5+0.5
+    vector<array<int,3>> fcoords;         // final voxel coords (mine)
+    if (ext_prefix.empty()) {
+        // ---- Stage A: shape_decode -- only to obtain so.subs (guide_subs for tex_decode)
+        // and so.coords (which must equal the tex decoder's own upsampled coords, since both share
+        // the identical subdivision masks starting from the identical input coords0). ----
+        trellis::ShapeOut so;
+        {
+            trellis::Model m = trellis::Model::load(shape_gguf, gpu);
+            printf("loaded shape_dec: %s (%zu tensors) on %s\n", m.arch.c_str(), m.tensors.size(), ggml_backend_name(m.backend));
+            const auto t0 = std::chrono::steady_clock::now();
+            so = trellis::shape_decode(m, shape_latent, coords0, resolution);
+            printf("shape_decode: subs stages=%zu, final coords M=%d @res%d  (%.1f s)\n", so.subs.size(), (int)so.coords.size(), so.res,
+                   std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+            m.free();
+        }
+        // ---- Stage B: tex_decode driven by so.subs, at the SAME coords0 input. ----
+        {
+            trellis::Model m = trellis::Model::load(tex_gguf, gpu);
+            printf("loaded tex_dec: %s (%zu tensors) on %s\n", m.arch.c_str(), m.tensors.size(), ggml_backend_name(m.backend));
+            const auto t0 = std::chrono::steady_clock::now();
+            pbr = trellis::tex_decode(m, tex_latent, coords0, so.subs);
+            printf("tex_decode: [6*M] = %zu floats  (%.1f s)\n", pbr.size(),
+                   std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+            m.free();
+        }
+        fcoords = std::move(so.coords);
+        if (!dump_prefix.empty()) {
+            vector<int32_t> ci(fcoords.size() * 3);
+            for (size_t i = 0; i < fcoords.size(); ++i) for (int a = 0; a < 3; ++a) ci[3*i + a] = fcoords[i][a];
+            npy::save(dump_prefix + "attrs.npy", pbr.data(), { (int64_t)fcoords.size(), 6 });
+            npy::save_i32(dump_prefix + "coords.npy", ci.data(), { (int64_t)fcoords.size(), 3 });
+            printf("dumped %sattrs.npy (PRE *0.5+0.5) / coords.npy\n", dump_prefix.c_str());
+        }
+    } else {
+        npy::Array ea = npy::load(ext_prefix + "attrs.npy");       // [M,6] PRE *0.5+0.5
+        I32Array ec = load_npy_i32(ext_prefix + "coords.npy");     // [M,3]
+        if (ea.shape.size() != 2 || ea.shape[1] != 6 || ec.shape.size() != 2 || ec.shape[1] != 3 || ea.shape[0] != ec.shape[0]) {
+            fprintf(stderr, "external dump %s: attrs/coords shape mismatch\n", ext_prefix.c_str());
+            return 1;
+        }
+        pbr = std::move(ea.data);
+        fcoords.resize((size_t)ec.shape[0]);
+        for (size_t i = 0; i < fcoords.size(); ++i) fcoords[i] = { ec.data[3*i], ec.data[3*i+1], ec.data[3*i+2] };
+        printf("external attrs %s: M=%zu (no decode here)\n", ext_prefix.c_str(), fcoords.size());
     }
-    printf("shape_decode: subs stages=%zu, final coords M=%d @res%d\n", so.subs.size(), (int)so.coords.size(), so.res);
-
-    // ---- Stage B: tex_decode driven by so.subs, at the SAME coords0 input. ----
-    vector<float> pbr;   // [6*M] channel-major, PRE *0.5+0.5
-    {
-        trellis::Model m = trellis::Model::load(tex_gguf, gpu);
-        printf("loaded tex_dec: %s (%zu tensors)\n", m.arch.c_str(), m.tensors.size());
-        pbr = trellis::tex_decode(m, tex_latent, coords0, so.subs);
-        m.free();
-    }
-    const int64_t M = (int64_t)so.coords.size();
+    const int64_t M = (int64_t)fcoords.size();
     if ((int64_t)pbr.size() != 6 * M) {
-        fprintf(stderr, "tex_decode returned %zu floats, expected 6*M=%lld\n", pbr.size(), (long long)(6*M));
+        fprintf(stderr, "tex attrs hold %zu floats, expected 6*M=%lld\n", pbr.size(), (long long)(6*M));
         return 1;
     }
     vector<float> mine(6 * M);
@@ -152,62 +208,67 @@ int main(int argc, char** argv) {
     std::unordered_map<uint64_t, int64_t> mine_by_coord;
     mine_by_coord.reserve((size_t)M * 2);
     for (int64_t i = 0; i < M; ++i) {
-        const auto& c = so.coords[i];
+        const auto& c = fcoords[i];
         mine_by_coord[coord_key(c[0], c[1], c[2])] = i;
     }
     const int64_t Nt = ref_attrs.shape[0];
     int64_t matched = 0;
-    ChanStats ch[6];
-    vector<double> ref_sum(6, 0.0), ref_sumsq(6, 0.0);
+    // per channel, over the MATCHED voxels: both distributions, the difference, and the dot
+    // products for the cosine; plus the reference's distribution over ALL its Nt voxels.
+    Moments mm[6], mr[6], md[6], mr_all[6];
+    double dot[6] = {0,0,0,0,0,0}, nn_m[6] = {0,0,0,0,0,0}, nn_r[6] = {0,0,0,0,0,0};
     for (int64_t t = 0; t < Nt; ++t) {
         const int x = ref_coords.data[3*t], y = ref_coords.data[3*t+1], z = ref_coords.data[3*t+2];
-        for (int k = 0; k < 6; ++k) { double v = ref_attrs.data[6*t+k]; ref_sum[k] += v; ref_sumsq[k] += v*v; }
+        for (int k = 0; k < 6; ++k) mr_all[k].add(ref_attrs.data[6*t+k]);
         auto it = mine_by_coord.find(coord_key(x, y, z));
         if (it == mine_by_coord.end()) continue;
         ++matched;
         const int64_t mi = it->second;
         for (int k = 0; k < 6; ++k) {
-            const double d = std::fabs((double)mine[6*mi + k] - (double)ref_attrs.data[6*t + k]);
-            ch[k].max_abs = std::max(ch[k].max_abs, d);
-            ch[k].mean_abs += d;
+            const double a = mine[6*mi + k], b = ref_attrs.data[6*t + k];
+            mm[k].add(a); mr[k].add(b); md[k].add(std::fabs(a - b));
+            dot[k] += a * b; nn_m[k] += a * a; nn_r[k] += b * b;
         }
     }
-    for (int k = 0; k < 6; ++k) {
-        if (matched) ch[k].mean_abs /= matched;
-        ch[k].ref_mean = ref_sum[k] / std::max<int64_t>(Nt, 1);
-        ch[k].ref_var = ref_sumsq[k] / std::max<int64_t>(Nt, 1) - ch[k].ref_mean * ch[k].ref_mean;
-    }
+    const int64_t extra = M - matched, missing = Nt - matched;
     const double iou = (matched > 0) ? (double)matched / (double)(M + Nt - matched) : 0.0;
 
     printf("\n=== coordinate-set match ===\n");
-    printf("  matched voxels: %lld / mine=%lld ref=%lld   IoU=%.4f\n",
-           (long long)matched, (long long)M, (long long)Nt, iou);
+    printf("  matched voxels: %lld / mine=%lld ref=%lld   extra(mine only)=%lld missing(ref only)=%lld   IoU=%.4f   flips=%.3f %%\n",
+           (long long)matched, (long long)M, (long long)Nt, (long long)extra, (long long)missing, iou,
+           Nt ? 100.0 * (double)(extra + missing) / (double)Nt : 0.0);
 
     static const char* names[6] = {"base_R", "base_G", "base_B", "metallic", "roughness", "alpha"};
-    printf("\n=== per-channel diff on matched voxels (mine vs reference, both in [0,1] post *0.5+0.5) ===\n");
-    printf("  %-10s %10s %10s %12s %12s\n", "channel", "max|d|", "mean|d|", "ref_mean", "ref_var");
-    for (int k = 0; k < 6; ++k)
-        printf("  %-10s %10.4f %10.4f %12.4f %12.6f\n", names[k], ch[k].max_abs, ch[k].mean_abs, ch[k].ref_mean, ch[k].ref_var);
+    printf("\n=== per-channel distributions on the matched voxels (both in [0,1] post *0.5+0.5) ===\n");
+    printf("  %-10s | %8s %8s %8s %8s | %8s %8s %8s %8s | %s\n", "channel", "min", "max", "mean", "std", "ref_min", "ref_max", "ref_mean", "ref_std", "ref(all Nt): std, near-constant?");
+    bool near_const[6];
+    for (int k = 0; k < 6; ++k) {
+        near_const[k] = mr_all[k].std() < 1e-3;
+        printf("  %-10s | %8.4f %8.4f %8.4f %8.4f | %8.4f %8.4f %8.4f %8.4f | %.2e %s\n", names[k],
+               mm[k].mn, mm[k].mx, mm[k].mean(), mm[k].std(), mr[k].mn, mr[k].mx, mr[k].mean(), mr[k].std(),
+               mr_all[k].std(), near_const[k] ? "YES (std<1e-3)" : "no");
+    }
+    printf("\n=== per-channel diff on matched voxels (mine vs reference) ===\n");
+    printf("  rel = max|d| / max|ref|;  nrm = mean|d| / std(ref, matched) (-- when ref std < 1e-3: near-constant channel, ratio meaningless);\n"
+           "  cos = raw cosine of the two channel vectors (~1 for any near-constant channel; informative for base_color only)\n");
+    printf("  %-10s %10s %10s %10s %10s %10s\n", "channel", "max|d|", "mean|d|", "rel", "nrm", "cos");
+    for (int k = 0; k < 6; ++k) {
+        const double refmax = std::max(std::fabs(mr[k].mn), std::fabs(mr[k].mx));
+        const double rel = refmax > 0 ? md[k].mx / refmax : 0.0;
+        const double cosv = (nn_m[k] > 0 && nn_r[k] > 0) ? dot[k] / std::sqrt(nn_m[k] * nn_r[k]) : 0.0;
+        char nrm[24];
+        if (mr[k].std() >= 1e-3) snprintf(nrm, sizeof nrm, "%10.3e", md[k].mean() / mr[k].std()); else snprintf(nrm, sizeof nrm, "%10s", "--");
+        printf("  %-10s %10.4f %10.2e %10.3e %s %10.6f\n", names[k], md[k].mx, md[k].mean(), rel, nrm, cosv);
+    }
 
     printf("\n=== verdict ===\n");
     const bool coord_ok = iou > 0.90;
     // Parity is judged per channel against the reference decode of the same SLAT. A channel that
     // is flat in BOTH (e.g. metallic/roughness on assets without metals) is a match, not a bug.
-    bool attrs_ok = true;
-    for (int k = 0; k < 6; ++k) attrs_ok = attrs_ok && ch[k].max_abs < 0.15 && ch[k].mean_abs < 5e-3;
-    double mine_var[6] = {0,0,0,0,0,0};
-    if (matched > 0) {
-        vector<double> msum(6,0.0), msumsq(6,0.0);
-        for (int64_t t = 0; t < Nt; ++t) {
-            const int x = ref_coords.data[3*t], y = ref_coords.data[3*t+1], z = ref_coords.data[3*t+2];
-            auto it = mine_by_coord.find(coord_key(x, y, z));
-            if (it == mine_by_coord.end()) continue;
-            for (int k = 0; k < 6; ++k) { double v = mine[6*it->second+k]; msum[k]+=v; msumsq[k]+=v*v; }
-        }
-        for (int k = 0; k < 6; ++k) { double mm = msum[k]/matched; mine_var[k] = msumsq[k]/matched - mm*mm; }
-    }
+    bool attrs_ok = matched > 0;
+    for (int k = 0; k < 6; ++k) attrs_ok = attrs_ok && md[k].mx < 0.15 && md[k].mean() < 5e-3;
     printf("per-channel variance mine vs ref:");
-    for (int k = 0; k < 6; ++k) printf("  %s %.2e/%.2e", names[k], mine_var[k], ch[k].ref_var);
+    for (int k = 0; k < 6; ++k) printf("  %s %.2e/%.2e", names[k], mm[k].std() * mm[k].std(), mr[k].std() * mr[k].std());
     printf("\ncoord_ok(IoU>0.90)=%s  attrs_ok(max|d|<0.15, mean|d|<5e-3 all channels)=%s\n",
            coord_ok ? "yes" : "no", attrs_ok ? "yes" : "no");
     printf(coord_ok && attrs_ok ? "PASS (tex_decode reproduces the reference per-voxel PBR attributes)\n"
