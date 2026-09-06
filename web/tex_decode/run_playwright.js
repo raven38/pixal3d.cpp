@@ -1,20 +1,21 @@
-// Drives web/shape_decode/index.html in a real Chrome (WebGPU + JSPI), saves the report and the
-// mesh files the module returned (browser_verts/faces/coords.npy) so the native scorer can
+// Drives web/tex_decode/index.html in a real Chrome (WebGPU + JSPI), saves the report and the
+// attribute files the module returned (browser_attrs/coords.npy) so the native scorer can
 // compare them with the reference:
-//   trellis-test-pixal3d-shape-decode <shape_dec.gguf> <fixture_dir> --ext-mesh <out_dir>/browser_
+//   trellis-test-pixal3d-tex-decode <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> --ext-attrs <out_dir>/browser_
 // Usage (from web/, with `python3 -m http.server 8199` serving it; PIXAL3D_WEB_PORT overrides the port):
-//   node shape_decode/run_playwright.js <shape_dec.gguf> <fixture_dir> <out_dir> [res]
+//   node tex_decode/run_playwright.js <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> <out_dir> [res]
 // Only the fixture files the module reads are handed over (coords / hr_coords, f32_slat /
-// f32_shape_slat, f32_tex_coords). Needs `playwright` resolvable by node (channel 'chrome').
+// f32_shape_slat, f32_tex_slat, f32_tex_coords, f32_tex_attrs). Needs `playwright` resolvable by
+// node (channel 'chrome').
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
 (async () => {
-  const [gguf, fixtureDir, outDir, resArg] = process.argv.slice(2);
+  const [shapeGguf, texGguf, fixtureDir, outDir, resArg] = process.argv.slice(2);
   const res = resArg || '0';
   fs.mkdirSync(outDir, { recursive: true });
-  const keep = /^(coords|hr_coords|f32_slat|f32_shape_slat|f32_tex_coords)\.npy$/;
+  const keep = /^(coords|hr_coords|f32_slat|f32_shape_slat|f32_tex_slat|f32_tex_coords|f32_tex_attrs)\.npy$/;
   const fixtureFiles = fs.readdirSync(fixtureDir).filter(f => keep.test(f)).map(f => path.join(fixtureDir, f));
   const browser = await chromium.launch({
     channel: 'chrome', headless: false,
@@ -26,8 +27,9 @@ const { chromium } = require('playwright');
   page.on('console', m => consoleLog.push('[' + m.type() + '] ' + m.text()));
   const downloads = [];
   page.on('download', d => downloads.push(d));
-  await page.goto('http://localhost:' + (process.env.PIXAL3D_WEB_PORT || '8199') + '/shape_decode/index.html', { waitUntil: 'load' });
-  await page.setInputFiles('#model', [gguf]);
+  await page.goto('http://localhost:' + (process.env.PIXAL3D_WEB_PORT || '8199') + '/tex_decode/index.html', { waitUntil: 'load' });
+  await page.setInputFiles('#shape_model', [shapeGguf]);
+  await page.setInputFiles('#tex_model', [texGguf]);
   await page.setInputFiles('#fixture', fixtureFiles);
   await page.fill('#res', res);
   const t0 = Date.now();
@@ -46,9 +48,9 @@ const { chromium } = require('playwright');
   const text = await page.$eval('#out', el => el.textContent);
   fs.writeFileSync(path.join(outDir, 'report.txt'), text + '\nplaywright wall ' + wall.toFixed(1) + ' s\n' + title + '\n');
   fs.writeFileSync(path.join(outDir, 'console.txt'), consoleLog.join('\n'));
-  // the page starts one download per mesh file right before it sets the title
+  // the page starts one download per attribute file right before it sets the title
   const deadline = Date.now() + 120000;
-  while (downloads.length < 3 && Date.now() < deadline) await new Promise(r => setTimeout(r, 500));
+  while (downloads.length < 2 && Date.now() < deadline) await new Promise(r => setTimeout(r, 500));
   for (const d of downloads) {
     const dest = path.join(outDir, d.suggestedFilename());
     await d.saveAs(dest);
