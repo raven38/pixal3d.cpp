@@ -49,7 +49,10 @@
 //   channels first (0:32), concat_cond appended after (32:64) -- matching trellis_cli.cpp.
 //   trellis-test-pixal3d-slat-sample <flow.gguf> <fixture_dir> [gpu] [--stage shape512|shape_hr|tex]
 //                                    [--backend cpu|gpu|cuda|metal|vulkan|webgpu] [--noise FILE]
-//                                    [--concat-cond FILE] [--dump DIR] [--ext PREFIX]
+//                                    [--concat-cond FILE] [--dump DIR] [--ext PREFIX] [--probe-steps k1,k2,..]
+//   --probe-steps  single-step gates: integrate sampler step k once from the f32 reference's
+//                 x_step{k-1} and score it against x_step{k} (f32 / cuda / cuda_nofa), then exit --
+//                 early/middle/late probes before committing to a full 12-step run on a slow backend.
 //   --stage       `texture` is an alias of `tex`, `shape1024` of `shape_hr` (the names the WebGPU
 //                 phases use; docs/spec/32-texture-flow-webgpu-prep.md).
 //   --backend B   the same device selection the SS / Shape-512 tests and the WASM entry use
@@ -223,10 +226,11 @@ int main(int argc, char** argv) {
     const string gguf_flow = argv[1], fdir = argv[2];
     int gpu = 0;
     bool gpu_given = false;
-    string stage_name = "shape512", dump_dir, ext_prefix, backend_req, noise_path, concat_path;
+    string stage_name = "shape512", dump_dir, ext_prefix, backend_req, noise_path, concat_path, probe_arg;
     for (int i = 3; i < argc; ++i) {
         string a = argv[i];
         if (a == "--stage" && i + 1 < argc) stage_name = argv[++i];
+        else if (a == "--probe-steps" && i + 1 < argc) probe_arg = argv[++i];
         else if (a == "--dump" && i + 1 < argc) dump_dir = argv[++i];
         else if (a == "--ext" && i + 1 < argc) ext_prefix = argv[++i];
         else if (a == "--backend" && i + 1 < argc) backend_req = argv[++i];
@@ -372,6 +376,7 @@ int main(int argc, char** argv) {
         const bool ok = backend_req == "cpu" ? is_cpu
                       : backend_req == "gpu" ? !is_cpu
                       : backend_req == "hip" ? (bn.find("hip") != string::npos || bn.find("rocm") != string::npos)   // ggml-cuda under HIP reports "ROCm"
+                      : backend_req == "metal" ? (bn.find("metal") != string::npos || bn.find("mtl") != string::npos)   // ggml-metal reports "MTL0"
                       : bn.find(backend_req) != string::npos;
         if (!ok) {
             fprintf(stderr, "--backend %s requested but the model loaded on '%s' (this build's GPU device is a different backend, or gpu=%d picked the CPU)\n",
@@ -462,6 +467,62 @@ int main(int argc, char** argv) {
         }
     }
 
+    auto lat_stats = [&](const vector<float>& v) {
+        double m = 0, mx = 0; size_t bad = 0;
+        for (float x : v) { if (!std::isfinite(x)) { ++bad; continue; } m += x; mx = std::max(mx, (double)std::fabs(x)); }
+        m /= v.size(); double var = 0; for (float x : v) if (std::isfinite(x)) var += (x - m) * (x - m);
+        printf("    latent mean=%+.6f std=%.6f max|x|=%.4f nonfinite=%zu\n", m, std::sqrt(var / v.size()), mx, bad);
+    };
+    // --probe-steps k1,k2,...: single-step gates before a full run. For each k the step k of the
+    // sampler (t = ts[k-1] -> ts[k], the same schedule sample_flow builds) is integrated ONCE from
+    // the f32 reference's x_step{k-1} and the result is scored against x_step{k} of the f32 / cuda
+    // / cuda_nofa references, so a divergence is attributed to one forward instead of to the
+    // accumulated trajectory. One forward per step (two inside a CFG interval); guidance rescale is
+    // not reproduced here (the tex sampler has none) -- probes of a rescaled step are refused.
+    if (!probe_arg.empty()) {
+        vector<int> probe;
+        for (size_t i0 = 0; i0 < probe_arg.size();) {
+            size_t i1 = probe_arg.find(',', i0); if (i1 == string::npos) i1 = probe_arg.size();
+            probe.push_back(atoi(probe_arg.substr(i0, i1 - i0).c_str())); i0 = i1 + 1;
+        }
+        vector<float> ts(sp.steps + 1);
+        for (int i = 0; i <= sp.steps; ++i) { const float t = 1.0f - (float)i / sp.steps; ts[i] = sp.rescale_t * t / (1.0f + (sp.rescale_t - 1.0f) * t); }
+        bool probe_ok = true;
+        for (int k : probe) {
+            if (k < 1 || k > sp.steps) { fprintf(stderr, "--probe-steps: step %d outside 1..%d\n", k, sp.steps); return 1; }
+            const float t = ts[k - 1], tprev = ts[k];
+            const float gs = (sp.gi0 <= t && t <= sp.gi1) ? sp.guidance_strength : 1.0f;
+            if (gs != 1.0f && sp.guidance_rescale > 0.0f) { fprintf(stderr, "--probe-steps: step %d is inside a rescaled guidance interval (not reproduced here)\n", k); return 1; }
+            npy::Array x0, rf, rc, rn;
+            const string s0 = sf.x_step_prefix + std::to_string(k - 1) + ".npy", s1 = sf.x_step_prefix + std::to_string(k) + ".npy";
+            if (!load_opt(fdir + "/f32_" + s0, x0) || !load_opt(fdir + "/f32_" + s1, rf)) { fprintf(stderr, "--probe-steps: f32_%s / f32_%s missing\n", s0.c_str(), s1.c_str()); return 1; }
+            vector<float> x(x0.data.begin(), x0.data.begin() + (size_t)Cin * N), pred;
+            const auto tp0 = std::chrono::steady_clock::now();
+            if (gs == 1.0f) pred = fwd(x, 1000.0f * t, cond.data(), proj.data());
+            else {
+                pred = fwd(x, 1000.0f * t, cond.data(), proj.data());
+                vector<float> neg = fwd(x, 1000.0f * t, neg_cond.data(), neg_proj.data());
+                for (size_t i = 0; i < pred.size(); ++i) pred[i] = gs * pred[i] + (1 - gs) * neg[i];
+            }
+            for (size_t i = 0; i < x.size(); ++i) x[i] -= (t - tprev) * pred[i];
+            printf("probe step %2d: t=%.4f->%.4f gs=%.1f from f32_%s, %.1f ms\n", k, t, tprev, gs, s0.c_str(),
+                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tp0).count());
+            lat_stats(x);
+            const Stats st = diff_stats(x, rf);
+            print_stats("f32", st); printf("         cos(mine,f32)=%.7f\n", mean_cosine(x, rf, (int)Cin, N));
+            if (load_opt(fdir + "/cuda_" + s1, rc)) { print_stats("cuda", diff_stats(x, rc)); printf("         cos(mine,cuda)=%.7f\n", mean_cosine(x, rc, (int)Cin, N)); }
+            if (load_opt(fdir + "/cuda_nofa_" + s1, rn)) { print_stats("cuda_nofa", diff_stats(x, rn)); printf("         cos(mine,cuda_nofa)=%.7f\n", mean_cosine(x, rn, (int)Cin, N)); }
+            // One step must stay within the full-run gate; a single forward has no accumulation.
+            const double thr = 5e-2;
+            printf("         probe verdict: rel(one step from f32 x_step%d, f32 x_step%d) = %.4e ; threshold = %.4e -> %s\n", k - 1, k, st.rel, thr, st.rel <= thr ? "PASS" : "FAIL");
+            probe_ok = probe_ok && st.rel <= thr;
+            if (!dump_dir.empty()) npy::save(dump_dir + "/cpp_probe_" + s1, x.data(), { N, Cin });
+        }
+        delete run; mf.free();
+        printf("=== probe %s ===\n", probe_ok ? "PASS" : "FAIL");
+        return probe_ok ? 0 : 1;
+    }
+
     vector<vector<float>> trace;
     const auto t_sample0 = std::chrono::steady_clock::now();
     vector<float> out = trellis::sample_flow(fwd, sample, cond.data(), neg_cond.data(),
@@ -483,12 +544,6 @@ int main(int argc, char** argv) {
     // ---- per-step latent parity vs f32 and bf16 refs, plus f32-vs-bf16 calibration ----
     printf("\nper-step latent parity ([N=%lld,C=%lld], ggml channel-major == npy row-major, no remap):\n",
            (long long)N, (long long)Cin);
-    auto lat_stats = [&](const vector<float>& v) {
-        double m = 0, mx = 0; size_t bad = 0;
-        for (float x : v) { if (!std::isfinite(x)) { ++bad; continue; } m += x; mx = std::max(mx, (double)std::fabs(x)); }
-        m /= v.size(); double var = 0; for (float x : v) if (std::isfinite(x)) var += (x - m) * (x - m);
-        printf("    latent mean=%+.6f std=%.6f max|x|=%.4f nonfinite=%zu\n", m, std::sqrt(var / v.size()), mx, bad);
-    };
     const std::vector<int64_t> lat_shape = { N, Cin };
     for (int k = 0; k <= sp.steps; ++k) {
         const vector<float>& mine = (k == 0) ? sample : trace[k - 1];   // trace[i] = sample after step i+1
