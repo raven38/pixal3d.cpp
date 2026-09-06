@@ -66,14 +66,15 @@
 - [x] MV accumulation (device-resident running average, `pixal3d_cond_ss_gpu`; peak memory flat in V)
 - [ ] dense Conv3D (SS decoder still runs on the CPU backend after a WebGPU flow)
 - [x] large-dispatch ops (`patches/ggml-webgpu/0003`: 2D dispatch for soft_max/sum_rows/norm/get_rows/concat/pad/repeat, cpy `gid.y` fix; `trellis-webgpu-ops`)
-- [ ] sparse gather/scatter
-- [ ] SparseConv3D
+- [x] sparse gather/scatter (no kernel needed: the shared `build_neighbor_table` / C2S index maps stay on the host, `get_rows` gathers on the device; I32 `cont` of index slices needed `patches/ggml-webgpu/0005`; spec 31 §11)
+- [x] SparseConv3D (the validated 27-tap gather + `mul_mat` submanifold conv runs unchanged on WebGPU; shape decoder on the Shape-1024 real SLAT matches the PyTorch reference mesh to 0.001 voxel natively and in Chrome, `docs/PIXAL3D_WEBGPU_MEMORY.md` §9)
 - [x] NAF neighborhood attention (no kernel needed: block-window formulation as `get_rows` + batched `mul_mat` + `soft_max`, `naf_build`; GroupNorm/reflect-pad/avg-pool lowered to `norm`/`concat`/`sum_rows`; spec 31 §10.3)
 
 ## M8 — Browser end-to-end
 
 - [x] SS stage in the browser: DINOv3 -> projection -> MV fusion -> ProjectAttention SS flow -> 12-step sampler, one WASM module on ggml WebGPU (`web/ss/`, spec 31 §9); JS only mounts files and prints
 - [x] Shape-512 stage in the browser: DINOv3 -> NAF -> lr/hr projections -> MV fusion -> sparse ProjectAttention shape flow -> 12-step sampler, same module (`pixal3d_shape512_run`, `web/shape512/`, spec 31 §10.7)
+- [x] Shape decoder in the browser: real Shape-1024 SLAT fixture -> sparse decoder (from_latent, 4 x ConvNeXt + C2S, output_layer) -> dual-grid mesh, same module (`pixal3d_shape_decode_run`, `web/shape_decode/`, spec 31 §11); raw mesh returned to JS as .npy downloads and scored natively
 - [ ] image loading (fixture `.npy` views today; PNG + BiRefNet/RMBG cutout not ported)
 - [ ] camera loading (fixture `transform_matrix` today; `transforms.json` parsing not wired)
 - [x] stage weight load/unload (SS stage: DINOv3 freed before the flow weights load, WORKERFS-backed GGUF streaming)

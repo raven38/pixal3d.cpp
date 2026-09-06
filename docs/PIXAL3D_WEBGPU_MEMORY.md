@@ -429,3 +429,103 @@ Implications for the WebGPU port (decision input for tiling/chunking, nothing im
   `ggml_backend_buft_get_max_size` (= `maxStorageBufferBindingSize` on WebGPU), so 5.98 GB
   becomes two `GPUBuffer`s here; whether Chrome grants ~7 GB of device buffers per tab is the
   open question for the port and was not measured (the Shape-1024 sampling job holds the GPU).
+
+## 9. Measured: sparse shape decoder on the ggml WebGPU backend (2026-09-06, `feat/webgpu-shape-decode`)
+
+The §8 decoder, now executed on WebGPU (native Dawn, Apple M1 Pro 32 GB unified, `maxBufferSize`
+= `maxStorageBufferBindingSize` = 4 GiB − 4 B; and Chrome 152) on the **real** Shape-1024 SLAT
+(`hr_sample`, N = 17,489 → M = 4,649,809 on WebGPU) with the same `TRELLIS_DBG_ALLOC_TRACE`
+instrumentation. Parity: `docs/spec/31-webgpu-bringup.md` §11. Process memory is
+`footprint -f bytes` `phys_footprint` sampled every 2 s (it includes the Dawn/Metal
+`IOAccelerator` buffers, which `ps` RSS does not: RSS reads 2.4 GB while the footprint is 10 GB).
+
+### 9.1 Stage-by-stage trace (native WebGPU, `kBlockChunkBytes` default 1.5 GB)
+
+Per decoder stage: active coordinates in / out, feature shape (channel-major `[C, N]`, all f32
+activations, f16 weights), the largest graph-allocated tensor, and gallocr's buffer.
+
+| stage | coords in → out | features | graph(s) | nodes | largest single allocation | largest temporary (op) | live est. | gallocr |
+|---|---|---|---|---|---|---|---|---|
+| from_latent | 17,489 | `[32,N]` → `[1024,N]` f32 | 1 | 2 | 71.6 MB `[1024,17489]` | same (MUL_MAT) | 0.14 GB | 0.07 GB |
+| stage 0 ConvNeXt ×4 (C=1024) | 17,489 | `[1024,N]` | 1 | 812 | 287 MB `[4096,17489]` | MLP hidden (MUL_MAT/ADD/SILU) | 0.65 GB | 0.51 GB |
+| stage 0 C2S (1024 → 512) | 17,489 → 71,262 | `[1024,N]` → `[512,M]` | subdiv + conv | 2 + 402 | 287 MB `[4096,17489]` | conv1 `[Cout·8, N]` per tap | 1.01 GB | 0.88 GB |
+| stage 1 ConvNeXt ×16 (C=512) | 71,262 | `[512,N]` | 1 | 3248 | 584 MB `[2048,71262]` | MLP hidden ×16 blocks | 1.33 GB | 1.04 GB |
+| stage 1 C2S (512 → 256) | 71,262 → 288,168 | `[512,N]` → `[256,M]` | subdiv + conv | 2 + 402 | 584 MB `[2048,71262]` | conv1 per tap ×27 | 2.08 GB | 1.79 GB |
+| stage 2 ConvNeXt ×8 (C=256) | 288,168 | `[256,N]` | 1 | 1624 | **1.18 GB `[1024,288168]`** | MLP hidden ×8 | 2.69 GB | 2.10 GB |
+| stage 2 C2S (256 → 128) | 288,168 → 1,158,925 | `[256,N]` → `[128,M]` | subdiv + conv | 2 + 602 | **1.18 GB `[1024,288168]`** | conv1 per tap ×27; `[128, M+1]` PAD/NORM/SILU 593 MB | 4.30 GB | 3.71 GB |
+| stage 3 ConvNeXt ×4 (C=128) | 1,158,925 | `[128,N]` | 1 | 1628 | **1.57 GB `[512,768000]`** | MLP hidden chunk (2 chunks/block: 768,000 + 390,925 rows) | 4.46 GB | 3.28 GB |
+| stage 3 C2S (128 → 64) | 1,158,925 → 4,649,809 | `[128,N]` → `[64,M]` | subdiv + conv | 8 + 1392 | **1.57 GB `[512,768000]`** | conv1 per tap ×27; `[64, M+1]` PAD/NORM/SILU + `[64, M]` out 1.19 GB each | 6.97 GB | **7.19 GB** |
+| output_layer (64 → 7) | 4,649,809 | `[64,M]` → `[7,M]` | 5 × 1M-row chunks | 3 | 256 MB `[64,1000000]` (NORM) | same | 0.51 GB | 0.51 GB |
+
+Host side (WASM in the browser) per stage: coords, the `[27, N]` / `[27, M]` int32 neighbour
+tables (stage 3: 125 MB + 502 MB), the octant→gather index maps (37 MB), and the stage features
+between graphs (`[64, 4.65M]` f32 = 1.19 GB at the end). Same graphs, node counts and shapes as
+the CUDA trace of §8 up to the ±0.03 % voxel flips of spec 31 §11.3.
+
+### 9.2 Every allocation ≥ 512 MB (Shape-1024, native WebGPU trace)
+
+| tensor | bytes | source op | why it exists | lifetime overlap | tileable / avoidable exactly? |
+|---|---|---|---|---|---|
+| `[512, 768000]` f32 ×(4+4+27+27) | 1.57 GB | stage-3 ConvNeXt MLP hidden (`mlp.0` MUL_MAT → ADD → SILU) and stage-3 C2S conv1 per-tap MUL_MAT / running-sum ADD | `[4C, nr]` / `[Cout·8, nr]` intermediates of one voxel chunk; the chunk is `kBlockChunkBytes` (1.5 GB) / (512 × 4 B) = 768,000 rows | within one chunk 2-3 of them are live at once (gather → matmul → add); chunks are sequential, gallocr reuses their slots | **yes**: they are budget-driven; `TRELLIS_BLOCK_CHUNK_MB` / `TRELLIS_C2S_CHUNK_MB` shrink them linearly with no numerical change (§9.3) |
+| `[512, 390925]` f32 ×(4+4+27+27) | 801 MB | same, the tail chunk | same | same | same |
+| `[1024, 288168]` f32 ×(8+8+8+27+27) | 1.18 GB | stage-2 ConvNeXt MLP hidden ×8 blocks; stage-2 C2S conv1 per tap | single-chunk stage (N < budget/4 KB) | as above | yes (budget) |
+| `[2048, 71262]` f32 ×(16·3+27·2) | 584 MB | stage-1 MLP hidden ×16; stage-1 C2S conv1 | single chunk | as above | yes (budget) |
+| `[64, 4649810]` f32 ×3 | 1.19 GB | stage-3 C2S `hraw` (PAD seed written by chunked CPY), its NORM, its SILU (`hn`, conv2's padded input) | the channel→spatial result at M+1 rows (sentinel row) must exist whole: conv2's gather reads arbitrary rows of it | `hraw` dies at NORM, NORM at SILU; `hn` lives through all conv2 chunks, next to `out` | **M-scaled, not budget-scaled**: cannot shrink without a buffer split (§5 B9); NORM/SILU in place would save the two transient copies only in the estimate (tried, gallocr unchanged, op-gap §11.3) |
+| `[64, 4649809]` f32 ×1 | 1.19 GB | stage-3 C2S conv2 output buffer (PAD seed + CPY per chunk) | the stage output, read back to the host whole | lives through every conv2 chunk, with `hn` | M-scaled; a split would only matter on a spec-floor adapter |
+| `[64, 3082211]` f32 ×1 | 789 MB | stage-3 C2S: chunk-0 GET_ROWS (channel→spatial gather of the first conv1 chunk, 3.08M surviving octants) | the PAD seed's source | dies at the PAD | budget-driven (chunk of 768,000 input voxels × up to 8 octants) |
+| `[128, 1158925/6]` f32 ×~12 | 593 MB | stage-3 inputs (`[C,N]` leaf), the `[Ci, N+1]` sentinel CONCAT per ConvNeXt block (×4) and in C2S, norm1 NORM/MUL/ADD/SILU, the stage-2 C2S output PAD | stage-scale `[C, N]` tensors | the CONCATs are one per block, sequential | M/N-scaled; the per-block CONCAT could be built once per stage instead of per block (not done: −593 MB × 3, only in the estimate for the same reason) |
+| `[4649809, 27]` i32 (input) | 502 MB | conv2 neighbour table (host-built) | gather indices for the 27 taps at M rows | whole graph | M-scaled |
+
+None of these exceeds the 4 GiB binding on this adapter; the C2S stage-3 graph's 7.19 GB gallocr
+buffer (vs 5.98 GB measured on CUDA for the same graph in §8 -- ggml-alloc splits it into
+`maxBufferSize`-sized chunks here, so the packing is looser) is allocated and computed by both
+Dawn and Chrome (§9.4).
+
+### 9.3 The tiling lever: chunk budget A/B
+
+Same binary, same fixture, `TRELLIS_BLOCK_CHUNK_MB=512 TRELLIS_C2S_CHUNK_MB=512` (the existing
+A/B overrides of `kBlockChunkBytes`, default 1.5 GB) versus the default:
+
+| graph | default: nodes / largest / gallocr | 512 MB budget: nodes / largest / gallocr |
+|---|---|---|
+| stage 1 ConvNeXt ×16 | 3248 / 584 MB `[2048,71262]` / 1.04 GB | 6512 / 537 MB `[2048,65536]` / 0.98 GB |
+| stage 2 ConvNeXt ×8 | 1624 / 1.18 GB `[1024,288168]` / 2.10 GB | 4872 / 537 MB `[1024,131072]` / 1.43 GB |
+| stage 2 C2S conv | 602 / 1.18 GB / 3.71 GB | 1390 / 593 MB (`[128, M+1]` SILU) / 2.83 GB |
+| stage 3 ConvNeXt ×4 | 1628 / 1.57 GB `[512,768000]` / 3.28 GB | 4052 / 593 MB (`[128, N+1]` CONCAT) / 2.79 GB |
+| **stage 3 C2S conv** | 1392 / 1.57 GB / **7.19 GB** | 2376 / **1.19 GB** (`[64, M+1]` NORM) / **6.55 GB** |
+| decode wall / process peak | 160-174 s / 10.4 GiB | 187 s / 10.2 GiB |
+| mesh | V = 4,649,809, worst mean 6.3448e-7 | **identical** (V = 4,649,809, 6.3448e-7) |
+
+So the budget removes every chunk-driven tensor above 600 MB exactly (largest allocation 1.57 →
+1.19 GB) and takes 0.6-0.9 GB off each large graph, but the stage-3 C2S floor is set by the
+M-scaled tensors -- `hn` `[64, M+1]` and `out` `[64, M]` (1.19 GB each, both live through every
+conv2 chunk), the `[128, N+1]` sentinel input, the `[M, 27]` neighbour table (502 MB) and gallocr's
+packing across the 4 GiB buffer chunks -- so the graph still needs 6.55 GB and the process ~10 GiB.
+The default stays at 1.5 GB (graph node count is 1.7-3× at 512 MB; `kMaxChunksPerBlock`/`kGraphNodes`
+would need retuning for smaller budgets); the knob is there for smaller adapters. The next real
+step down is the §5 B9 split of the two `[Cout, M]` buffers, which is a graph-construction change
+that only pays off on spec-floor adapters.
+
+The other transient that was measured, on the host side: the WebGPU backend stages every
+`get_tensor` through one MapRead buffer of the request size, and in the browser the mapped range
+is a wasm-heap copy -- reading the 1.19 GB stage-3 C2S output back needed 2 × 1.19 GB on top of
+~1.4 GB of live host vectors in a 4 GB heap and trapped (`memory access out of bounds` in
+Chrome, first browser run). `tensor_to_f32` now reads F32 results in 256 MiB slices
+(`ggml_backend_tensor_get` with offset), which bounds the staging buffer and the mapped copy to
+256 MiB on every backend; exact.
+
+### 9.4 Peak memory
+
+| run | decode wall | process peak footprint | note |
+|---|---|---|---|
+| native WebGPU, Shape-1024, default budget | 160-174 s | **10.4 GiB** (`phys_footprint`, byte-exact; ≈ 7.19 GB stage-3 C2S buffer + 0.95 GB weights + ~2.5 GB host vectors) | the Mac GPU was shared with another session's flow probe during one run |
+| native WebGPU, res-512 | 46 s | 3.5 GiB | |
+| **Chrome 152, Shape-1024** (`web/shape_decode/`, sliced readback) | 288 s | **GPU process 9.93 GB**, all Chrome processes 16.0 GB (renderer/worker holds the wasm heap: fixture + host vectors + mesh) | first attempt (whole-tensor readback) trapped at the stage-3 C2S readback, §9.3 |
+| Chrome 152, res-512 | 55 s | GPU process 4.03 GB, all Chrome 5.81 GB | |
+
+So Chrome grants one tab the 6.55-7.19 GB stage-3 graph plus weights and staging (the §8 open
+question); the remaining browser-side ceiling is the 4 GB wasm heap, which the decoder now stays
+under at M = 4.65M (host vectors ≈ 2.6 GB at the stage-3 C2S: `[128,N]` input 0.59 GB, two
+neighbour tables 0.63 GB, `[64,M]` output 1.19 GB, coords/index maps 0.15 GB, plus the 256 MiB
+readback slice). Objects denser than ~1.5× this one would need the stage output read back in
+pieces into a smaller host representation or the `[Cout, M]` split.

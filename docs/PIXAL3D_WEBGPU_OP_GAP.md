@@ -649,3 +649,95 @@ ADD, MUL, CONCAT, REPEAT, PAD, CPY, SET_ROWS are all dtype-supported and now all
   tokens, i.e. the fix in §10.1 is required there for Shape-1024-sized token counts.
 - **Harness**: `--budget-mb` skips oversized cases; the browser build cannot host the ≥ 1.5 GB
   cases (wasm heap), so those stay native-only.
+
+## 11. Validated on WebGPU (2026-09-06, `feat/webgpu-shape-decode`, sparse shape decoder)
+
+Same meaning of "validated" as §8/§9: executed on the ggml WebGPU backend inside the real
+decoder graphs, on the **real** Shape-1024 SLAT fixture (`hr_sample`, `tools/ref_pixal3d_hr_sample.py`:
+N = 17,489 voxels at res 64 → M ≈ 4.65M at res 1024) and on the res-512 one (`slat_sample`,
+N = 4,377 → 1.19M), against the PyTorch reference decode of the same SLATs, natively (Dawn) and
+in Chrome. Results: `docs/spec/31-webgpu-bringup.md` §11, memory: `docs/PIXAL3D_WEBGPU_MEMORY.md`
+§9. Branch base: `feat/webgpu-sparse-backend-prep` (§10); patches 0003/0004, the ops regression
+and the allocation trace are reused as-is.
+
+### 11.1 The one backend gap: `CONT` of an I32 view (`patches/ggml-webgpu/0005`)
+
+§10.5 said "none of the ops the decoder uses is missing" -- true for the op *types*, wrong for one
+dtype. The first ConvNeXt graph (`shape_dec_convnext_stage0`) aborted on native Dawn with
+
+```
+ggml-webgpu-shader-lib.hpp:2923: Unsupported src type for cpy shader
+```
+
+on `CONT src0=i32[4377] view-cont → dst=i32[4377]`: `submconv_range` (`src/sparse.cpp`) takes tap
+`t`'s neighbour indices for the output range `[r0, r0+nr)` of the tap-major `[27·N]` int32 table as
+`ggml_cont(ggml_view_1d(nbr, nr, (t·N + r0)·4))` -- the `cont` is there because the Vulkan
+`get_rows` kernel asserts a zero index offset. `cpy.wgsl` had `SRC_F32`/`SRC_F16` sources only
+(`DST_I32` already existed for the F32→I32 conversion), and `supports_op` admitted `CPY`/`CONT`
+only for F32/F16 sources or F32→I32; the graph runner did not consult `supports_op` (it does now,
+§11.3), so natively the shader lib aborted and in a browser the node would have been the §9
+silent skip.
+
+Fix (`0005-webgpu-cpy-i32-src.patch`, 3 hunks): `cpy.wgsl` gains `#elif defined(SRC_I32)
+#define SRC_TYPE i32`; `get_cpy_pipeline` maps `GGML_TYPE_I32` sources to `SRC_I32`
+(variant `cpy_i32_i32`); `supports_op` accepts I32 source with I32 destination. The shader body is
+untouched (`dst[j] = DST_TYPE(src[i])` is the identity for i32→i32). Every layout the decoder
+produces is covered in `trellis-webgpu-ops` (WebGPU vs ggml-cpu, native Dawn, Apple M1 Pro):
+
+| case | view byte offset | out | max\|d\| | result |
+|---|---|---|---|---|
+| `cont(view_1d)` i32 `[4377]` at `+17508 B` (tap 1 of the res-512 stage-0 table; offset ≢ 0 mod 256, the storage-binding alignment) | 17,508 | 17 KB | 0 | PASS |
+| `cont(view_1d)` i32 `[768000]` at tap 13 + 390,936 rows of a `[27·1158936]` table (Shape-1024 stage-3 ConvNeXt chunk) | 62.1 MB | 2.9 MB | 0 | PASS |
+| `cont(view_1d)` i32 `[4649837]` at tap 26 of a `[27·4649837]` table (stage-3 conv2, M rows) | 483.6 MB | 17.7 MB | 0 | PASS |
+
+(`read_f32` in the test converts I32 outputs exactly -- indices are < 2^24.)
+
+### 11.2 Ops executed on WebGPU by the decoder (Shape-1024 fixture, all graphs)
+
+| graph (tag, `TRELLIS_DUMP_OPS`) | ops on WebGPU | notes |
+|---|---|---|
+| `shape_dec_from_latent_N17489` | MUL_MAT f16×f32 `[32,1024]ᵀ[32,N]`, ADD | |
+| `shape_dec_convnext_stage{0..3}` (4/16/8/4 blocks, 812/3248/1624/1628 nodes) | per block and chunk: SCALE + CONCAT (sentinel zero row `[Ci, N+1]`), 27 × { CONT i32 idx (**0005**), GET_ROWS `[Ci, nr]`, CONT f16 tap weight `[Ci,Co]`, MUL_MAT, ADD_inplace }, ADD bias, NORM, MUL, ADD (affine), MUL_MAT `[C,4C]`, ADD_inplace bias, SILU_inplace, MUL_MAT `[4C,C]`, ADD bias, CONT (chunk view of the block input), ADD residual, CONCAT (chunk outputs) | stage 3 has 2 chunks per block (768,000 + 390,925 rows); every tensor ≤ 1.57 GB |
+| `shape_dec_c2s_stage{0..3}_subdiv` | MUL_MAT `[Cin,8]`, ADD | host reads the `[8,N]` logits: octant mask → new coords + gather index (CPU/WASM topology) |
+| `shape_dec_c2s_stage{0..3}_conv` (402/402/602/1392 nodes) | NORM, MUL, ADD, SILU (norm1), SCALE+CONCAT (pad), conv1 as above (27 taps, chunked), GET_ROWS `[Cout, m1−m0]` (channel→spatial gather), PAD (`[Cout, M+1]` seed) + CPY into row-offset views (later chunks), NORM, SILU_inplace (norm2), conv2 as above at M rows (chunked ≤ 1M), GET_ROWS `[K, M]` + REPEAT `[R,K,nr]` (skip), ADD, PAD + CPY (output buffer) | stage 3: M = 4,649,809, the `[64, M+1]` seed/NORM/SILU buffers are 1.19 GB each; `[M,27]` i32 neighbour table 502 MB as an input |
+| `shape_dec_output_layer_N{1000000,649809}` | NORM (no affine), MUL_MAT `[64,7]`, ADD | 1M-row chunks |
+
+No op type was added; besides 0005 the decoder needed nothing from the backend. `SET_ROWS` is not
+used by the decoder (the C2S single-buffer pattern is `PAD` + `CPY`, §10.3); patch 0004 stays for the
+DiT RoPE scatter.
+
+### 11.3 Sparse-runtime changes reusable by the texture decoder
+
+All in the shared runtime (`src/sparse.cpp`, `src/shape_decoder.cpp`, `src/trellis_model.cpp`),
+none in texture-specific code; `tex_decode` goes through the same `decode_unet` / `sparse_c2s`
+and inherits them:
+
+- **Supported-op guard**: `run1` and `GraphRun::run` call `check_graph_supported` after building
+  each graph (the flow/cond graphs already did). On WebGPU an unsupported node now throws
+  `graph '<tag>' has ops the ggml WebGPU backend would silently skip` before any compute, instead
+  of the browser producing wrong features silently -- this is what would have caught 11.1 in Chrome.
+- **Tried and not kept -- in-place elementwise ops** (27-tap accumulation as `ggml_add_inplace`,
+  MLP bias/SiLU and C2S norm2-SiLU in place): exact (identical mesh: V = 4,649,809, worst mean
+  6.3448e-7) and it cuts the graph-allocated tensor count (stage-3 C2S 981 → 791, live estimate
+  6.97 → 5.79 GB) but gallocr's actual buffers do not move at all (7.19 / 3.28 / 3.71 / 2.10 GB for
+  the four largest graphs, before and after; process footprint 10.4 GiB either way) -- gallocr was
+  already reusing those tensors' slots. Reverted to keep the validated graph identical to CUDA's;
+  the number that does move is the chunk budget (`docs/PIXAL3D_WEBGPU_MEMORY.md` §9.3).
+- **`tensor_to_f32` reads F32 outputs straight into the result vector, in 256 MiB slices** (it
+  used to stage every readback through a second byte buffer of the same size, and the WebGPU
+  backend maps a staging buffer of the whole request: +2 × 1.19 GB transient at the stage-3 C2S
+  output, which trapped the first Chrome run -- memory doc §9.3). Isolated regression:
+  `trellis-webgpu-ops`' `read_f32` now reads outputs the same way, so its ≥ 1 GB cases
+  (`cont(permute) 1 GB`, `pad+cpy [64,4620541]` ×2, 5 slices each) exercise the sliced readback:
+  bit-exact, native Dawn.
+- **Per-stage debug dump** `TRELLIS_DBG_STAGE_DUMP=<dir>` (`stage_dump`, `shape_decoder.cpp`;
+  `npy::save_i32` added to `include/npy.h`) and `tools/compare_sparse_stages.py` +
+  `tools/ref_pixal3d_shape_dec_stages.py` -- the stage-by-stage parity method of spec 31 §11.3,
+  applicable to `tex_dec` as-is (`--kind tex_dec` once the tex decoder dumps).
+- `npy::save`/`save_i32` throw on a short write (a disk-full dump used to leave a 4 KB file
+  silently).
+
+Remaining for the texture decoder (not touched here): the tex decoder's own `guide_subs`-driven
+C2S runs the same graphs at the same M with `Cout` channels 6 at the output, so nothing new is
+expected from the backend; the open items are the ones in memory doc §9.4 (spec-floor adapters,
+`kBlockChunkBytes` on a 128 MiB binding) and running `trellis-test-pixal3d-tex-decode` on WebGPU.
