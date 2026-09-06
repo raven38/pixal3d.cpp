@@ -357,7 +357,7 @@ Same accounting as §6/§7. Apple M1 Pro (32 GB), native Dawn / Chrome 152, `hr_
 | component | weights resident | activations / temporaries | conditioning tensors | peak (sum) | notes |
 |---|---|---|---|---|---|
 | Texture flow DiT, one forward, exact SDPA, N = 17,489 (`in_ch` 64) | 2647.0 MB (f16 GGUF) | **1863.2 MB** (gallocr; one `[17489,1279,12]` f32 score chunk = 1024 MB, `[8192,17489]` MLP hidden 546.5 MB) | 136.7 MB (`[2048,17489]` proj + `[1024,5]` global) + 2.13 MB state + 2.13 MB concat half + 4.27 MB `[64,N]` input, re-uploaded per forward | **4789.9 MB** | 198-208 s/forward native Dawn (GPU alone), 245 s Chrome; Metal 133-136 s; CUDA 4090 3.4 s (exact) / 1.7 s (FA) |
-| Texture sampling (12 steps, 12 forwards, gs = 1.0) | as one forward | as one forward (graph reused) | as above (+136.7 MB zero negative on the host, never uploaded) | **4789.9 MB** device; native process `phys_footprint` 5.29 GB (peak 5.43 GB) | 2944 s Chrome; native: see spec 32 §11 |
+| Texture sampling (12 steps, 12 forwards, gs = 1.0) | as one forward | as one forward (graph reused) | as above (+136.7 MB zero negative on the host, never uploaded) | **4789.9 MB** device; native process `phys_footprint` 5.29 GB (peak 5.43 GB) | 2944 s Chrome, 2325 s native Dawn (194 s/forward) |
 
 Findings: +145 MB over the Shape-1024 flow (§7 of the sibling branch: 4645 MB) -- the `[N,64]`
 input, the concat half and `input_layer`'s K = 64 -- and no new allocation class; the
