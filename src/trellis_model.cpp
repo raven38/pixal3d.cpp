@@ -196,6 +196,40 @@ void Model::free() {
     tensors.clear();
 }
 
+void check_graph_supported(ggml_backend* backend, ggml_cgraph* g, const char* tag) {
+    ggml_backend_dev_t dev = ggml_backend_get_device(backend);
+    if (!dev) return;
+    const char* bname = ggml_backend_name(backend);
+    const bool is_webgpu = strncmp(bname, "WebGPU", 6) == 0;
+    int bad = 0;
+    for (int i = 0; i < ggml_graph_n_nodes(g); ++i) {
+        ggml_tensor* n = ggml_graph_node(g, i);
+        if (ggml_backend_dev_supports_op(dev, n)) continue;
+        if (bad < 16) {
+            char shp[256];
+            snprintf(shp, sizeof shp, "%s[%lld,%lld,%lld,%lld]", ggml_type_name(n->type),
+                     (long long)n->ne[0], (long long)n->ne[1], (long long)n->ne[2], (long long)n->ne[3]);
+            std::string srcs;
+            for (int k = 0; k < GGML_MAX_SRC && n->src[k]; ++k) {
+                char b[128];
+                snprintf(b, sizeof b, "%s %s[%lld,%lld,%lld,%lld]", k ? "," : "", ggml_type_name(n->src[k]->type),
+                         (long long)n->src[k]->ne[0], (long long)n->src[k]->ne[1], (long long)n->src[k]->ne[2], (long long)n->src[k]->ne[3]);
+                srcs += b;
+            }
+            fprintf(stderr, "[trellis] %s: backend %s does not support node %d %s%s '%s' dst=%s src=%s\n",
+                    tag, bname, i, ggml_op_name(n->op),
+                    n->op == GGML_OP_UNARY ? (std::string(":") + ggml_unary_op_name(ggml_get_unary_op(n))).c_str() : "",
+                    n->name, shp, srcs.c_str());
+        }
+        ++bad;
+    }
+    if (bad) {
+        fprintf(stderr, "[trellis] %s: %d unsupported node(s) on %s\n", tag, bad, bname);
+        if (is_webgpu)
+            throw std::runtime_error(std::string("graph '") + tag + "' has ops the ggml WebGPU backend would silently skip");
+    }
+}
+
 std::vector<float> tensor_to_f32(ggml_tensor* t) {
     const int64_t ne = ggml_nelements(t);
     std::vector<float> out(ne);
