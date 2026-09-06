@@ -148,8 +148,11 @@ T* in_idx(ggml_context* c, std::vector<T*>& ins, int64_t n, int32_t nrows) {
 } // namespace
 
 int main(int argc, char** argv) {
-    bool small = false;
-    for (int i = 1; i < argc; ++i) if (std::string(argv[i]) == "--small") small = true;
+    bool small = false; std::string only;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--small") small = true;
+        else if (std::string(argv[i]) == "--only" && i + 1 < argc) only = argv[++i];   // substring filter on case names
+    }
 
     ggml_backend_t gpu = nullptr;
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
@@ -202,12 +205,23 @@ int main(int argc, char** argv) {
         { "cont(permute) 512 MB", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
               T* x = in_f32(c, ins, 256, PX, HD, BLK / 2);
               return ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3)); } },
+        // q/k MultiHeadRMSNorm x gamma at the Shape-1024 / texture token count: ggml-webgpu fuses
+        // RMS_NORM+MUL into rms_norm_mul, whose encoder dispatched one workgroup per row on x only
+        // (12 x 17489 = 209868 rows > 65535) before patch 0003's 2D dispatch of that op.
+        { "rms_norm x gamma [128,12,17489]", 1e-5, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              T* x = in_f32(c, ins, 128, 12, L);
+              T* gamma = in_f32(c, ins, 128);
+              return ggml_mul(c, ggml_rms_norm(c, x, 1e-12f), gamma); } },
+        { "rms_norm alone [128,12,17489]", 1e-5, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              return ggml_rms_norm(c, in_f32(c, ins, 128, 12, L), 1e-12f); } },
         { "cont(permute) 1 GB", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
               T* x = in_f32(c, ins, 256, PX, HD, BLK);
               return ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3)); } },
     };
     bool all = true;
-    for (const Case& cs : cases) all &= run_case(cs, gpu, cpu);
+    for (const Case& cs : cases) if (only.empty() || std::string(cs.name).find(only) != std::string::npos) all &= run_case(cs, gpu, cpu);
     printf("=== %s ===\n", all ? "ALL PASS" : "SOME FAILED");
     ggml_backend_free(gpu); ggml_backend_free(cpu);
     return all ? 0 : 1;
