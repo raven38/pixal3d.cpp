@@ -20,15 +20,27 @@
 // src/test_shape_dec.cpp / tools/ref_shape_dec.py: the "transpose" there is a no-op copy of a
 // contiguous [N,C] block) -- no reindexing needed for coords or the latent.
 //
-//   trellis-test-pixal3d-shape-decode <shape_dec.gguf> <fixture_dir> [gpu]
+//   trellis-test-pixal3d-shape-decode <shape_dec.gguf> <fixture_dir> [gpu] [--res R]
+//                                     [--dump-mesh PREFIX] [--ext-mesh PREFIX]
+//
+// Fixture layouts: slat_sample (coords.npy / f32_slat.npy, res 32 -> 512) and hr_sample
+// (hr_coords.npy / f32_shape_slat.npy, res 64 -> 1024; tools/ref_pixal3d_hr_sample.py). The
+// final resolution is 16x the input grid (the largest input coord tells which) unless --res
+// overrides it. If the fixture has f32_tex_coords.npy (the reference's decoded voxel coords)
+// the final coordinate set is compared exactly, before any mesh metric.
+// --dump-mesh PREFIX writes PREFIXverts.npy / PREFIXfaces.npy / PREFIXcoords.npy (this run's
+// raw mesh + final coords); --ext-mesh PREFIX scores such a dump (e.g. the browser run's,
+// web/shape_decode/run_playwright.js) against the reference instead of decoding here.
 #include "trellis_model.h"
 #include "shape_decoder.h"
 #include "dual_grid.h"
 #include "npy.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -143,13 +155,35 @@ static DistStats compute_stats(vector<float>& d) {
     return s;
 }
 
+
+// Exact set comparison of two voxel coordinate lists (order-free; both are duplicate-free).
+static void coord_parity(const char* tag, const vector<array<int,3>>& mine, const int32_t* ref, int64_t nref) {
+    auto key = [](int x, int y, int z) { return ((uint64_t)(uint32_t)x << 40) | ((uint64_t)(uint32_t)y << 20) | (uint32_t)z; };
+    std::unordered_map<uint64_t, uint8_t> rs; rs.reserve((size_t)nref * 2);
+    for (int64_t i = 0; i < nref; ++i) rs[key(ref[3*i], ref[3*i+1], ref[3*i+2])] = 0;
+    int64_t common = 0, extra = 0;
+    for (const auto& c : mine) { auto it = rs.find(key(c[0], c[1], c[2])); if (it == rs.end()) ++extra; else { ++common; it->second = 1; } }
+    int64_t missing = 0; for (auto& kv : rs) if (!kv.second) ++missing;
+    printf("  %s: mine=%zu ref=%lld common=%lld extra(mine only)=%lld missing(ref only)=%lld -> %s\n",
+           tag, mine.size(), (long long)nref, (long long)common, (long long)extra, (long long)missing,
+           (extra == 0 && missing == 0) ? "EXACT" : "DIFFERENT");
+}
+
 int main(int argc, char** argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: %s <shape_dec.gguf> <fixture_dir> [gpu]\n", argv[0]);
+        fprintf(stderr, "usage: %s <shape_dec.gguf> <fixture_dir> [gpu] [--res R] [--dump-mesh PREFIX] [--ext-mesh PREFIX]\n", argv[0]);
         return 1;
     }
     const string gguf = argv[1], fdir = argv[2];
-    const int gpu = argc > 3 ? atoi(argv[3]) : 0;
+    int gpu = 0, res_override = 0;
+    string dump_prefix, ext_prefix;
+    for (int i = 3; i < argc; ++i) {
+        string a = argv[i];
+        if (a == "--res" && i + 1 < argc) res_override = atoi(argv[++i]);
+        else if (a == "--dump-mesh" && i + 1 < argc) dump_prefix = argv[++i];
+        else if (a == "--ext-mesh" && i + 1 < argc) ext_prefix = argv[++i];
+        else gpu = atoi(argv[i]);
+    }
     printf("fixture_dir=%s gpu=%d\n", fdir.c_str(), gpu);
 
     // production default: fp16 torso (no --f32, no TRELLIS_F32W) -- matches the fixture's own
@@ -157,31 +191,73 @@ int main(int argc, char** argv) {
     // NOT upcast").
     if (getenv("TRELLIS_F32W")) { trellis::g_sparse_cast_f32 = true; printf("(TRELLIS_F32W: f32 weight compute -- NOT production default)\n"); }
 
-    I32Array co = load_npy_i32(fdir + "/coords.npy");             // [N,4] (b,x,y,z)
-    npy::Array slat = npy::load(fdir + "/f32_slat.npy");          // [N,32] denormalized
+    auto exists = [](const string& p) { FILE* f = fopen(p.c_str(), "rb"); if (!f) return false; fclose(f); return true; };
+    const string coords_path = exists(fdir + "/coords.npy") ? fdir + "/coords.npy" : fdir + "/hr_coords.npy";
+    const string slat_path = exists(fdir + "/f32_slat.npy") ? fdir + "/f32_slat.npy" : fdir + "/f32_shape_slat.npy";
+    I32Array co = load_npy_i32(coords_path);                      // [N,4] (b,x,y,z)
+    npy::Array slat = npy::load(slat_path);                       // [N,32] denormalized
     npy::Array rv = npy::load(fdir + "/f32_dec_vertices.npy");    // [Nv,3]
     I32Array   rf = load_npy_i32(fdir + "/f32_dec_faces.npy");    // [Nf,3]
 
     const int64_t N = co.shape.empty() ? 0 : co.shape[0];
-    if (slat.shape[0] != N) { fprintf(stderr, "f32_slat rows=%lld != coords N=%lld\n", (long long)slat.shape[0], (long long)N); return 1; }
+    if (slat.shape[0] != N) { fprintf(stderr, "%s rows=%lld != coords N=%lld\n", slat_path.c_str(), (long long)slat.shape[0], (long long)N); return 1; }
     const int cw = (int)co.shape[1], c0 = cw - 3;
     vector<array<int,3>> coords0(N);
-    for (int64_t i = 0; i < N; ++i)
+    int cmax = 0;
+    for (int64_t i = 0; i < N; ++i) {
         coords0[i] = { co.data[i*cw + c0], co.data[i*cw + c0 + 1], co.data[i*cw + c0 + 2] };
+        cmax = std::max({ cmax, coords0[i][0], coords0[i][1], coords0[i][2] });
+    }
+    const int in_res = cmax < 32 ? 32 : 64;
+    const int resolution = res_override > 0 ? res_override : in_res * 16;
     // [N,32] row-major == ggml [32,N] channel-major (ne0=32): direct flat copy, no transpose.
     vector<float> latent(slat.data.begin(), slat.data.begin() + (size_t)32 * N);
 
-    printf("input: N=%lld active voxels @res32\n", (long long)N);
+    printf("input: N=%lld active voxels @res%d (%s) -> decode @res%d\n", (long long)N, in_res, coords_path.c_str(), resolution);
 
-    trellis::Model m = trellis::Model::load(gguf, gpu);
-    printf("loaded %s (%zu tensors)\n", m.arch.c_str(), m.tensors.size());
+    trellis::Mesh mesh;
+    vector<array<int,3>> fcoords;     // final voxel coords (mine)
+    int res = resolution;
+    if (ext_prefix.empty()) {
+        trellis::Model m = trellis::Model::load(gguf, gpu);
+        printf("loaded %s (%zu tensors) on %s\n", m.arch.c_str(), m.tensors.size(), ggml_backend_name(m.backend));
+        const auto t0 = std::chrono::steady_clock::now();
+        trellis::ShapeOut so = trellis::shape_decode(m, latent, coords0, resolution);
+        const double dec_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        printf("decoded voxels @res%d = %d  (%.1f s)\n", so.res, (int)so.coords.size(), dec_s);
+        mesh = trellis::dual_grid_to_mesh(so);
+        m.free();
+        fcoords = std::move(so.coords); res = so.res;
+        if (!dump_prefix.empty()) {
+            vector<int32_t> ci(fcoords.size() * 3);
+            for (size_t i = 0; i < fcoords.size(); ++i) for (int a = 0; a < 3; ++a) ci[3*i + a] = fcoords[i][a];
+            npy::save(dump_prefix + "verts.npy", mesh.verts.data(), { (int64_t)mesh.V(), 3 });
+            npy::save_i32(dump_prefix + "faces.npy", mesh.faces.data(), { (int64_t)mesh.F(), 3 });
+            npy::save_i32(dump_prefix + "coords.npy", ci.data(), { (int64_t)fcoords.size(), 3 });
+            printf("dumped %sverts.npy / faces.npy / coords.npy\n", dump_prefix.c_str());
+        }
+    } else {
+        npy::Array ev = npy::load(ext_prefix + "verts.npy");
+        I32Array ef = load_npy_i32(ext_prefix + "faces.npy");
+        mesh.verts = std::move(ev.data); mesh.faces = std::move(ef.data);
+        if (exists(ext_prefix + "coords.npy")) {
+            I32Array ec = load_npy_i32(ext_prefix + "coords.npy");
+            fcoords.resize((size_t)ec.shape[0]);
+            for (size_t i = 0; i < fcoords.size(); ++i) fcoords[i] = { ec.data[3*i], ec.data[3*i+1], ec.data[3*i+2] };
+        }
+        printf("external mesh %s: V=%d F=%d coords=%zu (no decode here)\n", ext_prefix.c_str(), mesh.V(), mesh.F(), fcoords.size());
+    }
 
-    double t0 = 0;
-    trellis::ShapeOut so = trellis::shape_decode(m, latent, coords0, /*resolution=*/512);
-    printf("decoded voxels @res%d = %d\n", so.res, (int)so.coords.size());
-    trellis::Mesh mesh = trellis::dual_grid_to_mesh(so);
-    m.free();
-    (void)t0;
+    // ---- final voxel coordinate parity (exact), where the fixture provides the reference's ----
+    bool coords_ok = true;
+    if (!fcoords.empty() && exists(fdir + "/f32_tex_coords.npy")) {
+        // [M,3] int32 ("f32_" names the reference run, not the dtype); the tex decoder is driven by
+        // the shape decoder's subdivision masks, so its voxel coords ARE the shape decoder's.
+        I32Array rc = load_npy_i32(fdir + "/f32_tex_coords.npy");
+        printf("\n=== final voxel coordinate parity vs reference (f32_tex_coords) ===\n");
+        coord_parity("coords", fcoords, rc.data.data(), rc.shape[0]);
+        coords_ok = (int64_t)fcoords.size() == rc.shape[0];   // count equality; the set report above says the rest
+    }
 
     printf("\n=== mesh metrics (mine vs reference, BOTH pre-postprocess: no fill_holes/weld/remesh/decimate) ===\n");
     printf("  mine:      V=%d F=%d\n", mesh.V(), mesh.F());
@@ -195,9 +271,9 @@ int main(int argc, char** argv) {
     printf("  bounds mine:      x[%.5f,%.5f] y[%.5f,%.5f] z[%.5f,%.5f]\n", mn_m[0],mx_m[0],mn_m[1],mx_m[1],mn_m[2],mx_m[2]);
     printf("  bounds reference: x[%.5f,%.5f] y[%.5f,%.5f] z[%.5f,%.5f]\n", mn_r[0],mx_r[0],mn_r[1],mx_r[1],mn_r[2],mx_r[2]);
 
-    // symmetric nearest-vertex distance, in voxel units (1 voxel = 1/so.res at the final res).
-    const float voxel = 1.0f / (float)so.res;
-    printf("\n  building spatial hash (cell=%.6f = 1 voxel @res%d) ...\n", voxel, so.res);
+    // symmetric nearest-vertex distance, in voxel units (1 voxel = 1/res at the final res).
+    const float voxel = 1.0f / (float)res;
+    printf("\n  building spatial hash (cell=%.6f = 1 voxel @res%d) ...\n", voxel, res);
     VoxelHash href(rv.data.data(), rv.shape[0], voxel);
     VoxelHash hmine(mesh.verts.data(), mesh.V(), voxel);
 
@@ -214,7 +290,7 @@ int main(int argc, char** argv) {
                tag, s.mean, s.mean/voxel, s.p95, s.p95/voxel, s.p99, s.p99/voxel, s.max, s.max/voxel);
         return s;
     };
-    printf("\n  symmetric nearest-vertex distance (world units, [-0.5,0.5] cube; voxel=1/%d):\n", so.res);
+    printf("\n  symmetric nearest-vertex distance (world units, [-0.5,0.5] cube; voxel=1/%d):\n", res);
     DistStats s1 = report("mine->ref", d_mine_to_ref);
     DistStats s2 = report("ref->mine", d_ref_to_mine);
 
@@ -225,5 +301,6 @@ int main(int argc, char** argv) {
            worst_mean, worst_mean/voxel, face_ratio);
     printf("%s\n", mesh_ok ? "PASS (mesh reproduces the real-SLAT reference)"
                            : "FAIL (material divergence from the real-SLAT reference)");
-    return 0;
+    (void)coords_ok;
+    return mesh_ok ? 0 : 2;
 }
