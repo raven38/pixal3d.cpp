@@ -34,8 +34,9 @@ cmake --build build -j
 
 macOS/Apple Silicon needs no backend flag — Metal is enabled automatically. A local, gitignored
 `build-baseline-metal/` may exist from the Phase 1 baseline build; don't assume it's current.
-`GGML_WEBGPU` doesn't exist yet on this fork's vendored `thirdparty/ggml` (branch `trellis-patches`
-of `pwilkin/ggml`) — WebGPU is future work (porting plan Phase 8/9).
+The vendored `thirdparty/ggml` (branch `trellis-patches` of `pwilkin/ggml`, v0.15.1+10) already
+ships the upstream `ggml-webgpu` backend (`-DGGML_WEBGPU=ON`, needs Dawn natively or emdawnwebgpu under
+Emscripten); see `docs/spec/31-webgpu-bringup.md` for its state, gaps and build paths.
 
 Studio (desktop/web frontend, `app/`):
 
