@@ -2,10 +2,60 @@
 
 This document replaces `PIXAL3D_OP_SUPPORT_MATRIX.md`'s guesswork with a **measured** operator
 inventory of one full `--views` multiview run on `feat/webgpu-bringup`, traced on the CUDA box
-(`ssh win`, RTX 4090). Sections 1–3 (and 4) are facts from the trace; the **WebGPU support
-classification column is intentionally left `TBD`** for every op except the handful that are
-unambiguously CPU-only geometry — a follow-up pass cross-references these ops against the actual
-WebGPU backend coverage in the vendored `thirdparty/ggml` commit.
+(`ssh win`, RTX 4090). Sections 1–4 are facts from the trace. **Sections 1–4's `class` columns are
+now filled in** (this pass) by cross-referencing every op instance against the actual WebGPU
+backend coverage — `docs/spec/31-webgpu-bringup.md` §4/§5 (verbatim `supports_op` conditions, current
+upstream `ggml-org/llama.cpp` @ `74a7c897`) and, where a verdict is version-sensitive, a direct read
+of the vendored fork's own `thirdparty/ggml/src/ggml-webgpu/ggml-webgpu.cpp` @ `737e88f2`. Section 5
+gives the required per-instance record for every class-B/C/D op; §6 summarizes; §7 orders the
+recommended kernel work.
+
+## 0. Classification legend and global caveats
+
+- **A** — already supported by ggml WebGPU: the `supports_op` condition holds for this exact
+  dtype/contiguity/shape, **and** the tensor fits under the WebGPU spec-floor
+  `maxStorageBufferBindingSize` (128 MiB) with headroom, so no tiling or validation is needed for a
+  spec-minimum browser target.
+- **B** — supported but needs validation or graph-side accommodation: dtype/op passes
+  `supports_op`, but (i) the instance's tensor exceeds the 128 MiB storage-binding floor (and/or the
+  256 MiB `maxBufferSize` floor) and needs tiling/chunking or a graph-construction change to be safe
+  on a spec-minimum adapter, and/or (ii) semantics need runtime verification (non-contiguous/permuted
+  srcs, F16/precision risk, subgroup-gated paths, broadcast rules `supports_op` doesn't itself check).
+- **C** — missing: no `case` for the op in `ggml_backend_webgpu_device_supports_op`'s switch (falls
+  to `default:` → `false`), or the dtype/condition fails outright for this use (e.g. BF16 anywhere).
+- **D** — trellis/Pixal3D custom kernel outside ggml's graph (`naf_attn.cu`, `decimate_qem.cu`,
+  `deform_conv.cu`) — needs an independent WGSL implementation or a deliberate CPU-keep decision.
+- **E** — CPU/WASM by design, no GPU work needed (topology, camera math, GLB, mesh postprocess).
+
+**Version note**: §4 of `docs/spec/31-webgpu-bringup.md` cites *current upstream* (`74a7c897`,
+2026-09-05); the vendored fork (`737e88f2`, pinned in this repo, ~900 lines / 2 commits behind) is
+additive-only relative to it (`docs/GGML_FORK_DIFF.md` §"Are these genuine patches"; confirmed here
+directly by `grep`-ing the fork's own `ggml-webgpu.cpp`: zero hits for `GGML_OP_GROUP_NORM`,
+`GGML_OP_PAD_REFLECT_1D`, `GGML_OP_POOL_2D`, `GGML_OP_CONV_3D`, `GGML_OP_IM2COL_3D`,
+`GGML_OP_CONV_2D_DW`, `GGML_OP_ARANGE` — every op §4 lists as "no case in the switch" is confirmed
+absent from the fork too, not just from upstream's historical state). The two upstream-only
+*additions* the fork lacks (`CONV_2D_DW` support, `SWIGLU_CLAMP`) are not used anywhere in this
+inventory, so they don't change any verdict below. One divergence *was* found and matters: the
+fork's `RMS_NORM`/`NORM`/`L2_NORM` case (`ggml-webgpu.cpp:4265-4269`, this repo's vendored copy) is
+`op->type==F32 && src0->type==F32` only — it does **not** carry the `ggml_is_contiguous_rows(src0)`
+guard §4's upstream table lists. Every NORM/RMS_NORM instance in this pipeline already receives a
+contiguous input (post-`ggml_cont`/post-`mul_mat` output), so no verdict below actually flips on
+this — but a future `thirdparty/ggml` sync that pulls in the stricter upstream check must not
+silently start rejecting (CPU-offloading) any norm that currently passes on the fork; call this out
+explicitly rather than assume the two versions are interchangeable here.
+
+**Global size-precheck caveat (applies to every row below)**: `ggml_backend_webgpu_device_supports_op`
+rejects an op outright (`ggml-webgpu.cpp:4060-4076`) if `ggml_nbytes(dst)`, `src0`, or `src1` exceeds
+`capabilities.limits.maxStorageBufferBindingSize` — spec floor 128 MiB (134,217,728 B), typical
+Chrome/Dawn desktop ~1–2 GiB (`docs/PIXAL3D_WEBGPU_MEMORY.md` §1). This is a **per-tensor-buffer**
+ceiling, not a per-op-family one: even a "trivially tileable" elementwise op (SILU, ADD, MUL) is
+flatly rejected — and its whole node CPU-offloaded by the scheduler — if its *materialized* tensor
+exceeds the limit; ggml does not auto-tile a single op's dispatch across multiple buffer bindings.
+This is why many otherwise-trivial ops below are marked **B** purely on size: at native-CUDA
+tensor sizes (multi-hundred-MB to multi-GB), most large intermediate tensors in this pipeline need a
+**graph-construction** fix (smaller row/voxel/tile chunks — several chunking mechanisms already exist
+in the C++ source, tuned for native VRAM budgets in the GB range, not the WebGPU spec floor) before
+they satisfy this precheck at all, independent of whether the *op type* is otherwise fully supported.
 
 ## 1. Method
 
@@ -65,7 +115,10 @@ competing trellis job). Outputs: `/mnt/hdd1/pixal3d/out/ops_trace.log` (pipeline
 Each table lists the ops present in that stage's graph(s), the **largest instance** seen across
 all invocations of that stage in this run (4 views for per-view stages), `count` = occurrences of
 that op within **one** graph build. Shapes are ggml `ne` order (`ne0` fastest / innermost).
-Classification is `TBD` throughout — see the note at the top of this document.
+Classification (`class` column, A-E per §0's legend) is filled in per instance below; an op's class
+can and does differ across rows when the same op is used with different dtypes/shapes in different
+stages (see §0's global size-precheck caveat for why the same op/dtype pair often lands A at one
+stage's tensor size and B at another's).
 
 ### DINOv3 @ 512 (`src/dinov3.cpp:57` `dinov3_encode`, tag `dinov3_S512`, 8 builds = 4 views × {SS cond, shape-512 cond})
 
@@ -73,14 +126,20 @@ Classification is `TBD` throughout — see the note at the top of this document.
 
 | op (+sub-op) | file:line | count | largest shape (in→out) | dtype | layout | bytes | notes | class |
 |---|---|---|---|---|---|---|---|---|
-| IM2COL | dinov3.cpp:79 (`ggml_conv_2d` patch embed) | 1 | in f32[512,512,3,1] → f16[768,32,32,1] | f16/f32 | cont | 3.1 MB | patch_embed k=16 s=16 p=0 | TBD |
-| MUL_MAT | dinov3.cpp:79,17,46,95 (patch embed GEMM, QKV/out proj, MLP, attn score+ctx) | 145 | [64,1029,16,1]×2 → [1029,1029,16,1] | f32 | cont | 67.8 MB | QKᵀ, plain (non-FA) attention | TBD |
-| SOFT_MAX | dinov3.cpp:46 `attn` | 24 | [1029,1029,16,1] | f32 | cont | 67.8 MB | `scale=0.125,max_bias=0`; full O(L²) score matrix materialized (no FlashAttention here) | TBD |
-| NORM | dinov3.cpp:22 `ln` | 49 | [1024,1029,1,1] | f32 | cont | 4.2 MB | `eps=1e-5`; final LN is non-affine | TBD |
-| UNARY:GELU_ERF | dinov3.cpp:96 (MLP) | 24 | [4096,1029,1,1] | f32 | cont | 16.9 MB | exact-erf GELU (not tanh-approx) | TBD |
-| CONCAT | dinov3.cpp:86 (cls‖reg‖patches), attn qkv-split path | 50 | [1024,5,1,1]+[1024,1024,1,1] → [1024,1029,1,1] | f32 | cont | 4.2 MB | prefix-token concat | TBD |
-| RESHAPE/VIEW/PERMUTE/CONT | dinov3.cpp:46 `attn` (head split, RoPE layout) | 126/168/98/266 | up to [3072,1029,1,1] | f32 | mixed (many `view-noncont`→`CONT`) | up to 12.6 MB | host-precomputed cos/sin RoPE tables applied via elementwise MUL/SUB/ADD (see dit RoPE note below — same pattern) | TBD |
-| ADD / MUL / SCALE / CPY | dinov3.cpp:16,22,46 | 217/192/48/2 | up to [4096,1029,1,1] | f32/f16 | cont | up to 16.9 MB | bias-add, LN affine, attn scale (0.125), cls/reg f16→f32 cast | TBD |
+| IM2COL | dinov3.cpp:80 (`ggml_conv_2d` patch embed) | 1 | in f32[512,512,3,1] → f16[768,32,32,1] | f16/f32 | cont | 3.1 MB | patch_embed k=16 s=16 p=0 | **A** |
+| MUL_MAT (linears: patch-embed GEMM, QKV/out proj, MLP fc1/fc2) | dinov3.cpp:17-21 `lin`, called :48,54,96,98 | 121 | [4096,1024,1,1]×[1024,1029,1,1]→[4096,1029,1,1] | f32 | cont | 16.9 MB (S512) / ~67 MB (S1024) | ordinary per-token linear, F32×F32 | **A** |
+| MUL_MAT (attn QKᵀ score, non-FA) | dinov3.cpp:40 `sdpa` | 24 | [64,1029,16]×2 → [1029,1029,16,1] | f32 | cont | 67.8 MB (S512) / **1.076 GB (S1024)** | plain O(L²) attention, no FlashAttention | **A** at S512 (fits the 128 MiB floor); **B** at S1024 — 1.076 GB blows both spec floors, 4th-largest tensor in the run; needs query-chunking (dit.cpp's exact-SDPA pattern) or FA rerouting (§5/§7 item 1) |
+| SOFT_MAX | dinov3.cpp:40 `sdpa` | 24 | [1029,1029,16,1] | f32 | cont | 67.8 MB (S512) / **1.076 GB (S1024)** | `scale=0.125,max_bias=0`; consumes the oversized score tensor above | **A** at S512; **B** at S1024 (same size issue/fix) |
+| NORM | dinov3.cpp:22 `ln` | 49 | [1024,1029,1,1] | f32 | cont | 4.2 MB (S512) / 16.8 MB (S1024) | `eps=1e-5`; final LN non-affine; contiguous input throughout | **A** |
+| UNARY:GELU_ERF | dinov3.cpp:97 (MLP) | 24 | [4096,1029,1,1] | f32 | cont | 16.9 MB (S512) / ~67 MB (S1024) | exact-erf GELU; `GELU_ERF` in supported UNARY list | **A** |
+| CONCAT | dinov3.cpp:87 (cls‖reg‖patches), :33 `rope_half` (`[-x2,x1]`) | 50 | [1024,5,1,1]+[1024,1024,1,1] → [1024,1029,1,1] | f32 | cont | 4.2 MB (S512) / 16.8 MB (S1024) | prefix-token concat; F32 dtype supported | **A** |
+| RESHAPE/VIEW/PERMUTE/CONT | dinov3.cpp:38-44 (head split), :31-32 `rope_half` | 126/168/98/266 | up to [3072,1029,1,1] | f32 | mixed (many `view-noncont`→`CONT`) | up to 12.6 MB (S512) / ~50 MB (S1024) | RESHAPE/VIEW/PERMUTE unconditionally `true`; CONT realized as CPY F32→F32 (supported) | **A** |
+| ADD / MUL / SCALE / CPY | dinov3.cpp:19 (bias-add), 24 (LN affine), 33-34 (RoPE), 85-86 (cls/reg f16→f32 cast) | 217/192/48/2 | up to [4096,1029,1,1] | f32/f16 | cont | up to 16.9 MB (S512) / ~67 MB (S1024) | bias-add/LN-affine/RoPE all F32-F32; cls/reg cast is CPY F16→F32 (supported set) | **A** |
+
+**Contrast with DiT's RoPE (below): DINOv3's cos/sin tables are host-precomputed** (`rcos`/`rsin`
+built in plain C++, `dinov3.cpp:60-71`) **and uploaded as ordinary input tensors** (`gcos`/`gsin`,
+lines 76-77) — no `ggml_arange` anywhere in this file. This RoPE path is already in the
+WebGPU-friendly shape; only the attention score tensor at S=1024 needs work.
 
 At S=1024 (tag `dinov3_S1024`, 8 builds = 4 views × {shape-1024 cond, tex-1024 cond}): identical
 graph shape, Ntok=4101 (64×64 patches); the **SOFT_MAX/MUL_MAT attention score tensor scales to
@@ -102,14 +161,17 @@ bilinear-sample (double-precision accumulate) the 32×32 DINOv3 feature map → 
 
 | op (+sub-op) | file:line | count | largest shape | dtype | layout | bytes | notes | class |
 |---|---|---|---|---|---|---|---|---|
-| FLASH_ATTN_EXT | dit.cpp:141 `sdpa` | 60 (30 self + 30 cross) | q f32[128,4096,12,1], k/v bf16[128,4096,12,1], mask f16[4096,4096,1,1] → f32[128,12,4096,1] | mixed f32/bf16/f16 | cont | 33.5 MB (mask) | `scale=0.0883883 (1/√128), max_bias=0, logit_softcap=0, prec=10 (F32 accum)`; self-attn Lk=Lq=4096, cross-attn Lk=Lc=5(global)+... | TBD |
-| REPEAT | dit.cpp:83 `build_pad_mask` | 2 | [4096,1,1,1] → [4096,4096,1,1] f16 | f16 | cont | 33.5 MB | **materializes the whole FA pad mask by broadcast-repeat** — built once per DiT graph and shared by all 30 blocks, but still a full [Lk_pad,Lq_pad] tensor; candidate for a WebGPU-side broadcast instead of materialization | TBD |
-| MUL_MAT | dit.cpp:24 `lin` (qkv/out/mlp/adaLN linears) | 245 | [1536,8192,1,1]×[1536,4096,1,1] → [8192,4096,1,1] | f16×f32→f32 | cont | 134.2 MB | MLP up-projection (1536→8192, widen×~5.3) is the largest GEMM | TBD |
-| UNARY:GELU | dit.cpp:274 (MLP) | 30 | [8192,4096,1,1] | f32 | cont | 134.2 MB | tanh-approx GELU (`ggml_gelu`, distinct from DINOv3's `gelu_erf`) | TBD |
-| RMS_NORM | dit.cpp:39 `rms_gamma` (q/k norm) | 120 (4/block × 30) | [128,12,4096,1] | f32 | view-cont | 25.2 MB | `eps=1e-12`; MultiHeadRMSNorm ×γ | TBD |
-| ARANGE / SET_ROWS / SUB / UNARY:STEP / CPY | dit.cpp:49–75 (`apply_rope`, `build_pad_mask`) | 122/120/60/2/362 | up to [1,128,12,4096] | f32/i32/f16 | cont/view-cont | up to 25.2 MB | **3D interleaved-pair RoPE is hand-built from primitives — `ggml_rope`/`GGML_OP_ROPE` is never called anywhere in this pipeline (0 occurrences in the whole run's dump)**; K/V padding to the FA `KQ_STRIDE=256` tile boundary via `PAD` | TBD |
-| PAD | dit.cpp:129 `prep_kv` | 60 | [128,5,12,1]→[128,256,12,1] | f32 | cont | 1.6 MB | zero-pads K/V key dim to 256-multiple for FA tiling | TBD |
-| NORM | dit.cpp:30 `layernorm` | 91 | [1536,4096,1,1] | f32 | cont | 25.2 MB | `eps=1e-6`; affine on norm2 only, non-affine elsewhere (adaLN modulation) | TBD |
+| FLASH_ATTN_EXT (default path) | dit.cpp:130,141 `sdpa` | 60 (30 self + 30 cross) | q f32[128,4096,12,1], **k/v bf16**[128,4096,12,1], mask f16[4096,4096,1,1] → f32[128,12,4096,1] | mixed f32/**bf16**/f16 | cont | 33.5 MB (mask) | `scale=0.0883883, prec=10 (F32 accum)`; `prep_kv` casts K/V to **BF16 by default** (`fa_fast` is false unless `TRELLIS_FA_FAST=1`) | **C** — confirmed identical in both upstream and the vendored fork (`ggml-webgpu.cpp:4208-4212`): `FLASH_ATTN_EXT` requires `src1`(K)/`src2`(V) ∈ {F32,F16,Q4_0,Q8_0}; **no BF16 anywhere in the WebGPU backend**. This is the default, load-bearing path — see §5 |
+| FLASH_ATTN_EXT (`TRELLIS_FA_FAST=1`, F16 K/V) | dit.cpp:121,130 | same call sites | same shapes, K/V **f16** instead of bf16 | mixed f32/f16/f16 | cont | 33.5 MB (mask) | opt-in fallback; code comment: *"F16 K/V can overflow on HR activations (the reason BF16+F32 is the default)"* | **B** — dtype passes the FA gate, but gated further on `capabilities.supports_subgroups`+alignment (subgroup/tile path selection, `ggml-webgpu.cpp:4226-4262`) and on precision risk (F16 range) at HR — needs validation, not just a flag flip |
+| FLASH_ATTN_EXT (`--no-fa` exact path: `MUL_MAT`+`SOFT_MAX_EXT`, chunked) | dit.cpp:153-182 `sdpa` | n/a (replaces FA node) | `[Lk,nq,nh]` score chunk, capped at `kAttnChunkBytes=1 GiB` | f32 | cont | up to 1 GiB/chunk | correctness oracle; already chunked, but tuned to native VRAM (1 GiB), not the WebGPU floor | **B** — MUL_MAT/SOFT_MAX both dtype-supported (F32), but the existing 1 GiB chunk budget (`kAttnChunkBytes`, `TRELLIS_ATTN_CHUNK_MB` override already exists) exceeds both spec floors and must be re-tuned to ~128 MiB for a spec-minimum target — a parameter change, no new kernel |
+| REPEAT (FA pad mask) | dit.cpp:83 `build_pad_mask` | 2 | [4096,1,1,1] → [4096,4096,1,1] f16 | f16 | cont | 33.5 MB (SS) / ~38.6 MB (shape-512, est.) / **619.5 MB (HR, N=17484)** | materializes the whole FA pad mask by broadcast-repeat, shared by all 30 blocks | **A** at SS/shape-512 (fits 128 MiB floor); **B** at HR — 619.5 MB blows both floors; candidate for a WebGPU-side broadcast (no materialization) or tiling — §5/§7 item 1 |
+| MUL_MAT | dit.cpp:24 `lin` (qkv/out/mlp/adaLN linears) | 245 | [1536,8192,1,1]×[1536,4096,1,1] → [8192,4096,1,1] | f16×f32→f32 | cont | 134.2 MB (SS) / 143.7 MB (shape-512) / **572.9 MB (HR)** / 1.61 GB (1536-token cascade cap) | MLP up-projection (1536→8192) is the largest GEMM | **B** everywhere — dtype passes (F16×F32 in the MUL_MAT rule), but (i) size is at/over the 128 MiB floor even at SS (134.2 MB vs. 134.22 MB floor — essentially exactly at the line) and far over at HR, needing tiling; (ii) the measured F16-staged F32 GEMM accuracy on WebGPU/Dawn is `rel≈1.3e-3` (`docs/spec/31-webgpu-bringup.md` §7, Apple M1 Pro), which fails the project's own `1e-3` tolerance and needs re-validating against the massive-activation sensitivity noted in spec 30 §5 |
+| UNARY:GELU | dit.cpp:274 (MLP) | 30 | [8192,4096,1,1] | f32 | cont | 134.2 MB (SS) / **572.9 MB (HR)** / 1.61 GB (cascade cap) | tanh-approx GELU (`ggml_gelu`, distinct from DINOv3's `gelu_erf`); `GELU` in supported UNARY list | **A** dtype-wise; **B** on size — same MLP-hidden tensor as the MUL_MAT above, same tiling need |
+| RMS_NORM | dit.cpp:39 `rms_gamma` (q/k norm) | 120 (4/block × 30) | [128,12,4096,1] | f32 | view-cont | 25.2 MB (SS) / ~100 MB (HR, est.) | `eps=1e-12`; MultiHeadRMSNorm ×γ; input already contiguous (post `ggml_view`+reshape) | **A** — fork's `RMS_NORM` case (`ggml-webgpu.cpp:4265-4269`) doesn't even carry upstream's `contiguous_rows` guard, and the input is contiguous either way (see §0 version note) |
+| ARANGE | dit.cpp:57,58 `apply_rope`, :73 `build_pad_mask` | 122 | `[hd]`=[128] (rope idx) / `[Lk_pad]` up to ~17,664 | f32 | cont | trivial (≤70 KB) | builds the even/odd RoPE index arrays and the pad-mask ramp fresh on **every** call (30 blocks × 2 for self-attn RoPE + 2 for the two pad masks) | **C** — `GGML_OP_ARANGE` has **no case at all** in the switch (confirmed absent in both upstream §4 and the fork by direct grep); every one of the 122 occurrences forces a CPU fallback + graph split. Tensors are tiny, but this is 122 sync points per DiT graph build — see §5/§7 item 1 (host-precompute + upload, exactly like DINOv3 already does) |
+| SET_ROWS / SUB / UNARY:STEP / CPY | dit.cpp:53-61 `apply_rope` (SET_ROWS,SUB), :74-75 `build_pad_mask` (STEP,CPY cast) | 120/60/2/362 | up to `[1,128,12,4096]` | f32/i32/f16 | cont/view-cont | up to 25.2 MB (SS) / ~100 MB (HR) | SET_ROWS scatters rotated even/odd pairs; STEP builds the mask ramp; CPY realizes the F32→I32 / F32→F16 casts | **A** — SET_ROWS (`op∈{F16,F32,Q8_0,Q4_0}`, `src0==F32`, `src1∈{I64,I32}`), SUB (F32/F32), STEP (UNARY, F32/F32), CPY (F32→I32 and F32→F16, both in the supported set) all pass dtype-wise; downstream of the CPU-forced ARANGE above but each node itself is fine |
+| PAD | dit.cpp:129 `prep_kv` | 60 | [128,5,12,1]→[128,256,12,1] | f32 | cont | 1.6 MB | zero-pads K/V key dim to 256-multiple for FA tiling, **before** the BF16/F16 cast | **A** — `PAD` requires `op->type==F32 && src0->type==F32`; the current code order (pad-then-cast) already satisfies this. Porting note: padding *after* the cast (BF16/F16 tensor) would silently fail this gate — preserve the pad-before-cast order |
+| NORM | dit.cpp:30 `layernorm` | 91 | [1536,4096,1,1] | f32 | cont | 25.2 MB (SS) / ~100 MB (HR) | `eps=1e-6`; affine on norm2 only, non-affine elsewhere (adaLN modulation) | **A** (see §0 version note on the fork's looser NORM guard — moot here, input already contiguous) |
 
 At sparse N=4394 (shape-512 flow, tag `dit_N4394_dcond5_proj1`) and N=17484 (shape-1024 **and**
 texture-1024 flow, tag `dit_N17484_dcond5_proj1`, built twice — same shape family, different
@@ -126,9 +188,9 @@ elsewhere: `IM2COL_3D`+`MUL_MAT`) at res16→32→64.
 
 | stage | file:line | key ops | largest shape | bytes | notes | class |
 |---|---|---|---|---|---|---|---|
-| seg1 (res16, C:8→1024) | ss_decoder.cpp:27 `conv3d`, :48 `resblock` | IM2COL_3D×10, MUL_MAT×10, NORM/MUL/UNARY:SILU×8, ADD×22 | IM2COL_3D dst f16[13824,16,16,16] | 113.2 MB | `s=1,p=1,d=1` (submanifold-style dense 3×3×3), 2×`ResBlock3d(512)`+2×`Conv3d` | TBD |
-| seg2 (res32, C:128→256) | same, ch=128 | IM2COL_3D×5, MUL_MAT×5, UNARY:SILU×4 | IM2COL_3D dst f16[3456,32,32,32] | 226.5 MB | `pixel_shuffle_3d(scale=2)` (CPU, ss_decoder.cpp:80) between segments | TBD |
-| seg3 (res64, C:32→1) | same, ch=32 | IM2COL_3D×5, MUL_MAT×5 | IM2COL_3D dst f16[864,64,64,64] | **453.0 MB** | final `chln`+SiLU+`Conv3d(32→1)` → occupancy logits `[64,64,64,1]` | TBD |
+| seg1 (res16, C:8→1024) | ss_decoder.cpp:27 `conv3d`, :48 `resblock` | IM2COL_3D×10, MUL_MAT×10, NORM/MUL/UNARY:SILU×8, ADD×22 | IM2COL_3D dst f16[13824,16,16,16] | 113.2 MB | `s=1,p=1,d=1` (submanifold-style dense 3×3×3), 2×`ResBlock3d(512)`+2×`Conv3d` | **IM2COL_3D: C** (non-Apple `ggml_conv_3d` path); **CONV_3D: C** (`#ifdef __APPLE__` `ggml_conv_3d_direct`, ss_decoder.cpp:39) — `GGML_OP_IM2COL_3D` and `GGML_OP_CONV_3D` both have **no case in the switch on either platform's lowering** (confirmed absent from the fork by grep); every Conv3d in this file is unsupported regardless of which branch compiles. Gated MUL_MAT is moot until one of these gets a kernel. **NORM/MUL/SILU/ADD (chln, resblock skip): A** — all F32, contiguous (post-`ggml_cont` permutes), small (≤4.2 MB) |
+| seg2 (res32, C:128→256) | same, ch=128 | IM2COL_3D×5, MUL_MAT×5, UNARY:SILU×4 | IM2COL_3D dst f16[3456,32,32,32] | 226.5 MB | `pixel_shuffle_3d(scale=2)` (CPU, ss_decoder.cpp:80) between segments | same as seg1: **IM2COL_3D/CONV_3D: C**; other ops **A** |
+| seg3 (res64, C:32→1) | same, ch=32 | IM2COL_3D×5, MUL_MAT×5 | IM2COL_3D dst f16[864,64,64,64] | **453.0 MB** | final `chln`+SiLU+`Conv3d(32→1)` → occupancy logits `[64,64,64,1]` | same as seg1: **IM2COL_3D/CONV_3D: C**; other ops **A** — see §5/§7 item 3 for the recommended Conv3D WGSL strategy |
 
 `ss_coords` (ss_decoder.cpp:128, downsample res64→res32 occupancy→active-voxel-coord list) is CPU
 host code (no ggml graph) — 4394 active voxels @res32 in this run.
@@ -141,13 +203,13 @@ concat, optional `AvgPool2d` down to target T. 4 views × 3 stage-configs = 12 b
 
 | op (+sub-op) | file:line | count | largest shape (S=1024 case) | bytes | notes | class |
 |---|---|---|---|---|---|---|
-| PAD_REFLECT_1D | naf_gpu.cpp:40 `reflect_pad2d` | 10 | [1024,1026,128,1]→[1026,1026,128,1] | 538.97 MB | applied twice (W then H) per k=3 conv, pad=1 | TBD |
-| IM2COL | naf_gpu.cpp:54 `conv_bias` (`ggml_conv_2d`) | 10 | in f32[1026,1026,128,1] → f16[1152,1024,1024,1] | **2.416 GB — the single largest tensor in the whole run** | k=3, 128→128, s=1,p=0 (padding pre-applied via reflect) | TBD |
-| MUL_MAT | naf_gpu.cpp:54 | 10 | same im2col output ×[1152,128,1,1] | 2.416 GB (src) | conv GEMM | TBD |
-| GROUP_NORM | naf_gpu.cpp:61 `group_norm_affine` | 8 | [1024,1024,128,1] | 536.9 MB | `n_groups=8, eps=1e-5`; affine applied as separate MUL+ADD (ggml's group_norm has no built-in affine) | TBD |
-| UNARY:SILU | naf_gpu.cpp:72 `enc_block` | 8 | [1024,1024,128,1] | 536.9 MB | | TBD |
-| CONCAT | naf_gpu.cpp:136 (`e1‖e2`, channel dim) | 1 | 2×[1024,1024,128,1]→[1024,1024,256,1] | 1.074 GB | | TBD |
-| POOL_2D | naf_gpu.cpp:138 (`pool_k=Sp/T` only when Sp≠T) | 0 or 1 | [1024,1024,256,1]→[512,512,256,1] | 1.074 GB | `pool_op=AVG(1), k=s=2, p=0`; absent when Sp==T (shape-512, tex-1024) | TBD |
+| PAD_REFLECT_1D | naf_gpu.cpp:43,45 `reflect_pad2d` | 10 | [1024,1026,128,1]→[1026,1026,128,1] | 538.97 MB | applied twice (W then H) per k=3 conv, pad=1 | **C** — `GGML_OP_PAD_REFLECT_1D` has no case in the switch (confirmed on the fork too); needs a small WGSL kernel (edge-mirror index remap into a larger buffer) — §5/§7 item 2 |
+| IM2COL | naf_gpu.cpp:55 `conv_bias` (`ggml_conv_2d`) | 10 | in f32[1026,1026,128,1] → f16[1152,1024,1024,1] | **2.416 GB — the single largest tensor in the whole run** | k=3, 128→128, s=1,p=0 (padding pre-applied via reflect) | **B** — IM2COL is dtype-supported (F32/F16), but 2.416 GB exceeds even the "typical Chrome/Dawn desktop" ~2 GiB figure, let alone either spec floor; this must not be materialized as-is on WebGPU. §5/§7 item recommends replacing this im2col-then-GEMM lowering with a direct/tiled conv2d (avoids the [K²Ci,H,W] buffer entirely, mirroring ss_decoder.cpp's Apple `CONV_3D`-direct pattern for 2D) |
+| MUL_MAT | naf_gpu.cpp:55 | 10 | same im2col output ×[1152,128,1,1] | 2.416 GB (src) | conv GEMM | **B** — gated on the same oversized IM2COL src above; same fix |
+| GROUP_NORM | naf_gpu.cpp:62 `group_norm_affine` | 8 | [1024,1024,128,1] | 536.9 MB | `n_groups=8, eps=1e-5`; affine applied as separate MUL+ADD (ggml's group_norm has no built-in affine) | **C** — `GGML_OP_GROUP_NORM` has no case in the switch (confirmed absent from the fork too); the affine MUL/ADD that follow (naf_gpu.cpp:65-66) are independently **A**, but blocked on this. Small/well-understood kernel (group mean/var reduction) — §5/§7 item 2 |
+| UNARY:SILU | naf_gpu.cpp:73,76 `enc_block` | 8 | [1024,1024,128,1] | 536.9 MB | | **A** dtype-wise; **B** on size — 536.9 MB exceeds both spec floors, hits the **global size precheck** (§0) even though SILU is a trivial elementwise op; needs the encoder graph tiled over spatial/channel blocks at the WebGPU spec-floor target |
+| CONCAT | naf_gpu.cpp:137 (`e1‖e2`, channel dim) | 1 | 2×[1024,1024,128,1]→[1024,1024,256,1] | 1.074 GB | | **A** dtype-wise (F32); **B** on size — 1.074 GB; recommend restructuring to avoid a full-resolution two-branch concat (e.g. pool each branch first, or fuse the two branches' consumers instead of materializing the concatenated tensor) |
+| POOL_2D | naf_gpu.cpp:139 (`pool_k=Sp/T` only when Sp≠T) | 0 or 1 | [1024,1024,256,1]→[512,512,256,1] | 1.074 GB | `pool_op=AVG(1), k=s=2, p=0`; absent when Sp==T (shape-512, tex-1024) | **C** — `GGML_OP_POOL_1D/POOL_2D` has no case in the switch (confirmed absent from the fork too); needs a small avg-pool WGSL kernel, plus tiling given the 1.074 GB size — §5/§7 item 2 |
 
 **NAF cross-scale neighborhood attention** (the "heavy part" per `docs/spec/30-pixal3d-cond.md`
 §4) is **not ggml** — see §3. RoPE-apply and the k/v adaptive-pool for the GPU path reuse the exact
@@ -172,19 +234,24 @@ coordinate-cascade (`sparse_upsample`, N₀=4394→M₃=1,188,765) paths:
 
 | op (+sub-op) | file:line | count/graph | largest shape (shape_dec stage3) | bytes | notes | class |
 |---|---|---|---|---|---|---|
-| GET_ROWS | sparse.cpp:74 `submconv_range` (27-tap gather), :332 `xs` skip-gather | 108–432/stage (scales with chunk count × 27 taps) | src f32[64,6144000,1,1] (post-subdiv conv2, stage3) → f32[64,3080029,1,1] | 1.573 GB | submanifold-conv neighbor gather; **this is the op WebGPU support hinges on for sparse conv** — indices come from `build_neighbor_table` (CPU, sparse.cpp:23, `unordered_map`-based, tap-major `[27,N]` int32) | TBD |
-| MUL_MAT | sparse.cpp:76 `mul_mat_rows`, :127/129 (ConvNeXt MLP) | 81–232/stage | [128,512,1,1]×[128,768000,1,1]→[512,768000,1,1] | **1.573 GB** | ConvNeXt MLP widen (C→4C); row-chunked (`kBlockChunkBytes`≈1.5 GB budget) to bound peak memory — this chunking is host orchestration around otherwise-plain `MUL_MAT`s | TBD |
-| UNARY:SILU | sparse.cpp:128 (ConvNeXt MLP) | 2–16/stage | [512,768000,1,1] | 1.573 GB | | TBD |
-| NORM | sparse.cpp:125 (ConvNeXt rowLN), sparse_c2s norm1/norm2 | 2–16/stage | [64,4620541,1,1] (post-subdiv, +1 sentinel row) | 1.183 GB | `eps=1e-6` throughout sparse ops | TBD |
-| ADD | sparse.cpp:79 (submconv bias+accumulate), :348 (skip-add) | 56–496/stage | [512,768000,1,1] | 1.573 GB | 27-tap accumulation is a chain of `ADD`s, not a fused reduce | TBD |
-| PAD | sparse.cpp:314,352 (`hraw`/`out` zero-seed buffer) | 2/graph | [64,3080029,1,1]→[64,4620541,1,1] | 1.183 GB | seeds a big output buffer once, then `CPY`s each chunk in (see below) — avoids an O(chunks) concat-chain that would peak at ~2× the result | TBD |
-| CPY | sparse.cpp:315,353 (chunk write-into-view) | varies (rooted via `roots`) | up to [64,1540511,1,1] | 394 MB | writes not reachable from the graph's single output root, so explicitly rooted via `ggml_build_forward_expand` on each `CPY` | TBD |
-| REPEAT | sparse.cpp:347 (skip `repeat_interleave(R)`) | 1–5/graph | [1,16,1000000,1]→[4,16,1000000,1] | 256 MB | S2C skip-connection channel interleave (R=Cout/K) | TBD |
-| CONCAT | sparse.cpp:85 (`submconv_pad` sentinel row), :242 | 1/graph | [128,295876,1,1]+[128,1,1,1]→[128,295877,1,1] | 590.2 MB | appends the zero sentinel row absent-neighbor indices point at | TBD |
+| GET_ROWS | sparse.cpp:75 `submconv_range` (27-tap gather), :334 `xs` skip-gather | 108–432/stage (scales with chunk count × 27 taps) | src f32[64,6144000,1,1] (post-subdiv conv2, stage3) → f32[64,3080029,1,1] | 1.573 GB | submanifold-conv neighbor gather; **this is the op WebGPU support hinges on for sparse conv** — indices come from `build_neighbor_table` (CPU, sparse.cpp:23, `unordered_map`-based, tap-major `[27,N]` int32) | **B** — GET_ROWS dtype passes (`src0∈{F32,...}`⇒`op==F32`, index dtype not gated by `supports_op` at all); but (i) 1.573 GB needs chunking well below the existing `kBlockChunkBytes`≈1.5 GB (native-VRAM-tuned) budget to fit the WebGPU floor — a parameter change, already-existing chunk machinery (`TRELLIS_BLOCK_CHUNK_MB`/`TRELLIS_C2S_CHUNK_MB`); (ii) sparse.cpp:71-72's own comment flags a **Vulkan-specific** "index tensor must start at buffer offset 0" assertion (already worked around there via `ggml_cont`) — whether WebGPU's GET_ROWS shader has the same offset restriction is unverified and must be checked before assuming the existing `ggml_cont` guard is sufficient |
+| MUL_MAT | sparse.cpp:77 `mul_mat_rows`, :128/130 (ConvNeXt MLP) | 81–232/stage | [128,512,1,1]×[128,768000,1,1]→[512,768000,1,1] | **1.573 GB** | ConvNeXt MLP widen (C→4C); row-chunked (`kBlockChunkBytes`≈1.5 GB budget) to bound peak memory — this chunking is host orchestration around otherwise-plain `MUL_MAT`s | **B** — dtype supported (F32/F16/quantized weight × F32 act all valid), same 1.5 GB→~128 MiB chunk-budget re-tuning need as GET_ROWS above |
+| UNARY:SILU | sparse.cpp:129 (ConvNeXt MLP) | 2–16/stage | [512,768000,1,1] | 1.573 GB | | **B** — dtype **A**, size needs the same chunk re-tuning (global size precheck, §0) |
+| NORM | sparse.cpp:126 (ConvNeXt rowLN), sparse_c2s norm1/norm2 (sparse.cpp:286-287,320) | 2–16/stage | [64,4620541,1,1] (post-subdiv, +1 sentinel row) | 1.183 GB | `eps=1e-6` throughout sparse ops | **B** — dtype **A** (F32, contiguous outputs of `submconv_range`/`mul_mat_rows`), size needs chunk re-tuning |
+| ADD | sparse.cpp:80 (submconv bias+accumulate), :350 (skip-add) | 56–496/stage | [512,768000,1,1] | 1.573 GB | 27-tap accumulation is a chain of `ADD`s, not a fused reduce | **B** — dtype **A**; size needs chunk re-tuning; also subject to the global caveat (§0) that `supports_op` has no explicit broadcast-shape check for the per-channel bias-add pattern — worth a runtime check once a WebGPU build exists |
+| PAD | sparse.cpp:316,354 (`hraw`/`out` zero-seed buffer) | 2/graph | [64,3080029,1,1]→[64,4620541,1,1] | 1.183 GB | seeds a big output buffer once, then `CPY`s each chunk in (see below) — avoids an O(chunks) concat-chain that would peak at ~2× the result | **B, structural** — PAD is F32-dtype-supported, but this pattern allocates **one** buffer sized to the full stage output (1.183 GB) and writes into *views* of it; a single WebGPU buffer binding cannot exceed `maxStorageBufferBindingSize` regardless of how many separate `CPY`s write into it — shrinking the per-chunk `CPY` size does **not** fix this, the seed buffer itself must become multiple real `GPUBuffer`s (a genuine graph-construction rework specific to WebGPU, not just a chunk-size parameter) |
+| CPY | sparse.cpp:317,355 (chunk write-into-view) | varies (rooted via `roots`) | up to [64,1540511,1,1] | 394 MB | writes not reachable from the graph's single output root, so explicitly rooted via `ggml_build_forward_expand` on each `CPY` | **B** — dtype supported (F32→F32); the per-chunk view itself (394 MB) already exceeds the floor independent of the PAD structural issue above, so both need fixing together |
+| REPEAT | sparse.cpp:349 (skip `repeat_interleave(R)` via `ggml_repeat_4d`) | 1–5/graph | [1,16,1000000,1]→[4,16,1000000,1] | 256 MB | S2C skip-connection channel interleave (R=Cout/K) | **B** — dtype **A** (F32 in REPEAT's supported set); 256 MB sits at/over the spec floor, same broadcast-materialization pattern as DiT's FA pad mask (§5/§7 item 1) |
+| CONCAT | sparse.cpp:86 (`submconv_pad` sentinel row), :243-244 (C2S new-coord/gather-index construction is host-side; the actual second CONCAT instance is the per-stage sentinel-row append reused at each of the 4 stages) | 1/graph | [128,295876,1,1]+[128,1,1,1]→[128,295877,1,1] | 590.2 MB | appends the zero sentinel row absent-neighbor indices point at | **B** — dtype **A** (F32); 590.2 MB exceeds the floor; recommend allocating the sentinel row as part of the buffer from the start (graph-construction change, §7 item 1) instead of a per-stage CONCAT of the whole feature tensor |
 
-`output_layer` (final LN + `Linear(64,out_ch)`) is chunked at `kLinearRowChunk=1,000,000` rows —
-5 graph builds per decode call (4×N=1,000,000 + 1×N=620,540), each 3 nodes (NORM/MUL_MAT/ADD),
-largest `[64,1000000,1,1]` = 256 MB.
+`output_layer` (final LN + `Linear(64,out_ch)`, `shape_decoder.cpp:66-82` `linear_rows`) is chunked
+at `kLinearRowChunk=1,000,000` rows — 5 graph builds per decode call (4×N=1,000,000 + 1×N=620,540),
+each 3 nodes (NORM/MUL_MAT/ADD), largest `[64,1000000,1,1]` = 256 MB. **Class B** for all three ops
+— NORM/MUL_MAT/ADD are dtype-supported (F32), but 256 MB is ~2× the 128 MiB storage-binding floor
+and exactly at the 256 MiB `maxBufferSize` floor; `kLinearRowChunk` is native-VRAM-tuned (bounded by
+Vulkan's ~2.1M-row dispatch-grid ceiling, per the code comment) and needs a much smaller row cap for
+a WebGPU spec-floor target — a pure parameter change, no new kernel (the chunking loop already
+exists).
 
 **Host-side, between every stage** (not ggml): `build_neighbor_table` (CPU hash map, rebuilt at
 every N), and `sparse_c2s`'s octant-mask→new-coords→gather-index construction (`sparse.cpp:225–273`,
@@ -197,9 +264,9 @@ CPU) — sizes at shape_dec stage3: N=1,152,830→M=4,620,540 coords, `nnbr` = 2
 
 | kernel | file | what it computes | inputs/outputs (largest, this run) | CPU fallback? | GPU→CPU readback in this flow? | class |
 |---|---|---|---|---|---|---|
-| `naf_attn_kernel`/`naf_attn_cuda` | `src/naf_attn.cu:34,90` | Cross-scale 9×9 neighborhood attention (NATTEN-style), one thread per output pixel, 4 heads × 64-dim QK, softmax over 81 logits, weighted sum of 81 low-res V vectors. Indexes the **un-upsampled** pooled k/v maps directly (equivalence argument in `naf_attn.h`) instead of materializing `k_up`/`v_up` (would be up to 4 GB f32 at T=1024). | q f32[256,1024,1024] (RoPE'd), k_pooled f32[256,64,64], v f32[1024,64,64] → out f32[1024,1024,1024] (4 GB f32 at T=1024, largest attention output in the whole pipeline) | Yes — `src/naf.cpp`'s `naf_na2d`+CPU reference path (bit-exact vs. fixture at T=128/512, ~52 s/view @T=512/32-core; **not exercised in this run** since the CUDA path was available) | Yes — `naf_upsample_gpu` reads back `enc_pooled`/`cat` (ggml→host) to run RoPE+adaptive-pool on CPU (reusing `naf.cpp`'s reference functions), then re-uploads q/k_pooled/v into the CUDA kernel (`naf_attn_cuda`'s own `cudaMemcpy`s) | non-ggml; WGSL port is the highest-risk item per the porting-plan docs (native ggml has no neighborhood-attention op) |
-| `decimate_qem` (GPU) | `src/decimate_qem.cu` | CuMesh-style parallel QEM edge-collapse mesh simplification (Garland-Heckbert quadrics, atomicMin cost propagation, threshold-ladder driver). **Exercised in this run**: `decimate_qem_gpu(target=1000000): V 9,121,621→472,905, F 18,246,528→947,288`. | verts/faces host arrays in/out (mesh-sized: ~9.1M V / 18.2M F in) | Yes — `src/decimate_qem.cpp:203` `decimate_qem`, CPU port, same algorithm | Host↔device round-trip is the entire call (host mesh in, CUDA rounds, host mesh out) | non-ggml; CPU fallback exists and is the WASM path |
-| `deform_conv2d` (GPU: `.cu`; CPU: `_cpu.cpp`) | `src/deform_conv.cu`, `src/deform_conv_cpu.cpp` | Modulated deformable conv2d (torchvision `deform_conv2d` v2), used only by BiRefNet's `ASPPDeformable`. | n/a this run | Yes (`deform_conv_cpu.cpp`, std::thread-parallel; Vulkan/HIP compute-shader variants also exist) | n/a | **off-path**: `--views` mode never calls BiRefNet (confirmed — `ops_trace.log` shows no BiRefNet stage, and `trellis_run_mv` in `trellis_cli.cpp` has no birefnet call). Listed for completeness only. |
+| `naf_attn_kernel`/`naf_attn_cuda` | `src/naf_attn.cu:34,90` | Cross-scale 9×9 neighborhood attention (NATTEN-style), one thread per output pixel, 4 heads × 64-dim QK, softmax over 81 logits, weighted sum of 81 low-res V vectors. Indexes the **un-upsampled** pooled k/v maps directly (equivalence argument in `naf_attn.h`) instead of materializing `k_up`/`v_up` (would be up to 4 GB f32 at T=1024). | q f32[256,1024,1024] (RoPE'd), k_pooled f32[256,64,64], v f32[1024,64,64] → out f32[1024,1024,1024] (4 GB f32 at T=1024, largest attention output in the whole pipeline) | Yes — `src/naf.cpp`'s `naf_na2d`+CPU reference path (bit-exact vs. fixture at T=128/512, ~52 s/view @T=512/32-core; **not exercised in this run** since the CUDA path was available) | Yes — `naf_upsample_gpu` reads back `enc_pooled`/`cat` (ggml→host) to run RoPE+adaptive-pool on CPU (reusing `naf.cpp`'s reference functions), then re-uploads q/k_pooled/v into the CUDA kernel (`naf_attn_cuda`'s own `cudaMemcpy`s) | **D** — non-ggml; WGSL port is the highest-risk item per the porting-plan docs (native ggml has no neighborhood-attention op); CPU fallback exists but is far too slow for interactive use (~52 s/view @T=512) — see §5/§7 item 5 |
+| `decimate_qem` (GPU) | `src/decimate_qem.cu` | CuMesh-style parallel QEM edge-collapse mesh simplification (Garland-Heckbert quadrics, atomicMin cost propagation, threshold-ladder driver). **Exercised in this run**: `decimate_qem_gpu(target=1000000): V 9,121,621→472,905, F 18,246,528→947,288`. | verts/faces host arrays in/out (mesh-sized: ~9.1M V / 18.2M F in) | Yes — `src/decimate_qem.cpp:203` `decimate_qem`, CPU port, same algorithm | Host↔device round-trip is the entire call (host mesh in, CUDA rounds, host mesh out) | **D, but "keep on CPU" is a legitimate first-pass answer** — non-ggml; the CPU port is already the designated WASM path (per `docs/GGML_FORK_DIFF.md`), decimation runs post-mesh-extraction (topology stage, already CPU/WASM territory), and it costs no *additional* round trip vs. the GPU path (which is itself a whole-mesh host↔device call). A WGSL port is a real but low-priority nice-to-have — §5/§7 item 7 |
+| `deform_conv2d` (GPU: `.cu`; CPU: `_cpu.cpp`) | `src/deform_conv.cu`, `src/deform_conv_cpu.cpp` | Modulated deformable conv2d (torchvision `deform_conv2d` v2), used only by BiRefNet's `ASPPDeformable`. | n/a this run | Yes (`deform_conv_cpu.cpp`, std::thread-parallel; Vulkan/HIP compute-shader variants also exist) | n/a | **E** — off-path: `--views` mode never calls BiRefNet (confirmed — `ops_trace.log` shows no BiRefNet stage, and `trellis_run_mv` in `trellis_cli.cpp` has no birefnet call). Listed for completeness only; if a future entry point re-enables BiRefNet, reclassify as **D** with an existing CPU fallback (not a hard blocker even then) |
 
 `GLU` (`GGML_OP_GLU`) and `ROPE` (`GGML_OP_ROPE`) appear **zero times** in the entire 70,318-line
 dump — Pixal3D/TRELLIS.2 doesn't use gated-linear-unit MLPs, and RoPE (both DINOv3's 2D and the
@@ -225,7 +292,150 @@ matters here at all.
 | GLB serialization | `mesh_glb.cpp:212,278` | glTF/GLB binary write, WebP PBR texture encode | final `ops_trace.glb` |
 
 All rows above are CPU/WASM by design (topology, host orchestration, or established-portable mesh
-code) — no TBD classification needed.
+code) — E, no further record needed.
+
+## 5. Required records for every Class B/C/D instance
+
+Fields: **op/function**; **file:line**; **shapes** (in→out); **dtype**; **layout**; **largest size**
+(this run) **vs. limits** (128 MiB storage-binding spec floor / 256 MiB `maxBufferSize` spec floor /
+~1–2 GiB typical Chrome-Dawn desktop, per `docs/PIXAL3D_WEBGPU_MEMORY.md` §1); **CPU fallback
+possible?**; **would that fallback need GPU readback of a large feature tensor?**; **recommended
+strategy**.
+
+### C — missing ops (need a new WGSL kernel before anything downstream of them can run on WebGPU)
+
+| # | op | file:line | shapes | dtype | layout | size vs. limits | CPU fallback? | GPU readback needed? | strategy |
+|---|---|---|---|---|---|---|---|---|---|
+| C1 | `FLASH_ATTN_EXT` w/ BF16 K/V (DiT default) | dit.cpp:130,141 | q[128,4096,12]/k,v[128,4096,12]bf16→out[128,12,4096] (SS); scales to [128,17664,12] at HR | f32/**bf16**/f16 | cont | mask 33.5 MB→619.5 MB; exceeds floor at HR only, but the op is rejected at **every** size (dtype gate fails first) | Yes — `--no-fa` exact path (dit.cpp:153-182) already exists and is bit-exact to 8e-5 | No — exact path stays GPU-resident, same as FA | Not a CPU-fallback problem: **switch WebGPU builds to F16 K/V** (`TRELLIS_FA_FAST` path) with the precision risk validated (§5 B-side entry below), or add a WGSL BF16-cast-to-F16-at-encode-time shim so FA's storage stays effectively F16 while upstream numerics keep BF16's dynamic-range intent as closely as possible; long-term, upstream has no BF16 WGSL story to inherit (`docs/spec/31-webgpu-bringup.md` §6) so this is either a permanent F16-with-validated-tolerance decision or new kernel work, not a quick port |
+| C2 | `ARANGE` (RoPE index build, FA pad-mask ramp) | dit.cpp:57,58,73 | out `[128]` (RoPE idx) / `[Lk_pad]` up to ~17,664 | f32 | cont | trivial (≤70 KB) but 122 occurrences/graph | Yes, trivially — output is a pure function of `(hd, Lk_pad)`, no runtime data dependency | No | **Graph-construction fix, no kernel**: precompute the even/odd RoPE index arrays and the pad-mask ramp on the host once per `(hd, Lk_pad)` config and upload as ordinary input tensors — exactly the pattern DINOv3's RoPE already uses (dinov3.cpp:60-71). Eliminates 122 CPU-fallback graph splits per DiT build. §7 item 1 |
+| C3 | `IM2COL_3D` / `CONV_3D` (SS decoder Conv3d, both platform branches) | ss_decoder.cpp:27,39,42 `conv3d` | in [16,16,16,512]→im2col dst f16[13824,16,16,16] (seg1) up to [864,64,64,64] f16 (seg3) | f32 in / f16 im2col dst | cont | 113 MB → 453 MB; exceeds the 128/256 MiB floor from seg1 onward | Yes — the whole SS decoder could stay CPU, but at res16-64 dense voxel grids (up to 262,144 output voxels) this would be materially slower than GPU convs and sits mid-pipeline (blocks everything downstream) | Yes if kept CPU — the seg1→seg2→seg3 chain feeds `ss_coords`, so a CPU decoder needs the SS latent read back once (small: [8,4096]) but keeps the whole ResBlock stack off-GPU | **New WGSL Conv3D kernel** (direct convolution, not im2col-materialize — mirrors the existing Apple/Metal `ggml_conv_3d_direct` code path already in this codebase, just needs a WebGPU implementation of the same op). §7 item 3 |
+| C4 | `PAD_REFLECT_1D` (NAF reflect-pad) | naf_gpu.cpp:43,45 `reflect_pad2d` | [1024,1024,128]→[1026,1024,128] (W) then →[1026,1026,128] (H) | f32 | cont | 538.97 MB, exceeds both floors | Yes, cheap — reflect-pad is index remapping, not compute | Only if the whole NAF encoder falls back; in isolation, no | Small WGSL kernel: copy interior + mirror 1-pixel border into a pre-sized larger buffer. §7 item 2 |
+| C5 | `GROUP_NORM` (NAF encoder GroupNorm(8)) | naf_gpu.cpp:62 `group_norm_affine` | [1024,1024,128,1] | f32 | cont | 536.9 MB, exceeds both floors | Yes, but would force the whole EncBlock chain off-GPU (GN sits between every conv pair) | Yes if CPU-fallback'd — the conv outputs feeding it are already GPU-resident and would need reading back | Small, well-understood WGSL kernel (per-group mean/var reduction + normalize; affine already split out as separate MUL/ADD, which are already A). §7 item 2 |
+| C6 | `POOL_2D` (NAF encoder AvgPool, Sp≠T only) | naf_gpu.cpp:139 | [1024,1024,256]→[512,512,256] | f32 | cont | 1.074 GB, exceeds both floors | Yes, trivial op | Yes if CPU-fallback'd (large tensor) | Small WGSL avg-pool kernel (k=s=2, p=0, the only configuration used); tile given size. §7 item 2 |
+
+### B — supported but needs validation, tiling, or a graph-construction change
+
+| # | op | file:line | shapes | dtype | layout | size vs. limits | CPU fallback? | GPU readback needed? | strategy |
+|---|---|---|---|---|---|---|---|---|---|
+| B1 | `FLASH_ATTN_EXT` w/ F16 K/V (`TRELLIS_FA_FAST=1`) | dit.cpp:121,130 | same as C1, F16 not BF16 | f32/f16/f16 | cont | same as C1 | Yes — same `--no-fa` path | No | Validate: (i) `capabilities.supports_subgroups` + tile-path alignment (`ggml-webgpu.cpp:4226-4262`) on the target adapter; (ii) F16-range overflow risk at HR activations (the exact reason the CUDA path defaults to BF16, per dit.cpp:100-103 comment) — needs its own golden-tensor comparison before trusting it as the WebGPU FA path |
+| B2 | `FLASH_ATTN_EXT` exact path (`--no-fa`, chunked MUL_MAT+SOFT_MAX) | dit.cpp:153-182 | `[Lk,nq,nh]` chunks, `kAttnChunkBytes=1 GiB` | f32 | cont | 1 GiB/chunk ≫ 128 MiB floor | N/A (this *is* the CPU-parity oracle) | No | Retune `kAttnChunkBytes` (already env-overridable via `TRELLIS_ATTN_CHUNK_MB`) to ~64-96 MiB for a spec-floor target — no new code |
+| B3 | `REPEAT` (DiT FA pad mask, HR only) | dit.cpp:83 | [17664,1]→[17664,17536] f16 | f16 | cont | 619.5 MB ≫ both floors | N/A (mask is derived, not a fallback target) | No | Check whether `ggml_flash_attn_ext`'s mask argument tolerates a `[Lk_pad,1]` broadcast source instead of a materialized `[Lk_pad,Lq_pad]` tensor (would eliminate the REPEAT entirely, §7 item 1); if not, tile the mask build per Q-chunk |
+| B4 | DiT `MUL_MAT`/`UNARY:GELU` (MLP hidden) | dit.cpp:24,274 | [8192,4096]→ up to [8192,49152] (cascade cap) | f16×f32→f32 | cont | 134 MB (SS, at the floor) → 573 MB (HR) → 1.61 GB (cascade cap) | No sensible CPU fallback (would serialize the whole DiT) | N/A | Tile the MLP block over token ranges (same query-chunk pattern already used for exact attention) to keep each `[8192,nr]` intermediate under ~100 MiB; separately validate F16-GEMM accuracy (measured `rel≈1.3e-3` on Apple/Dawn, `docs/spec/31-webgpu-bringup.md` §7) against the massive-activation sensitivity in spec 30 §5 before trusting F16 weights at HR |
+| B5 | DINOv3 attn `MUL_MAT`+`SOFT_MAX` (S1024 only) | dinov3.cpp:40 | [64,4101,16]×2→[4101,4101,16] | f32 | cont | 1.076 GB ≫ both floors | Query-chunk like dit.cpp's exact path | No | Preferred: reroute through `FLASH_ATTN_EXT` (dtype trivially passes — DINOv3 is all-F32, no BF16 problem) instead of materializing the O(L²) score matrix at all; fallback: query-chunk |
+| B6 | NAF `IM2COL`+`MUL_MAT` (k=3 conv) | naf_gpu.cpp:55 | [1026,1026,128]→[1152,1024,1024] | f32/f16 | cont | **2.416 GB — largest tensor in the run**, exceeds even typical desktop | Yes, but this conv sits inside the encoder chain feeding the attention kernel — a full CPU fallback here reintroduces the exact host round trip §5 of `PIXAL3D_WEBGPU_MEMORY.md` calls out as "must change" | Yes if CPU-fallback'd | Replace the im2col-materialize lowering with a **direct/tiled conv2d** (never build the full `[K²Ci,H,W]` buffer) — highest-value single fix in the NAF encoder, §7 item 2/3 boundary |
+| B7 | NAF `UNARY:SILU`/`CONCAT` (post-conv/post-branch) | naf_gpu.cpp:73,76,137 | up to [1024,1024,256] | f32 | cont | 536.9 MB–1.074 GB | Same encoder-chain caveat as B6 | Yes if CPU-fallback'd | Tile the encoder graph over spatial blocks once IM2COL/CONV are fixed; for CONCAT specifically, consider restructuring to avoid a full-resolution two-branch concat |
+| B8 | Sparse `GET_ROWS`/`MUL_MAT`/`SILU`/`NORM`/`ADD` (submconv/ConvNeXt) | sparse.cpp:75,77,80,126,129 | up to [512,768000] / [64,4620541] | f32 | cont | 1.18–1.57 GB | No (defeats the purpose of sparse GPU conv; CPU sparse conv at millions of voxels is the slow path this architecture exists to avoid) | N/A | Retune `kBlockChunkBytes`/`kMulMatRowChunk` (already exist, native-VRAM-tuned to ~1.5 GB) down to a WebGPU-floor-safe budget (~64-100 MiB); also confirm GET_ROWS index-tensor offset behavior on WebGPU (§ sparse table note) |
+| B9 | Sparse `PAD`+`CPY` (chunk-into-one-buffer pattern) | sparse.cpp:316-317,354-355 | seed [64,4620541] / chunk-view up to [64,1540511] | f32 | cont/view | 1.18 GB seed, 394 MB/chunk | No | N/A | **Structural, not just a size fix**: the single-buffer-with-multiple-CPY-views pattern needs to become multiple real WebGPU buffers once any one chunk's seed buffer exceeds `maxStorageBufferBindingSize` — smaller `CPY` chunks alone don't fix the shared seed-buffer size |
+| B10 | Sparse `REPEAT`/`CONCAT` (skip-interleave, sentinel row) | sparse.cpp:349,86 | [1,16,1e6]→[4,16,1e6] / +1 sentinel row | f32 | cont | 256 MB / 590.2 MB | No | N/A | Same broadcast-materialization concern as B3; for CONCAT, allocate the sentinel row as part of the buffer from graph-construction time instead of appending it every stage |
+| B11 | `output_layer` chunked linear (NORM/MUL_MAT/ADD) | shape_decoder.cpp:66-82 `linear_rows` | [64,1000000]→[7-or-6,1000000] | f32 | cont | 256 MB/chunk | No | N/A | Shrink `kLinearRowChunk` (currently 1,000,000, Vulkan-dispatch-tuned) to a WebGPU-floor-safe row count — parameter change only |
+
+### D — custom kernels needing an independent WebGPU implementation (or a deliberate CPU-keep decision)
+
+| # | function | file | I/O (largest) | CPU fallback? | GPU readback if CPU? | strategy |
+|---|---|---|---|---|---|---|
+| D1 | `naf_attn_cuda` (cross-scale neighborhood attention) | naf_attn.cu:34,90 | q[256,1024,1024], k_pooled[256,64,64], v[1024,64,64]→out[1024,1024,1024] (4 GB f32 conceptual, never materialized) | Yes, `naf.cpp` CPU reference (~52 s/view @T=512) | Already round-trips (naf_gpu.cpp:156-180) | WGSL compute kernel, one invocation (or small tile) per output pixel, reading pooled k/v directly — same non-materializing design as the CUDA kernel, since a materialized k_up/v_up would itself blow every WebGPU size limit. §7 item 5 |
+| D2 | `decimate_qem_gpu`/`_vk` (QEM mesh decimation) | decimate_qem.cu | mesh-sized (~9.1M V/18.2M F in, this run) | Yes, `decimate_qem.cpp`, same algorithm, already the WASM path | No extra round trip vs. the GPU path (whole-mesh in/out either way) | **Keep on CPU/WASM for the first browser target** — no porting urgency; revisit only if decimation throughput becomes the bottleneck. §7 item 7 |
+
+**Global note for every B row above driven purely by size**: the fix in each case is either (a) a
+pure parameter/chunk-size change against machinery that already exists in the C++ source (tuned for
+native multi-GB VRAM budgets, not the ~128 MiB WebGPU floor), or (b) a graph-construction change
+(avoid materializing a broadcast/concat/im2col buffer at all). None of the B rows need a new WGSL
+kernel by themselves — they need the *graph* built differently for a WebGPU target. That is the
+central practical distinction between B and C/D in this document.
+
+## 6. Summary
+
+**Counts** (per-instance, splitting rows that classify differently by stage/shape as done above;
+custom kernels and CPU/WASM rows counted separately):
+
+| class | count | where |
+|---|---|---|
+| A | ~34 op-instances | DINOv3 linears/norms/unary/concat/reshape (S512 fully, S1024 mostly); DiT RMS_NORM/NORM/SET_ROWS/SUB/STEP/CPY/PAD; SS decoder's norm/silu/add (not the conv itself); IM2COL/patch-embed |
+| B | ~24 op-instances | DiT FA (F16 variant)/exact-path/pad-mask-REPEAT/MLP MUL_MAT+GELU at HR; DINOv3 attention at S1024; every NAF op past the reflect-pad (IM2COL/MUL_MAT/SILU/CONCAT); every sparse-decoder op (GET_ROWS/MUL_MAT/SILU/NORM/ADD/PAD/CPY/REPEAT/CONCAT); `output_layer` linear |
+| C | 6 distinct missing ops | `FLASH_ATTN_EXT`-with-BF16 (DiT default), `ARANGE` (DiT RoPE/mask), `IM2COL_3D`/`CONV_3D` (SS decoder), `PAD_REFLECT_1D`, `GROUP_NORM`, `POOL_2D` (all three in NAF encoder) |
+| D | 2 custom kernels (+1 off-path) | `naf_attn_cuda` (blocking), `decimate_qem_gpu` (deferrable); `deform_conv2d` off-path (E unless BiRefNet re-enabled) |
+| E | ~13 stages/functions | SS conditioning, proj-grid, host RoPE-table math (DINOv3's, already E-shaped), sparse coord hashing/C2S index construction, all of §4 (camera math, dual-grid, remesh, mesh cleanup, UV bake, GLB) |
+
+**C/D list grouped by stage** (the operations that block a from-scratch WebGPU run today):
+
+- **DiT (SS + both SLAT flows)**: C — `FLASH_ATTN_EXT` w/ BF16 K/V (default path, all three DiTs); `ARANGE` (RoPE + pad-mask, 122×/graph).
+- **SS decoder**: C — `IM2COL_3D`/`CONV_3D` (every Conv3d, both platform branches, all 3 segments).
+- **NAF encoder**: C — `PAD_REFLECT_1D`, `GROUP_NORM`, `POOL_2D`.
+- **NAF attention**: D — `naf_attn_cuda` (no ggml op exists for neighborhood attention at all).
+- **Mesh postprocess**: D — `decimate_qem_gpu` (CPU-keep candidate, not blocking).
+- **DINOv3, sparse decoder, shape_decoder's `output_layer`**: no C/D — all B (size/validation) or A.
+
+**Minimal set for the realistic first browser target (SS + shape-512, per
+`docs/PIXAL3D_WEBGPU_MEMORY.md` §4's "Realistic first browser target")**:
+
+- Must fix: DiT `FLASH_ATTN_EXT` BF16 gap (C1/B1 — F16 K/V with validated tolerance, or the exact
+  chunked path retuned to the spec floor); DiT `ARANGE` (C2, cheap graph fix); SS decoder's
+  `IM2COL_3D`/`CONV_3D` (C3 — this stage runs unconditionally for every generation, at res16-64,
+  where tensors are 113–453 MB, still over-floor but far smaller than the HR case); every
+  size-driven B at SS/shape-512 scale (DiT MLP hidden 134–144 MB, DINOv3 attention only at S512 so
+  already A, sparse decoder tensors scaled to shape-512's ~4,394→~1.19M voxel density rather than
+  HR's 4.6M).
+- Does **not** need: NAF's `PAD_REFLECT_1D`/`GROUP_NORM`/`POOL_2D`/`naf_attn_cuda` (NAF is a
+  texture/HR-conditioning feature — shape-512 untextured needs no NAF pass at all per
+  `docs/spec/30-pixal3d-cond.md`); DINOv3 attention tiling (only needed at S1024, and shape-512
+  conditioning runs DINOv3 at S512, which is already A).
+- **decimate_qem**: can stay CPU/WASM even for the full cascade (D2 verdict).
+
+**Full 1024 cascade (shape-1024 + texture-1024) adds**: DiT MLP tiling at 573 MB→1.61 GB scale;
+DiT FA pad-mask REPEAT at 619.5 MB (B3); DINOv3 attention tiling/FA-reroute at S1024 (B5, 1.076 GB);
+the entire NAF stack (C4/C5/C6 + D1 `naf_attn_cuda`, since texture conditioning is HR-only); NAF's
+2.416 GB im2col conv (B6, the single largest tensor in the whole pipeline); sparse decoder tensors
+at full HR density (up to 1.57–1.19 GB, more chunking than shape-512 needs).
+
+## 7. Recommended kernel implementation order
+
+Ordered by dependency (what blocks what), blast radius (how many stages/tensors a fix unblocks),
+and size (cheapest wins first):
+
+1. **Graph-construction changes that need no new kernel** — highest value-per-effort, unblocks
+   real testing immediately: host-precompute DiT's `ARANGE`-built RoPE index/pad-mask arrays (C2,
+   mirrors DINOv3's already-working pattern); retune every existing chunk-budget constant
+   (`kAttnChunkBytes`, `kBlockChunkBytes`, `kMulMatRowChunk`, `kLinearRowChunk`) from native-VRAM
+   scale (GB) down to the WebGPU spec floor (~64-100 MiB) — B2/B4/B8/B11; investigate whether
+   `ggml_flash_attn_ext`'s mask argument supports a broadcast (non-materialized) source to drop the
+   FA pad-mask REPEAT (B3/B10) without a kernel. None of this touches WGSL at all, and it is a
+   prerequisite for every size-driven B below regardless of what else ships.
+2. **Small missing ops**: `GROUP_NORM` (C5), `POOL_2D` (C6), `PAD_REFLECT_1D` (C4). Justification:
+   conceptually simple kernels (reduction, pooling, index-remap — no gather/scatter, no cross-voxel
+   topology), each unblocks the entire NAF encoder chain (currently every downstream NAF op is
+   forced CPU once any one of these three is hit), and none has a dependency on anything else in
+   this list.
+3. **IM2COL_3D / direct Conv3D for the SS decoder** (C3) — blocks the SS decoder unconditionally
+   (every generation runs it), moderate complexity (3D convolution, not just elementwise), and the
+   codebase already has a working *native* direct-conv3d code path (`ggml_conv_3d_direct`, Apple
+   branch) to use as the reference implementation for a WGSL port, lowering risk relative to writing
+   the numerics from scratch. Also fixes NAF's im2col-materialization problem (B6) by the same
+   direct/tiled-conv technique in 2D.
+4. **Sparse conv gather/scatter** (B8/B9's `GET_ROWS`/`PAD`+`CPY` structural fix) — highest
+   remaining tensor sizes (up to 1.57 GB) and the most structurally involved fix (the
+   single-buffer-multi-view pattern must become genuinely multiple WebGPU buffers), but is "only"
+   parameter/graph work once GET_ROWS's WebGPU-specific offset behavior is confirmed (no unsupported
+   op involved) — ordered after Conv3D since it's needed by both `shape_decoder`/`tex_decode` and the
+   coordinate-upsample cascade, i.e. broad blast radius, but not needed until a full HR run is
+   attempted.
+5. **NAF neighborhood attention WGSL** (`naf_attn_cuda`, D1) — highest implementation risk (no
+   existing ggml op to model it on, must be written from scratch, and correctness depends on
+   replicating the non-materializing on-demand-evaluation design exactly, or every size limit in
+   this document gets blown by a materialized 4 GB `k_up`/`v_up`) — ordered after the simpler
+   kernels so the team has WGSL authoring experience from items 2-3 first, and because NAF is
+   HR/texture-only (not needed for the first browser target per §6).
+6. **ProjGrid sampling on GPU** — currently `E` (host bilinear sample,
+   `proj_grid.cpp:156`) by design; promoting it to GPU-resident (per
+   `docs/PIXAL3D_WEBGPU_MEMORY.md` §5 item 2's "port `proj_grid_sample` to a WGSL compute kernel
+   operating directly on the DINOv3 output buffer") removes one GPU→host→GPU round trip per view but
+   is optional — the memory doc itself accepts "one round trip per view" as tolerable if pipelined
+   across views. Ordered last among the *GPU-porting* items because it's a latency optimization, not
+   a correctness/capacity blocker (unlike items 1-5).
+7. **Decimation** (D2) — recommend **keep on CPU/WASM** rather than port: the CPU fallback is
+   already the designated WASM path, costs no extra round trip relative to the GPU variant (both are
+   whole-mesh host↔device calls), and sits in the topology/postprocess stage the architecture docs
+   already assign to CPU. Revisit only if decimation throughput measurably gates the browser
+   experience after everything else above ships.
 
 ---
 
