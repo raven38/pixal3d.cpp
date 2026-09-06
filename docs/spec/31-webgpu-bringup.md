@@ -1395,3 +1395,195 @@ process 9.93 GB, all Chrome processes 16.0 GB (res-512: 4.03 / 5.81 GB) -- memor
   exceed the binding from stage 2 on; a buffer split is a graph-construction change still deferred.
 - Timing is not a goal of this phase; the Mac GPU was shared with another session's Shape-1024
   flow probe during part of the measurements.
+
+## 12. Sparse texture (PBR) decoder on WebGPU (2026-09-07, `feat/webgpu-texture-decode`)
+
+Scope of this phase: the texture / PBR decoder -- `SparseUnetVaeDecoder(out_channels=6,
+pred_subdiv=False)`: `from_latent` → 4 × (ConvNeXt stage + C2S up-block driven by the shape
+decoder's subdivision masks) → final non-affine LayerNorm → 6-channel `output_layer` -- on the
+ggml WebGPU backend natively (Dawn) and in Chrome (the same `web/ss/pixal3d_ss.wasm`), fed the
+**real sampled Texture-1024 SLAT** of `tools/ref_pixal3d_hr_sample.py` (`hr_sample`:
+`hr_coords.npy` N = 17,489 at res 64, `f32_tex_slat.npy` [N,32] denormalized, plus
+`f32_shape_slat.npy` for the shape decoder that supplies the masks; reference decode
+`f32_tex_attrs.npy` = 4,649,828 × 6 attributes already `*0.5+0.5`'d, `f32_tex_coords.npy` its
+voxel coords). Branch base: `v0.7.0-webgpu-shape-decode` (= `5a88b51`, §11); the shape decoder
+and its regressions are the sparse-runtime baseline and are rerun unchanged (§12.8). Random
+texture latents are not used anywhere in this phase.
+
+### 12.1 Texture decoder vs shape decoder (what is actually different)
+
+Both checkpoints (`tex_dec_next_dc_f16c32_fp16.json`, `shape_dec_next_dc_f16c32_fp16.json`) and
+`pixal3d/models/sc_vaes/sparse_unet_vae.py` (byte-identical to TRELLIS.2's) are the authority;
+the C++ port runs both through one `decode_unet` (`src/shape_decoder.cpp`):
+
+| | shape decoder (`FlexiDualGridVaeDecoder`) | texture decoder (`SparseUnetVaeDecoder`) |
+|---|---|---|
+| torso | `model_channels` [1024, 512, 256, 128, 64], `num_blocks` [4, 16, 8, 4, 0], `SparseConvNeXtBlock3d` (submanifold 3³ conv → LN(affine, 1e-6) → MLP 4× SiLU → residual), `SparseResBlockC2S3d` up-blocks (norm1 → SiLU → conv1 `C → 8·Cout` → channel→spatial → norm2 (no affine) → SiLU → conv2 → + repeat-interleaved skip), fp16 torso (`use_fp16`) | **identical** (same classes, same widths, same block counts; 284 vs 292 GGUF tensors, 904.7 vs 904.8 MB f16 weights) |
+| input | `from_latent` 32 → 1024 on the denormalized shape SLAT | `from_latent` 32 → 1024 on the denormalized **texture** SLAT (`x * tex_std + tex_mean`), same coords |
+| subdivision | `pred_subdiv=True`: each up-block has `to_subdiv` (SparseLinear `C → 8`, 8 extra tensors), logits thresholded at 0 → octant masks; the masks are returned (`return_subs`) | `pred_subdiv=False`: **no** `to_subdiv` weights; each up-block takes `guide_subs[i]` -- the shape decoder's masks -- so the voxel tree is the shape decoder's by construction (`tex_decode(m, latent, coords0, so.subs)`) |
+| hierarchy transitions | res 64 → 128 → 256 → 512 → 1024 (N = 17,489 → 71k → 288k → 1.16M → 4.65M) | the same transitions and the same M at every level (masks shared) |
+| head | `F.layer_norm(64)` (no affine) → `output_layer` 64 → **7**: sigmoid-scaled vertex offsets [0:3], intersection logits [3:6], `softplus` quad lerp [6] → dual-grid mesh | `F.layer_norm(64)` (no affine) → `output_layer` 64 → **6** → pipeline `*0.5+0.5` → `[0:3]` base color, `[3]` metallic, `[4]` roughness, `[5]` alpha (`docs/spec/11-tex_dec.md`); no mesh op |
+| activation ranges (fp16 torso, this fixture, whole-tensor std / abs-max) | stage-3 C2S `[64, M]`: 14.95 / 103 | stage-3 C2S `[64, M]`: **98.4 / 398** -- 6.6× wider than the shape torso, still inside fp16 range; output `[6, M]` std 0.648, abs-max 1.006 (pre `*0.5+0.5`) |
+| output representation | mesh (vertices/faces) + final voxel coords | per-voxel attributes `[6, M]` at the final voxel coords (channel-major, PRE `*0.5+0.5`); UV/atlas bake is a separate postprocess (§12.9) |
+
+So the only texture-specific code paths in the shared runtime are the external-mask branch of
+`sparse_c2s` (skips the `to_subdiv` graph; the octant → new coords / gather-index maps are built
+from the given mask instead of the logits) and `out_ch = 6` in `linear_rows`. Everything else --
+neighbour tables, the 27-tap gather + `mul_mat` conv, chunking, the PAD→CPY single-buffer C2S,
+the sliced readback -- is the §11 shape-decoder path.
+
+### 12.2 What had to change (and what did not)
+
+Nothing in the shared sparse runtime (`src/sparse.cpp`, `src/shape_decoder.cpp`,
+`src/trellis_model.cpp`, `patches/ggml-webgpu/*`): the texture decoder ran on WebGPU at the first
+attempt, natively and in Chrome, with no new op, dtype or dispatch-size gap (op-gap §12). No
+regression test for a shared-runtime change was therefore needed.
+
+| item | change | why |
+|---|---|---|
+| `trellis-test-pixal3d-tex-decode` | reads the `hr_sample` layout via `coords`/`hr_coords`, `f32_slat`/`f32_shape_slat` (as the shape test), `--res R`, `--dump-attrs PREFIX` / `--ext-attrs PREFIX` (score attributes decoded elsewhere, e.g. the browser's), per-channel min/max/mean/std of both sides, max\|d\|, mean\|d\|, `rel` = max\|d\| / max\|ref\|, `nrm` = mean\|d\| / std(ref), cosine, and a **near-constant flag** (reference std < 1e-3 over all voxels) so a flat channel is read as "flat in the reference too", not as an error; gates unchanged (IoU > 0.9; max\|d\| < 0.15 and mean\|d\| < 5e-3 on every channel) | one scorer for CUDA, native WebGPU and Chrome attributes (§5 of the task) |
+| tools | `tools/ref_pixal3d_tex_dec_stages.py`: PyTorch per-stage reference of the texture decoder (runs the shape decoder with `return_subs=True` first, then the texture decoder unrolled with `guide_subs`), same dump layout as `TRELLIS_DBG_STAGE_DUMP` with kind `tex_dec`; cross-checks its output against `f32_tex_attrs.npy` (max\|d\| = 0, coords identical). `tools/compare_sparse_stages.py --kind tex_dec` works unchanged | stage-by-stage parity (§12.4) |
+| browser | `pixal3d_tex_decode_run(shape_gguf, tex_gguf, fixture_dir, res, out_dir)` in `src/pixal3d_wasm.cpp` (same module; exported + JSPI in `web/ss/CMakeLists.txt`), page `web/tex_decode/`, driver `run_playwright.js` saves `browser_{attrs,coords}.npy`; `PIXAL3D_WEB_PORT` overrides the harness port (also in `web/shape_decode/run_playwright.js`) so two checkouts can serve `web/` at once | §12.7 |
+| `pixal3d-ss-run --tex-decode …` | native build of the same entry point | debug the browser path outside a browser |
+
+### 12.3 How to run
+
+```
+# native Dawn (build-webgpu, gpu 0); -1 = CPU backend
+./build-webgpu/trellis-test-pixal3d-tex-decode ~/pixal3d_assets/gguf/shape_dec.gguf \
+    ~/pixal3d_assets/gguf/tex_dec.gguf ~/pixal3d_assets/ref/pixal3d/hr_sample 0 [--dump-attrs PREFIX]
+TRELLIS_DBG_ALLOC_TRACE=1 TRELLIS_DBG_STAGE_DUMP=DIR TRELLIS_DBG_MEM=1 ...   # trace / stage dump / N->M lines
+# PyTorch per-stage reference (win, conda env of tools/ref_pixal3d_hr_sample.py)
+FIX=.../hr_sample OUT=.../tex_stages_torch python tools/ref_pixal3d_tex_dec_stages.py
+python tools/compare_sparse_stages.py DIR_A DIR_B --kind tex_dec     # e.g. WebGPU dump vs torch dump
+# browser (Chrome 152, JSPI): serve web/ (python3 -m http.server 8299), then
+cd web && PIXAL3D_WEB_PORT=8299 node tex_decode/run_playwright.js <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> <out_dir> [res]
+./build-webgpu/trellis-test-pixal3d-tex-decode <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> --ext-attrs <out_dir>/browser_
+```
+
+`scripts/build_wasm_ss.sh` rebuilds the module (the texture entry point is part of it now; the
+decoder sources were already compiled in since §11).
+
+### 12.4 Stage-by-stage parity (Texture-1024 real SLAT)
+
+Three per-stage dumps of the same decode: PyTorch fp16-torso reference (RTX 4090,
+`tools/ref_pixal3d_tex_dec_stages.py`), native CUDA (RTX 4090, `build-cuda`) and native WebGPU
+(Apple M1 Pro, Dawn), compared with `tools/compare_sparse_stages.py --kind tex_dec` exactly as in
+§11.3 (coordinate sets exact; features on the ~4,100 coordinate-hashed shared rows matched by
+coordinate; `nrm` = mean|d| / std of the whole reference tensor). Shapes per stage: features are
+channel-major f32 `[C, N]` between graphs, f16 weights, f16-staged `mul_mat` inputs on WebGPU;
+active coordinates are the shape decoder's at every level.
+
+| stage (C) | PyTorch N | CUDA N (flips vs torch) | WebGPU N (flips vs torch) | CUDA vs torch mean\|d\| / nrm / cos | WebGPU vs torch mean\|d\| / nrm / cos | WebGPU vs CUDA flips / nrm |
+|---|---|---|---|---|---|---|
+| from_latent (1024) | 17,489 | 17,489 (0) | 17,489 (0) | 3.9e-4 / 2.8e-4 / 1.000000 | 2.7e-4 / 1.9e-4 / 1.000000 | 0 / 2.0e-4 |
+| stage0 ConvNeXt ×4 (1024) | 17,489 | 17,489 (0) | 17,489 (0) | 9.1e-3 / 1.1e-3 / 0.999999 | 3.0e-3 / 3.7e-4 / 1.000000 | 0 / 1.1e-3 |
+| stage0 C2S (512) | 71,261 | 71,261 (0) | 71,262 (+1 / −0) | 9.0e-3 / 1.2e-3 / 0.999998 | 3.2e-3 / 4.3e-4 / 1.000000 | 1 / 1.1e-3 |
+| stage1 ConvNeXt ×16 (512) | 71,261 | 71,261 | 71,262 | 1.9e-2 / 1.8e-3 / 0.999997 | 7.5e-3 / 7.2e-4 / 0.999999 | 1 / 1.7e-3 |
+| stage1 C2S (256) | 288,166 | 288,165 (3 / 4) | 288,168 (2 / 0) | 2.0e-2 / 1.9e-3 / 0.999997 | 8.3e-3 / 7.9e-4 / 0.999999 | 5 / 2 / 1.8e-3 |
+| stage2 ConvNeXt ×8 (256) | 288,166 | 288,165 | 288,168 | 2.5e-2 / 8.5e-4 / 0.999999 | 1.2e-2 / 4.0e-4 / 1.000000 | 7 / 7.7e-4 |
+| stage2 C2S (128) | 1,158,940 | 1,158,936 (126 / 130) | 1,158,925 (72 / 87) | 2.9e-2 / 7.9e-4 / 0.999998 | 1.5e-2 / 4.0e-4 / 0.999999 | 105 / 116 / 6.7e-4 |
+| stage3 ConvNeXt ×4 (128) | 1,158,940 | 1,158,936 | 1,158,925 | 5.0e-2 / 5.2e-4 / 0.999999 | 2.9e-2 / 3.0e-4 / 1.000000 | 221 / 4.3e-4 |
+| stage3 C2S (64) | 4,649,828 | 4,649,837 (1277 / 1268 = 0.055 %) | 4,649,809 (727 / 746 = 0.032 %) | 5.2e-2 / 5.2e-4 / 1.000000 | 3.1e-2 / 3.1e-4 / 1.000000 | 1094 / 1122 = 0.048 % / 4.2e-4 |
+| output_layer (6) | 4,649,828 | 4,649,837 | 4,649,809 | 5.4e-4 / 8.4e-4 / 0.999999 | 4.0e-4 / 6.2e-4 / 1.000000 | 0.048 % / 7.2e-4 |
+
+Reading: the coordinate flips are **exactly the shape decoder's** (§11.3: the same 1 / 2 / 72+87 /
+727+746 voxels on WebGPU, 3+4 / 126+130 / 1277+1268 on CUDA) because the texture decoder does not
+subdivide on its own -- there is no texture-specific coordinate divergence at any level. Feature
+parity: `nrm ≤ 1.9e-3` on CUDA and `≤ 7.9e-4` on WebGPU at every stage, cos ≥ 0.999997; the
+first stage where WebGPU and CUDA differ from each other by more than a rounding envelope is,
+as for the shape decoder, the first sign threshold (stage-0 C2S, one voxel) -- no divergent
+stage before it. The localized max|d| (up to 14 at stage-3 ConvNeXt, std 96) sits on the
+neighbours of flipped voxels, as in §11.3. WebGPU is again closer to the fp16 reference than
+CUDA at every stage. Gate (flips ≤ 0.1 %, `nrm ≤ 5e-3`): PASS for CUDA vs torch, WebGPU vs
+torch, WebGPU vs CUDA.
+
+### 12.5 Per-channel PBR parity (`trellis-test-pixal3d-tex-decode`, matched voxels, post `*0.5+0.5`)
+
+Reference distribution on this fixture (all 4,649,828 voxels): base color R/G/B mean 0.493 /
+0.335 / 0.231, std 0.153 / 0.104 / 0.076; **metallic (mean 1e-4, std 2.9e-4), roughness (mean
+0.602, std 9.8e-4) and alpha (mean 1.000, std 1.9e-4) are near-constant in the reference** --
+a flat metallic/roughness/alpha decode is the correct answer for this asset, not a bug (the
+scorer flags them `near-constant YES`, and `nrm`/cos are not meaningful there).
+
+| channel | native CUDA (RTX 4090): max\|d\| / mean\|d\| | native WebGPU (Dawn, M1 Pro): max\|d\| / mean\|d\| / rel / nrm / cos | WebGPU min..max (ref) |
+|---|---|---|---|
+| base_R | 0.0957 / 3e-4 | **0.0304 / 2.06e-4** / 3.1e-2 / 1.35e-3 / 1.000000 | 0.0258..0.9693 (0.0256..0.9685) |
+| base_G | 0.0624 / 3e-4 | **0.0290 / 2.30e-4** / 3.3e-2 / 2.22e-3 / 1.000000 | 0.0219..0.8785 (0.0218..0.8785) |
+| base_B | 0.0552 / 2e-4 | **0.0250 / 1.80e-4** / 2.6e-2 / 2.38e-3 / 1.000000 | 0.0228..0.9660 (0.0229..0.9658) |
+| metallic (near-constant) | 0.0024 / 3e-4 | 0.0017 / 2.13e-4 / -- / -- / (0.57, meaningless) | −0.0026..0.0023 (−0.0025..0.0028) |
+| roughness (near-constant) | 0.0026 / 3e-4 | 0.0026 / 2.06e-4 / 4.2e-3 / -- / 1.000000 | 0.5948..0.6054 (0.5951..0.6057) |
+| alpha (near-constant) | 0.0017 / 2e-4 | 0.0012 / 1.63e-4 / 1.2e-3 / -- / 1.000000 | 0.9966..1.0025 (0.9969..1.0028) |
+
+Per-channel variance mine vs reference agrees to three digits on the base-color channels
+(2.34e-2 / 1.08e-2 / 5.74e-3 both sides). The base-color max|d| of 0.03 (CUDA: 0.096) is
+localized on flipped-voxel neighbourhoods; the mean error is 2e-4 of a [0,1] range. Verdict:
+**PASS** on CUDA and on native WebGPU (`coord_ok` IoU 0.9995 / 0.9997, `attrs_ok` yes).
+
+### 12.6 Coordinate parity
+
+| decode | final M | vs reference (common / extra / missing) | vs the shape decoder of the same backend |
+|---|---|---|---|
+| PyTorch reference | 4,649,828 | -- | identical (masks shared) |
+| native CUDA | 4,649,837 | 4,648,560 / 1,277 / 1,268 (0.055 %) | identical set and order to `shape_decode` on CUDA (`f32_tex_coords` parity of §11.4) |
+| native WebGPU | 4,649,809 | 4,649,082 / 727 / 746 (0.032 %) | identical set and order; the four hierarchy transitions (17,489 → 71,262 → 288,168 → 1,158,925 → 4,649,809) are the §11.3 shape-decoder transitions to the voxel |
+| Chrome/WASM | 4,649,809 | 4,649,082 / 727 / 746 (0.032 %; the same voxel set as native) | `browser_coords.npy` byte-identical to native WebGPU's, and identical to the browser shape decoder's coords of the same session |
+
+Ordering is semantically required between the two decoders (the attributes are consumed at the
+mesh's voxel coords) and it holds by construction: `tex_decode` returns `[6, M]` in
+`shape_decode`'s coordinate order.
+
+### 12.7 Browser (Chrome 152 / WASM)
+
+Same module (`web/ss/pixal3d_ss.wasm`, emcc 6.0.9, emdawnwebgpu, JSPI), Chrome 152.0.7977.82 on
+the M1 Pro, both GGUFs and the fixture handed to the page as `File` objects (WORKERFS),
+`web/tex_decode/run_playwright.js`; the attributes come back as downloads and are scored by the
+native binary with `--ext-attrs`:
+
+| fixture | browser result | M | native score of the browser attributes | vs native WebGPU attributes | wall (browser) |
+|---|---|---|---|---|---|
+| Texture-1024 (`hr_sample`) | **RESULT: OK** | 4,649,809 | **PASS**: per channel max\|d\| / mean\|d\| 0.0304 / 2.06e-4, 0.0290 / 2.30e-4, 0.0250 / 1.80e-4 (base R/G/B), 0.0017 / 2.13e-4, 0.0026 / 2.06e-4, 0.0012 / 1.63e-4 (metallic, roughness, alpha) -- the §12.5 numbers to the digit | `attrs.npy` **bit-identical** (max\|d\| = 0 over 4,649,809 × 6; no libm term in this head, unlike the mesh's sigmoid in §11.5) | 514 s (shape decode 241 s + texture decode 268 s; native Dawn 182 + 219 s, both with the Mac GPU shared) |
+
+Peak memory (`footprint`, sampled every 5 s): Chrome GPU process 10.15 GB, all Chrome
+processes 16.3 GB (the sampler's own shell is counted in the total, a few MB) (memory doc §10).
+
+### 12.8 Shape-decoder regressions after the texture changes
+
+| check | result |
+|---|---|
+| shape decoder, native WebGPU (`trellis-test-pixal3d-shape-decode`, Shape-1024) -- run as stage A of the texture test | M = 4,649,809, per-stage dumps **bit-identical** to the §11 record (`hr_stages_webgpu`: max\|d\| = 0 at every stage) |
+| shape decoder, Chrome/WASM (`web/shape_decode/run_playwright.js`, rebuilt module) | RESULT: OK, V = 4,649,809 / F = 9,323,688, coords 4,649,082 / 727 / 746, native score of the browser mesh worst mean 6.3448e-7 (0.001 vox) PASS -- identical to §11.5; 129 s wall (decode 124 s); Chrome GPU process 10.17 GB, all Chrome 15.2 GB |
+| `trellis-webgpu-ops` (SET_ROWS 2D dispatch, PAD+CPY ≥ 1 GB, sliced readback, I32 cont, …) | **ALL PASS** (39 cases, native Dawn, after the texture changes; the first attempt was killed by macOS at case 27 under system memory pressure from another session and rerun alone) |
+
+**Baseline caveat (recorded, not a texture-phase finding).** Before any change, the shape decoder
+baseline was run twice on native WebGPU at `5a88b51`. The first run, while another session's
+Shape-1024 flow probe (`trellis-test-pixal3d-slat-sample`) shared the Mac GPU, produced M =
+4,650,048 (25,713 extra / 25,493 missing = 0.55 % flips, worst mean 2.0e-5 = 0.020 voxel -- still
+PASS by the mesh gate, but 30× the recorded error); the second run reproduced the §11 record to
+the byte. This is the nondeterministic ggml-webgpu/Dawn-Metal fault documented for the flow
+stage on `feat/webgpu-shape1024-flow` (wrong results when WebGPU processes share the GPU), now
+seen once in a decoder graph. Every result in this section was therefore cross-checked
+stage-by-stage against the CUDA and PyTorch dumps (§12.4) rather than trusted from one run; the
+shape-decoder stages of the texture run match the record exactly. Serialize WebGPU jobs on the
+Mac.
+
+### 12.9 Output / bake boundary
+
+`tex_decode()` returns the neural output only (`[6, M]` channel-major, PRE `*0.5+0.5`, at
+`shape_decode`'s coords); the UV unwrap / trilinear bake / atlas / Telea inpaint
+(`src/uv_bake.cpp`, `trellis_cli.cpp` "[6/6]") consume it afterwards and are not part of this
+phase. The scorer, the stage dumps and the browser entry point all read the raw attributes, so
+bake artefacts cannot be mistaken for decoder errors and vice versa. (The CLI path also keeps
+them separate: `TRELLIS_DUMP_POST` / `post-replay` replays the bake alone.)
+
+### 12.10 Not done / open
+
+- Full browser E2E (SS → Shape-512 → Shape-1024 → texture flow → both decoders → bake → GLB)
+  is the next milestone; blockers unchanged from §10/§11: the texture flow's own conditioning
+  on WebGPU needs a coords-gathered NAF map (its dense `[1024, 1024²]` f32 map is 4 bytes over
+  the 4 GiB `maxBufferSize`, spec 32), the SS decoder's dense Conv3D still runs on the CPU
+  backend, image/camera loading and the GLB return are not wired, and the bake is native-only.
+- Memory: the texture decoder needs the same 7.19 GB stage-3 C2S graph as the shape decoder
+  (memory doc §10); nothing texture-specific reduces it. Spec-floor adapters (128 MiB binding)
+  remain out of reach without the `[Cout, M]` buffer split.
+- The nondeterministic WebGPU fault above is not root-caused; it is detected, not prevented.

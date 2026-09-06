@@ -529,3 +529,56 @@ under at M = 4.65M (host vectors ≈ 2.6 GB at the stage-3 C2S: `[128,N]` input 
 neighbour tables 0.63 GB, `[64,M]` output 1.19 GB, coords/index maps 0.15 GB, plus the 256 MiB
 readback slice). Objects denser than ~1.5× this one would need the stage output read back in
 pieces into a smaller host representation or the `[Cout, M]` split.
+
+## 10. Measured: sparse texture (PBR) decoder on the ggml WebGPU backend (2026-09-07, `feat/webgpu-texture-decode`)
+
+`tex_decode` (the §9 decoder's `decode_unet` with the shape decoder's masks as `guide_subs` and a
+6-channel head) on native Dawn (Apple M1 Pro 32 GB, same adapter limits as §9) and Chrome 152, on
+the **real** Texture-1024 SLAT (`hr_sample`, N = 17,489 → M = 4,649,809), with the §8
+`TRELLIS_DBG_ALLOC_TRACE` instrumentation. Parity: `docs/spec/31-webgpu-bringup.md` §12. The
+measurement is `trellis-test-pixal3d-tex-decode`, which runs `shape_decode` first (stage A, for
+the masks) and `tex_decode` second (stage B) in one process; the footprint below is that process.
+
+### 10.1 Stage-by-stage trace (native WebGPU, `kBlockChunkBytes` default 1.5 GB)
+
+| stage | coords in → out | features (f32) | dtype (weights / staged mul_mat inputs) | graph nodes | largest single allocation | largest temporary (op) | live est. | gallocr | vs shape decoder (§9.1) |
+|---|---|---|---|---|---|---|---|---|---|
+| from_latent | 17,489 | `[32,N]` → `[1024,N]` | f16 / f16 | 2 | 71.6 MB `[1024,17489]` | same (MUL_MAT → ADD) | 0.14 GB | 0.07 GB | same |
+| stage 0 ConvNeXt ×4 (C=1024) | 17,489 | `[1024,N]` | f16 / f16 | 812 | 287 MB `[4096,17489]` | MLP hidden (SILU) | 0.65 GB | 0.51 GB | same |
+| stage 0 C2S (1024 → 512), mask-driven | 17,489 → 71,262 | `[1024,N]` → `[512,M]` | f16 / f16 | 402 (**no subdiv graph**) | 287 MB `[4096,17489]` | conv1 `[Cout·8, N]` per-tap ADD | 1.01 GB | 0.88 GB | same conv graph; the shape decoder's extra `_subdiv` graph (2 nodes, 0.07 GB) is absent |
+| stage 1 ConvNeXt ×16 (C=512) | 71,262 | `[512,N]` | | 3248 | 584 MB `[2048,71262]` | MLP hidden ×16 | 1.33 GB | 1.04 GB | same |
+| stage 1 C2S (512 → 256) | 71,262 → 288,168 | `[512,N]` → `[256,M]` | | 402 | 584 MB | conv1 per tap | 2.08 GB | 1.79 GB | same (no `_subdiv` 2 nodes / 0.07 GB) |
+| stage 2 ConvNeXt ×8 (C=256) | 288,168 | `[256,N]` | | 1624 | 1.18 GB `[1024,288168]` | MLP hidden ×8 | 2.69 GB | 2.10 GB | same |
+| stage 2 C2S (256 → 128) | 288,168 → 1,158,925 | `[256,N]` → `[128,M]` | | 602 | 1.18 GB | conv1 per tap; `[128, M+1]` PAD/NORM/SILU 593 MB | 4.30 GB | 3.71 GB | same (no `_subdiv` 2 nodes / 0.30 GB) |
+| stage 3 ConvNeXt ×4 (C=128) | 1,158,925 | `[128,N]` | | 1628 | 1.57 GB `[512,768000]` | MLP hidden chunk (2 chunks/block) | 4.46 GB | 3.28 GB | same |
+| stage 3 C2S (128 → 64) | 1,158,925 → 4,649,809 | `[128,N]` → `[64,M]` | | 1392 | **1.57 GB `[512,768000]`** (conv1 per-tap MUL_MAT/ADD) | `[64, M+1]` PAD/NORM/SILU + `[64, M]` out, 1.19 GB each | 6.97 GB | **7.19 GB** | same; the shape decoder's `_subdiv` graph here (8 nodes, gallocr 1.14 GB: the `[128,N]` leaf + `[8,N]` logits) is absent |
+| output_layer (64 → **6**) | 4,649,809 | `[64,M]` → `[6,M]` | | 5 × 1M-row chunks, 3 nodes each | 256 MB `[64,1000000]` (NORM) | same | 0.51 GB | 0.51 GB (last chunk 0.33) | `[6,1000000]` output 22.9 MB vs `[7,1000000]` 26.7 MB |
+
+Weights: 904.7 MB (`tex_dec.gguf`, 284 tensors: 106 f16 + 178 f32 biases/norms) vs 904.8 MB
+(`shape_dec.gguf`, 292: the 4 × `to_subdiv` weight+bias pairs, 8 tensors, 0.1 MB). Host side per
+stage: identical to §9.1 (coords, `[27,N]`/`[27,M]` neighbour tables 125 + 502 MB at stage 3,
+gather maps, the `[64, M]` f32 stage output 1.19 GB), plus what the texture path carries across
+the two decoders: the four octant masks (8 bytes per voxel per level, 12 MB) and the final
+`[6, M]` attributes (112 MB, vs the `[7, M]` head 130 MB). Sparse feature buffers, neighbour /
+index buffers and temporaries are therefore the §9 numbers to the byte -- the channel widths
+that set them (torso `model_channels`) are the same in both checkpoints; the texture decoder
+does **not** need less memory, only marginally less at the head and none for subdivision.
+
+### 10.2 Largest allocations (texture decoder, native WebGPU trace)
+
+Every allocation ≥ 512 MB is one of §9.2's, at the same node and size (`[512,768000]` 1.57 GB
+×62 in stage-3 ConvNeXt/C2S conv1 -- budget-driven; `[512,390925]` 801 MB tail chunk;
+`[1024,288168]` 1.18 GB ×~40 in stage 2; `[2048,71262]` 584 MB in stage 1; the M-scaled
+`[64, 4649810]` ×3 and `[64, 4649809]` 1.19 GB in stage-3 C2S; the `[4649809, 27]` i32 table 502
+MB). The texture head adds nothing above 256 MB (`[64,1000000]` NORM in the output layer). No
+layer or op of the texture decoder exceeds its shape-decoder counterpart.
+
+### 10.3 Peak memory
+
+| run | decode wall (shape A + tex B) | process peak footprint | note |
+|---|---|---|---|
+| native WebGPU, `trellis-test-pixal3d-tex-decode`, Texture-1024 | 182 s + 219 s | **10.52 GB** (`phys_footprint`, sampled every 2 s; §9.4 shape-only: 10.4 GiB = 11.2 GB) | same largest graph (7.19 GB) + 0.9 GB weights + host vectors; the Mac GPU was shared with another session's flow probe for part of the run |
+| Chrome 152, `web/tex_decode/` | 241 s + 268 s (browser wall 514 s) | GPU process 10.15 GB, all Chrome 16.3 GB (the sampler's own shell is counted in the total, a few MB) | §9.4 shape-only: 9.93 GB / 16.0 GB |
+
+The 4 GB wasm heap ceiling of §9.4 is unchanged: the texture path's extra host state is the
+masks (12 MB) and the `[6, M]` result (112 MB), read back in the §9.3 256 MiB slices.
