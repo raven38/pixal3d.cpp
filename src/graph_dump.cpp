@@ -3,11 +3,13 @@
 #include "graph_dump.h"
 #include "ggml.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace trellis {
 namespace {
@@ -142,6 +144,98 @@ void trellis_graph_dump(const char* tag, ggml_cgraph* g) {
     }
     std::fprintf(f, "}\n");
     std::fflush(f);
+}
+
+// ---- allocation trace (env TRELLIS_DBG_ALLOC_TRACE) ------------------------------------------
+namespace {
+
+const ggml_tensor* alloc_root(const ggml_tensor* t) {
+    while (t->view_src) t = t->view_src;
+    return t;
+}
+
+// A graph-allocated tensor: an INPUT leaf, or a node that is not a view. Weights (leafs without
+// the input flag) live in the model buffer; views alias their root.
+bool graph_allocated(const ggml_tensor* t) {
+    if (t->view_src) return false;
+    if (t->op == GGML_OP_NONE) return (t->flags & GGML_TENSOR_FLAG_INPUT) != 0;
+    return true;
+}
+
+} // namespace
+
+void trellis_graph_alloc_trace(const char* tag, ggml_cgraph* g, size_t gallocr_bytes) {
+    const char* env = std::getenv("TRELLIS_DBG_ALLOC_TRACE");
+    if (!env || !*env) return;   // off by default -- zero behavior change
+    const bool verbose = std::strcmp(env, "all") == 0;
+    double min_mb = 64.0;
+    if (const char* m = std::getenv("TRELLIS_DBG_ALLOC_TRACE_MIN_MB")) min_mb = std::atof(m);
+    const double min_bytes = min_mb * 1048576.0;
+
+    const int n = ggml_graph_n_nodes(g);
+    // producer index of every graph-allocated root (-1 = input leaf), last consumer index
+    struct Info { int first, last; };
+    std::unordered_map<const ggml_tensor*, Info> live;
+    live.reserve((size_t)n * 2);
+    auto touch = [&](const ggml_tensor* t, int i) {
+        const ggml_tensor* r = alloc_root(t);
+        if (!graph_allocated(r)) return;
+        auto it = live.find(r);
+        if (it == live.end()) live[r] = { r->op == GGML_OP_NONE ? -1 : i, i };
+        else it->second.last = std::max(it->second.last, i);
+    };
+    for (int i = 0; i < n; ++i) {
+        const ggml_tensor* t = ggml_graph_node(g, i);
+        for (int s = 0; s < GGML_MAX_SRC; ++s) if (t->src[s]) touch(t->src[s], i);
+        touch(t, i);   // the node's own output (or the root it writes into, for view nodes)
+        if (t->flags & GGML_TENSOR_FLAG_OUTPUT) { auto it = live.find(alloc_root(t)); if (it != live.end()) it->second.last = n; }
+    }
+    // interval sweep: +bytes at first, -bytes after last
+    std::vector<double> delta((size_t)n + 3, 0.0);
+    double total = 0; size_t largest = 0; const ggml_tensor* largest_t = nullptr;
+    std::vector<std::pair<size_t, const ggml_tensor*>> top;
+    for (auto& kv : live) {
+        const size_t b = ggml_nbytes(kv.first);
+        delta[(size_t)(kv.second.first + 1)] += (double)b;
+        delta[(size_t)(kv.second.last + 2)] -= (double)b;
+        total += (double)b;
+        if (b > largest) { largest = b; largest_t = kv.first; }
+        top.push_back({ b, kv.first });
+    }
+    double cur = 0, peak = 0; int peak_at = -1;
+    for (size_t i = 0; i + 1 < delta.size(); ++i) {
+        cur += delta[i];
+        if (cur > peak) { peak = cur; peak_at = (int)i - 1; }
+    }
+    std::sort(top.begin(), top.end(), [](auto& a, auto& b) { return a.first > b.first; });
+
+    auto line = [&](const char* kind, int idx, const ggml_tensor* t) {
+        std::fprintf(stderr, "      [at] %s %s node=%d op=%s%s%s name=%s shape=[%lld,%lld,%lld,%lld] dtype=%s bytes=%zu (%.1f MB)\n",
+                     tag, kind, idx, ggml_op_name(t->op),
+                     t->op == GGML_OP_UNARY ? ":" : "", t->op == GGML_OP_UNARY ? ggml_unary_op_name(ggml_get_unary_op(t)) : "",
+                     t->name, (long long)t->ne[0], (long long)t->ne[1], (long long)t->ne[2], (long long)t->ne[3],
+                     ggml_type_name(t->type), ggml_nbytes(t), ggml_nbytes(t) / 1048576.0);
+    };
+    std::fprintf(stderr, "      [at] ==== %s: %d nodes, %zu graph-allocated tensors ====\n", tag, n, live.size());
+    for (int i = 0; i < n; ++i) {
+        const ggml_tensor* t = ggml_graph_node(g, i);
+        if (!graph_allocated(t)) continue;
+        if (verbose || (double)ggml_nbytes(t) >= min_bytes) line("alloc", i, t);
+    }
+    for (auto& kv : live)
+        if (kv.first->op == GGML_OP_NONE && (verbose || (double)ggml_nbytes(kv.first) >= min_bytes)) line("input", -1, kv.first);
+    std::fprintf(stderr, "      [at] -- %s: largest 10 --\n", tag);
+    for (size_t k = 0; k < top.size() && k < 10; ++k) line("top", live[top[k].second].first, top[k].second);
+    const ggml_tensor* pk = peak_at >= 0 && peak_at < n ? ggml_graph_node(g, peak_at) : nullptr;
+    std::fprintf(stderr, "      [at-summary] %s nodes=%d allocs=%zu sum=%.2f GB largest=%.2f GB (%s %s [%lld,%lld,%lld,%lld] %s)"
+                         " live_peak_est=%.2f GB at node %d (%s) gallocr_buffer=%.2f GB\n",
+                 tag, n, live.size(), total / 1e9, largest / 1e9,
+                 largest_t ? ggml_op_name(largest_t->op) : "-", largest_t ? largest_t->name : "-",
+                 largest_t ? (long long)largest_t->ne[0] : 0, largest_t ? (long long)largest_t->ne[1] : 0,
+                 largest_t ? (long long)largest_t->ne[2] : 0, largest_t ? (long long)largest_t->ne[3] : 0,
+                 largest_t ? ggml_type_name(largest_t->type) : "-",
+                 peak / 1e9, peak_at, pk ? ggml_op_name(pk->op) : "input", gallocr_bytes / 1e9);
+    std::fflush(stderr);
 }
 
 } // namespace trellis
