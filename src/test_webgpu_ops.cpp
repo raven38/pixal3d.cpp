@@ -202,6 +202,19 @@ int main(int argc, char** argv) {
         { "cont(permute) 512 MB", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
               T* x = in_f32(c, ins, 256, PX, HD, BLK / 2);
               return ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3)); } },
+        // Shape-1024 thresholds: DINOv3 @S=1024 softmax (65616 rows, just past the old 65535 limit),
+        // NAF T=512/h=64 (4096 blocks of 8x8: 331776-row gathers, [.,.,4,4096] batched GEMMs).
+        { "soft_max [4101,4101,16] (dino S1024)", 1e-5, [&](ggml_context* c, std::vector<T*>& ins) {
+              return ggml_soft_max_ext(c, in_f32(c, ins, 4101, small ? 1025 : 4101, 16), nullptr, 0.125f, 0.0f); } },
+        { "get_rows 331776 x 1024 (naf h64)", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
+              T* src = in_f32(c, ins, 1024, 4096);
+              return ggml_get_rows(c, src, in_idx(c, ins, TAP * 4 * BLK, 4096)); } },
+        { "mul_mat [64,81]x[64,64] b16384", 5e-3, [&](ggml_context* c, std::vector<T*>& ins) {
+              return ggml_mul_mat(c, in_f32(c, ins, 64, TAP, HD, 4 * BLK), in_f32(c, ins, 64, 64, HD, 4 * BLK)); } },
+        { "mul_mat [81,256]x[81,64] b16384", 5e-3, [&](ggml_context* c, std::vector<T*>& ins) {
+              return ggml_mul_mat(c, in_f32(c, ins, TAP, 256, HD, 4 * BLK), in_f32(c, ins, TAP, 64, HD, 4 * BLK)); } },
+        { "soft_max [81,64,4,16384] (naf h64)", 1e-5, [&](ggml_context* c, std::vector<T*>& ins) {
+              return ggml_soft_max_ext(c, in_f32(c, ins, TAP, 64, HD, 4 * BLK), nullptr, 0.125f, 0.0f); } },
         { "cont(permute) 1 GB", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
               T* x = in_f32(c, ins, 256, PX, HD, BLK);
               return ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3)); } },
