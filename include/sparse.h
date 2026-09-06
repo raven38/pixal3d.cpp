@@ -29,9 +29,11 @@ ggml_tensor* sparse_convnext(ggml_context* c, const Model& m, const std::string&
 // ext_subdiv: if non-null, use this [8*N] binarized mask (tex decoder guide_subs); else predict
 // via to_subdiv (shape decoder). The returned `subdiv` is the [8*N] mask actually used.
 struct C2SResult { std::vector<float> feats; std::vector<std::array<int,3>> coords; int C = 0; std::vector<uint8_t> subdiv; };
+// `tag`: label for graph_dump.h (TRELLIS_DUMP_OPS), identifying the caller's stage; purely diagnostic.
 C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<float>& feats_in, int Cin,
                      const std::vector<std::array<int,3>>& coords, int Cout,
-                     const std::vector<uint8_t>* ext_subdiv = nullptr);
+                     const std::vector<uint8_t>* ext_subdiv = nullptr,
+                     const char* tag = "c2s");
 
 } // namespace trellis

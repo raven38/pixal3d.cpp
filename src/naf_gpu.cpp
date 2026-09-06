@@ -20,6 +20,7 @@
 #include "naf.h"
 #include "naf_attn.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
 #include "ggml.h"
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
@@ -142,6 +143,7 @@ std::vector<float> naf_upsample_gpu(const Model& naf, const float* image, int S,
     ggml_cgraph* g = ggml_new_graph_custom(c, nodes, false);
     ggml_build_forward_expand(g, cat);
     ggml_build_forward_expand(g, pooled);
+    trellis_graph_dump(("naf_encoder_S" + std::to_string(Sp) + "_T" + std::to_string(T)).c_str(), g);
 
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(naf.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("naf_upsample_gpu: graph alloc failed");
