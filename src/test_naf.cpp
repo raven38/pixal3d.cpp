@@ -1,8 +1,13 @@
 // Validate include/naf.h (valeoai/NAF neighborhood-attention feature upsampler,
 // docs/spec/30-pixal3d-cond.md section 4) two ways:
 //   trellis-test-naf --selftest                       hand-computed unit checks, no GGUF/fixture needed
-//   trellis-test-naf <naf.gguf> <fixture_dir> [gpu] [--full]
+//   trellis-test-naf <naf.gguf> <fixture_dir> [gpu] [--full] [--ggml] [--generic]
 //                                                       PyTorch parity (t128_* always; t512_* only with --full)
+//   --ggml     run the all-ggml graph path (naf_upsample_ggml) explicitly -- on a GPU backend other
+//              than CUDA naf_upsample() takes it anyway; on the CPU backend (gpu=-1) this is the
+//              only way to exercise it. Prints its memory/timing stats.
+//   --generic  with --ggml: force the WebGPU lowering (norm-reshape GroupNorm, concat reflect pad,
+//              sum_rows pooling, direct conv2d) on whatever backend runs, to validate it on CPU.
 //
 // Reference: valeoai/NAF src/model/naf.py + src/layers/{attentions,convolutions,rope}.py
 #include "naf.h"
@@ -251,6 +256,8 @@ static bool check_rope_tables(const string& dir, int T, const vector<float>& per
     return ok;
 }
 
+static bool g_ggml = false, g_generic = false;
+
 static bool run_size(const Model& m, int T, const vector<float>& image, int S,
                       const vector<float>& lr, int C, int h, int w, const string& dir, bool have_periods_check) {
     const string pfx = "t" + std::to_string(T) + "_";
@@ -269,17 +276,29 @@ static bool run_size(const Model& m, int T, const vector<float>& image, int S,
 
     printf("\n=== T=%d ===\n", T);
     NafDebug dbg;
+    NafGgmlStats st;
     auto t0 = std::chrono::steady_clock::now();
-    vector<float> out = naf_upsample(m, image.data(), S, lr.data(), C, h, w, T, &dbg);
+    vector<float> out;
+    if (g_ggml) {
+        NafGgmlOpts o = naf_ggml_opts_for(m);
+        if (g_generic) { o.generic_lowering = true; o.direct_conv = true; }
+        printf("  naf_upsample_ggml: generic_lowering=%d direct_conv=%d\n", (int)o.generic_lowering, (int)o.direct_conv);
+        out = naf_upsample_ggml(m, image.data(), S, lr.data(), C, h, w, T, &dbg, &st, &o);
+        printf("  [naf ggml] nodes=%d weights=%.1f MB activations=%.1f MB inputs=%.1f MB output=%.1f MB  compute %.0f ms  total %.0f ms\n",
+               st.n_nodes, st.weight_bytes / 1048576.0, st.alloc_bytes / 1048576.0, st.input_bytes / 1048576.0,
+               st.output_bytes / 1048576.0, st.compute_ms, st.total_ms);
+    } else {
+        out = naf_upsample(m, image.data(), S, lr.data(), C, h, w, T, &dbg);
+    }
     auto t1 = std::chrono::steady_clock::now();
     double secs = std::chrono::duration<double>(t1 - t0).count();
     printf("  naf_upsample(T=%d) runtime: %.2fs\n", T, secs);
 
-    // The GPU encoder path (CUDA builds, unless TRELLIS_NAF_CPU=1) runs its GEMMs at the
-    // backend's f16-staged precision (docs/spec/30 section 5), so its intermediates sit
-    // around 3e-3..7e-3; the final output is still held to 3e-3.
-    const bool gpu_path = std::string(ggml_backend_name(m.backend)).find("CUDA") != std::string::npos
-                          && !std::getenv("TRELLIS_NAF_CPU");
+    // The GPU encoder paths (CUDA builds unless TRELLIS_NAF_CPU=1; every non-CUDA GPU backend via
+    // naf_upsample_ggml; --ggml) run their GEMMs at the backend's f16-staged precision
+    // (docs/spec/30 section 5), so their intermediates sit around 3e-3..7e-3; the final output
+    // is still held to 3e-3.
+    const bool gpu_path = (m.on_gpu || g_ggml) && !std::getenv("TRELLIS_NAF_CPU");
     const double enc_tol = gpu_path ? 1e-2 : 2e-3;
     if (gpu_path) printf("  (GPU NAF path: encoder-stage tolerance %.0e)\n", enc_tol);
     bool ok = true;
@@ -345,6 +364,8 @@ int main(int argc, char** argv) {
     bool full = false;
     for (int i = 1; i < argc; ++i) {
         if (string(argv[i]) == "--full") full = true;
+        else if (string(argv[i]) == "--ggml") g_ggml = true;
+        else if (string(argv[i]) == "--generic") { g_ggml = true; g_generic = true; }
         else pos.push_back(argv[i]);
     }
     if (pos.size() < 2) {

@@ -33,6 +33,7 @@ add_executable(pixal3d-webgpu-ss-wasm
   ${REPO}/src/pixal3d_cond.cpp
   ${REPO}/src/pixal3d_cond_gpu.cpp
   ${REPO}/src/naf.cpp
+  ${REPO}/src/naf_gpu.cpp
   ${REPO}/src/graph_dump.cpp
 )
 target_include_directories(pixal3d-webgpu-ss-wasm PRIVATE ${REPO}/include ${GGML_DIR}/include)
