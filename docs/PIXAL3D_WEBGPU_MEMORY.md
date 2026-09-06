@@ -11,33 +11,46 @@ below is derived from tensor shapes in code, not profiled.
 
 ## 1. WebGPU runtime limits to query
 
-`GGML_WEBGPU` does not exist yet on this fork's vendored ggml (`CLAUDE.md`), so nothing below has
-been queried from a real adapter. The browser harness (M6/M8) must call
-`navigator.gpu.requestAdapter()` → `adapter.limits` and `device.limits` and fill in the
-`measured:` column before any of §3/§4's verdicts are trusted as final — the values below are
-either the WebGPU spec's mandated **minimum ("default") that every conformant adapter must
-expose**, or a **typical value commonly reported by Chrome/Dawn on a desktop GPU** (Metal/Vulkan/
-D3D12-backed); the typical values vary by OS graphics backend and GPU vendor and are not
-guaranteed — they are informed expectations, not facts, until measured.
+**Measured 2026-09-06** in Google Chrome 152.0.7977.82 (macOS 26.5, Build 25F71) on the Apple M1
+Pro GPU (Metal 4, Dawn's Metal backend), via the browser WASM/WebGPU smoke harness
+(`docs/spec/31-webgpu-bringup.md` §8): `web/smoke/index.html` → `pixal3d_smoke.wasm`'s exported
+`webgpu_smoke_limits()` (its own independent `wgpu::Adapter`/`wgpu::Device` request, since the
+ggml WebGPU backend keeps its own adapter/device private) plus a JS-side
+`navigator.gpu.requestAdapter()` cross-check for the same fields. Both sides agree on every field
+that exists on both APIs (`device.limits` in C++/emdawnwebgpu vs. `adapter.limits` in JS); the
+`measured:` column below is the C++-side (`webgpu_smoke_limits()`) value, which is what the
+actual ggml WebGPU backend will see.
 
 | limit | spec default (guaranteed floor) | typical Chrome/Dawn desktop | measured: |
 |---|---|---|---|
-| `maxBufferSize` | 268,435,456 (256 MiB) | often ~2 GiB (2,147,483,648), backend-dependent | |
-| `maxStorageBufferBindingSize` | 134,217,728 (128 MiB) | often ~1–2 GiB, backend-dependent | |
-| `maxComputeWorkgroupStorageSize` | 16,384 (16 KiB) | 32,768–49,152 (32–48 KiB) | |
-| `maxComputeInvocationsPerWorkgroup` | 256 | 1024 | |
-| `maxComputeWorkgroupSizeX` | 256 | 1024 | |
-| `maxComputeWorkgroupSizeY` | 256 | 1024 | |
-| `maxComputeWorkgroupSizeZ` | 64 | 64 | |
-| `maxComputeWorkgroupsPerDimension` | 65,535 | 65,535 (rarely higher) | |
-| `maxBindGroups` | 4 | 4 (rarely raised) | |
-| `maxStorageBuffersPerShaderStage` | 8 | 8–10 | |
-| `maxUniformBufferBindingSize` | 65,536 (64 KiB) | 65,536 (64 KiB), sometimes higher | |
+| `maxBufferSize` | 268,435,456 (256 MiB) | often ~2 GiB (2,147,483,648), backend-dependent | **4,294,967,292** (~4 GiB − 4B, i.e. `UINT32_MAX` rounded to a multiple of 4) |
+| `maxStorageBufferBindingSize` | 134,217,728 (128 MiB) | often ~1–2 GiB, backend-dependent | **4,294,967,292** (same ~4 GiB ceiling as `maxBufferSize` on this adapter) |
+| `maxComputeWorkgroupStorageSize` | 16,384 (16 KiB) | 32,768–49,152 (32–48 KiB) | **32,768** (32 KiB) |
+| `maxComputeInvocationsPerWorkgroup` | 256 | 1024 | **1024** |
+| `maxComputeWorkgroupSizeX` | 256 | 1024 | **1024** |
+| `maxComputeWorkgroupSizeY` | 256 | 1024 | **1024** |
+| `maxComputeWorkgroupSizeZ` | 64 | 64 | **64** |
+| `maxComputeWorkgroupsPerDimension` | 65,535 | 65,535 (rarely higher) | **65,535** |
+| `maxBindGroups` | 4 | 4 (rarely raised) | **4** |
+| `maxStorageBuffersPerShaderStage` | 8 | 8–10 | **10** |
+| `maxUniformBufferBindingSize` | 65,536 (64 KiB) | 65,536 (64 KiB), sometimes higher | **65,536** (64 KiB, exactly the spec floor) |
 
-`maxBufferSize`/`maxStorageBufferBindingSize` are the binding constraints (§3): even the
-"typical" ~2 GiB desktop figure is a single-vendor/single-OS anecdote, not a spec guarantee —
-mobile and some Vulkan/ANGLE paths sit far closer to the 256 MiB / 128 MiB floor, so the browser
-target must degrade gracefully to the spec floor, not assume the typical value.
+Both `maxBufferSize` and `maxStorageBufferBindingSize` land far above the "typical desktop"
+estimate on this adapter (~4 GiB vs. the ~2 GiB anecdote) — **this single-adapter measurement
+does not generalize**: it is Apple M1 Pro/Metal via Dawn in Chrome 152 specifically, not a cross-
+vendor result. `shader-f16` and `subgroups` (needed by `ggml_backend_webgpu_init`'s hard
+`ShaderF16` requirement and by the FlashAttention tile path, §4) are both **supported at the
+adapter level and enabled on the created device** on this adapter/browser combination (confirmed
+by `webgpu_smoke_limits()`'s device-feature check, not just the adapter-feature check — see
+§8 for the full captured output). `maxUniformBufferBindingSize` is the one limit that sits
+exactly at the spec-guaranteed floor rather than above it — code that assumes "typical desktop"
+headroom for uniform buffers specifically should not, at least on this adapter.
+
+`maxBufferSize`/`maxStorageBufferBindingSize` are the binding constraints (§3): even though this
+adapter measured far above the "typical" ~2 GiB desktop figure, that is a single-vendor/single-OS
+data point, not a spec guarantee — mobile and some Vulkan/ANGLE paths sit far closer to the
+256 MiB / 128 MiB floor, so the browser target must still degrade gracefully to the spec floor,
+not assume this measurement holds on other hardware.
 
 ## 2. Per-stage memory, derived from code
 

@@ -27,3 +27,8 @@ __pycache__/
 !assets/showcase/*/*.glb
 *.tmp
 dumps/
+# WASM smoke build artifacts (scripts/build_wasm_smoke.sh)
+web/smoke/pixal3d_smoke.js
+web/smoke/pixal3d_smoke.wasm
+build-wasm/
+build-webgpu/

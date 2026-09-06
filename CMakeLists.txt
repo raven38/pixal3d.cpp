@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.18)
 project(trellis_cpp VERSION 0.6.0 LANGUAGES CXX C)
 
+# Browser WebGPU smoke test (docs/spec/31-webgpu-bringup.md §8): scripts/build_wasm_smoke.sh
+# configures this whole repo with -DTRELLIS_WASM_SMOKE=ON under Emscripten, but only needs
+# ggml + src/test_webgpu_smoke.cpp -- trellis_core/the CLI aren't buildable under Emscripten
+# yet and pulling them in isn't this test's job. web/smoke/CMakeLists.txt is a small standalone
+# project that vendors thirdparty/ggml itself; skip the rest of this file in this mode.
+option(TRELLIS_WASM_SMOKE "Build only the browser WebGPU smoke test (Emscripten only)" OFF)
+if(EMSCRIPTEN AND TRELLIS_WASM_SMOKE)
+  add_subdirectory(web/smoke)
+  return()
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -109,8 +120,8 @@ add_library(trellis_core STATIC
   src/proj_grid.cpp
   src/pixal3d_cond.cpp
   src/naf.cpp
-  src/graph_dump.cpp
   src/transforms_json.cpp
+  src/graph_dump.cpp
 )
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)
 target_compile_definitions(trellis_core PRIVATE TRELLIS_GIT_COMMIT="${TRELLIS_GIT_COMMIT}" TRELLIS_GIT_DIRTY=${TRELLIS_GIT_DIRTY} TRELLIS_BUILD_TIMESTAMP="${TRELLIS_BUILD_TIMESTAMP_UTC}" TRELLIS_APP_VERSION="${TRELLIS_APP_VERSION}")
@@ -416,3 +427,21 @@ set_target_properties(trellis-test-pixal3d-shape-decode PROPERTIES BUILD_RPATH "
 add_executable(trellis-test-pixal3d-tex-decode src/test_pixal3d_tex_decode.cpp)
 target_link_libraries(trellis-test-pixal3d-tex-decode PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-tex-decode PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# Native WebGPU (Dawn) backend infrastructure smoke test (docs/spec/31-webgpu-bringup.md
+# §7). Self-contained (no Model/GGUF) -- only depends on ggml/ggml-backend/ggml-webgpu,
+# so it links the ggml libs directly rather than the whole trellis_core.
+if(GGML_WEBGPU)
+  add_executable(trellis-webgpu-smoke src/test_webgpu_smoke.cpp)
+  target_include_directories(trellis-webgpu-smoke PRIVATE ${GGML_DIR}/include)
+  target_link_libraries(trellis-webgpu-smoke PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+  set_target_properties(trellis-webgpu-smoke PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+  if(NOT EMSCRIPTEN)
+    # test_webgpu_smoke.cpp's webgpu_smoke_limits() calls the wgpu C++ API directly (the
+    # ggml-webgpu backend keeps its own wgpu::Adapter/Device private, no public accessor) --
+    # re-resolve the same Dawn package ggml-webgpu/CMakeLists.txt already found via
+    # CMAKE_PREFIX_PATH so this target gets <webgpu/webgpu_cpp.h> too.
+    find_package(Dawn REQUIRED)
+    target_link_libraries(trellis-webgpu-smoke PRIVATE dawn::webgpu_dawn)
+  endif()
+endif()
