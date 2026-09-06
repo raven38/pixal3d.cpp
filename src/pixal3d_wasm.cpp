@@ -19,8 +19,14 @@
 //                    (web/shape_decode/; scored natively by trellis-test-pixal3d-shape-decode
 //                    --ext-mesh, see docs/PIXAL3D_WEBGPU_MEMORY.md §9)
 //
-// The SS decoder (dense Conv3D) and the texture decoder are not run here; the latents are
-// returned so the native tests can score/decode them.
+//   Tex decode:   real sampled shape + texture SLAT fixture -> shape_decode (for its subdivision
+//                    masks only) -> tex_decode (same sparse runtime, guide_subs-driven C2S,
+//                    6-channel output_layer) -> per-voxel PBR attributes + final voxel coords
+//                    (web/tex_decode/; scored natively by trellis-test-pixal3d-tex-decode
+//                    --ext-attrs, see docs/spec/31-webgpu-bringup.md §12)
+//
+// The SS decoder (dense Conv3D) is not run here; the SS/Shape latents are returned so the
+// native tests can score/decode them.
 #include "pixal3d_cond.h"
 #include "shape_decoder.h"
 #include "dual_grid.h"
@@ -416,6 +422,110 @@ int run_shape_decode_impl(const string& gguf, const string& fixture_dir, int res
     return 0;
 }
 
+// ---- texture (PBR) decoder on the same real-SLAT fixture: shape_decode (for its subdivision
+// masks) -> tex_decode, as trellis_cli.cpp / trellis-test-pixal3d-tex-decode wire them ----
+int run_tex_decode_impl(const string& shape_gguf, const string& tex_gguf, const string& fixture_dir, int res_arg, const string& out_dir) {
+    const auto t_all = std::chrono::steady_clock::now();
+    const string cp = file_exists(fixture_dir + "/coords.npy") ? fixture_dir + "/coords.npy" : fixture_dir + "/hr_coords.npy";
+    const string sp = file_exists(fixture_dir + "/f32_slat.npy") ? fixture_dir + "/f32_slat.npy" : fixture_dir + "/f32_shape_slat.npy";
+    const string tp = fixture_dir + "/f32_tex_slat.npy";
+    vector<int32_t> co; vector<int64_t> cshape;
+    if (!load_npy_i32(cp, co, cshape) || cshape.size() != 2) { rep("ERROR: %s\n", cp.c_str()); return 2; }
+    npy::Array slat = npy::load(sp);
+    npy::Array tslat = npy::load(tp);
+    const int64_t N = cshape[0], cw = cshape[1];
+    if (slat.shape.size() != 2 || slat.shape[0] != N || slat.shape[1] != 32) { rep("ERROR: %s is not [N=%lld,32]\n", sp.c_str(), (long long)N); return 2; }
+    if (tslat.shape.size() != 2 || tslat.shape[0] != N || tslat.shape[1] != 32) { rep("ERROR: %s is not [N=%lld,32]\n", tp.c_str(), (long long)N); return 2; }
+    vector<std::array<int, 3>> coords0(N);
+    int cmax = 0;
+    for (int64_t i = 0; i < N; ++i) {
+        coords0[i] = { co[i * cw + cw - 3], co[i * cw + cw - 2], co[i * cw + cw - 1] };
+        cmax = std::max({ cmax, coords0[i][0], coords0[i][1], coords0[i][2] });
+    }
+    const int in_res = cmax < 32 ? 32 : 64;
+    const int res = res_arg > 0 ? res_arg : in_res * 16;
+    vector<float> latent(slat.data.begin(), slat.data.begin() + (size_t)32 * N);     // [N,32] row-major == ggml [32,N]
+    vector<float> tlatent(tslat.data.begin(), tslat.data.begin() + (size_t)32 * N);
+    rep("input: N=%lld active voxels @res%d (%s) -> decode @res%d\n", (long long)N, in_res, cp.c_str(), res);
+    setenv("TRELLIS_DBG_MEM", "1", 0);   // per-stage N -> M lines on stderr (part of the browser report)
+
+    auto t0 = std::chrono::steady_clock::now();
+    ShapeOut so;
+    {
+        Model m = Model::load(shape_gguf, 0);
+        rep("shape_dec: %zu tensors on %s, %.1f MB weights, load %.0f ms\n", m.tensors.size(),
+            ggml_backend_name(m.backend), m.total_bytes() / 1048576.0, ms_since(t0));
+        t0 = std::chrono::steady_clock::now();
+        so = shape_decode(m, latent, coords0, res);
+        m.free();
+        rep("shape_decode: subs stages=%zu, final coords M=%zu @res%d  (%.1f s)\n", so.subs.size(), so.coords.size(), so.res, ms_since(t0) / 1000.0);
+    }
+    so.feats7.clear(); so.feats7.shrink_to_fit();   // only the masks + coords are needed from here on
+    vector<float> pbr;   // [6*M] channel-major == [M,6] row-major, PRE *0.5+0.5
+    {
+        t0 = std::chrono::steady_clock::now();
+        Model m = Model::load(tex_gguf, 0);
+        rep("tex_dec: %zu tensors on %s, %.1f MB weights, load %.0f ms\n", m.tensors.size(),
+            ggml_backend_name(m.backend), m.total_bytes() / 1048576.0, ms_since(t0));
+        t0 = std::chrono::steady_clock::now();
+        pbr = tex_decode(m, tlatent, coords0, so.subs);
+        m.free();
+        rep("tex_decode: [6*M] = %zu floats  (%.1f s)\n", pbr.size(), ms_since(t0) / 1000.0);
+    }
+    const int64_t M = (int64_t)so.coords.size();
+    if ((int64_t)pbr.size() != 6 * M) { rep("ERROR: tex_decode returned %zu floats, expected 6*M=%lld\n", pbr.size(), (long long)(6 * M)); return 1; }
+
+    // per-channel distribution of the decoded attributes (post *0.5+0.5, the pipeline's convention)
+    static const char* names[6] = { "base_R", "base_G", "base_B", "metallic", "roughness", "alpha" };
+    rep("attrs (post *0.5+0.5), per channel: min / max / mean / std\n");
+    for (int k = 0; k < 6; ++k) {
+        double mn = 1e30, mx = -1e30, sum = 0, sq = 0;
+        for (int64_t i = 0; i < M; ++i) { const double v = pbr[6 * i + k] * 0.5 + 0.5; mn = std::min(mn, v); mx = std::max(mx, v); sum += v; sq += v * v; }
+        const double mean = M ? sum / M : 0, sd = M ? std::sqrt(std::max(0.0, sq / M - mean * mean)) : 0;
+        rep("  %-10s %.4f / %.4f / %.4f / %.4f\n", names[k], mn, mx, mean, sd);
+    }
+
+    // exact final-coordinate parity against the reference decode + per-channel diff vs its
+    // attributes, when the fixture carries them (the full scorer is the native test's --ext-attrs)
+    vector<int32_t> rc; vector<int64_t> rshape;
+    if (load_npy_i32(fixture_dir + "/f32_tex_coords.npy", rc, rshape) && rshape.size() == 2 && rshape[1] == 3) {
+        auto key = [](int x, int y, int z) { return ((uint64_t)(uint32_t)x << 40) | ((uint64_t)(uint32_t)y << 20) | (uint32_t)z; };
+        std::unordered_map<uint64_t, int64_t> mine; mine.reserve((size_t)M * 2);
+        for (int64_t i = 0; i < M; ++i) mine[key(so.coords[i][0], so.coords[i][1], so.coords[i][2])] = i;
+        const bool have_attrs = file_exists(fixture_dir + "/f32_tex_attrs.npy");
+        npy::Array ra;
+        if (have_attrs) ra = npy::load(fixture_dir + "/f32_tex_attrs.npy");   // [Nt,6] already *0.5+0.5
+        int64_t common = 0; double maxd[6] = {0,0,0,0,0,0}, sumd[6] = {0,0,0,0,0,0};
+        for (int64_t t = 0; t < rshape[0]; ++t) {
+            auto it = mine.find(key(rc[3 * t], rc[3 * t + 1], rc[3 * t + 2]));
+            if (it == mine.end()) continue;
+            ++common;
+            if (have_attrs && ra.shape.size() == 2 && ra.shape[1] == 6 && ra.shape[0] == rshape[0])
+                for (int k = 0; k < 6; ++k) {
+                    const double d = std::fabs((pbr[6 * it->second + k] * 0.5 + 0.5) - ra.data[6 * t + k]);
+                    maxd[k] = std::max(maxd[k], d); sumd[k] += d;
+                }
+        }
+        const int64_t extra = M - common, missing = rshape[0] - common;
+        rep("final coords vs reference: mine=%lld ref=%lld common=%lld extra=%lld missing=%lld -> %s\n",
+            (long long)M, (long long)rshape[0], (long long)common, (long long)extra, (long long)missing,
+            (extra == 0 && missing == 0) ? "EXACT" : "DIFFERENT");
+        if (have_attrs && common > 0) {
+            rep("attrs vs f32_tex_attrs on the %lld common voxels: max|d| / mean|d| per channel\n", (long long)common);
+            for (int k = 0; k < 6; ++k) rep("  %-10s %.4f / %.2e\n", names[k], maxd[k], sumd[k] / common);
+        }
+    }
+    if (!out_dir.empty()) {   // raw attrs (PRE *0.5+0.5) + coords for the native scorer (--ext-attrs PREFIX)
+        vector<int32_t> ci(so.coords.size() * 3);
+        for (size_t i = 0; i < so.coords.size(); ++i) for (int a = 0; a < 3; ++a) ci[3 * i + a] = so.coords[i][a];
+        npy::save(out_dir + "/attrs.npy", pbr.data(), { M, 6 });
+        npy::save_i32(out_dir + "/coords.npy", ci.data(), { M, 3 });
+        rep("wrote %s/{attrs,coords}.npy\n", out_dir.c_str());
+    }
+    rep("total %.1f s\n", ms_since(t_all) / 1000.0);
+    return 0;
+}
+
 } // namespace
 
 extern "C" {
@@ -429,6 +539,23 @@ PIXAL3D_EXPORT const char* pixal3d_shape_decode_run(const char* shape_dec_gguf, 
     int rc;
     try {
         rc = run_shape_decode_impl(shape_dec_gguf, fixture_dir, res, out_dir ? out_dir : "");
+    } catch (const std::exception& e) {
+        rep("EXCEPTION: %s\n", e.what());
+        rc = 1;
+    }
+    rep(rc == 0 ? "RESULT: OK\n" : "RESULT: FAIL\n");
+    return g_report.c_str();
+}
+
+// Runs the texture (PBR) decoder on a real SLAT fixture directory (coords + f32 shape SLAT +
+// f32 tex SLAT, optional f32_tex_coords / f32_tex_attrs for parity): shape_decode for the
+// subdivision masks, then tex_decode driven by them. out_dir != "" writes attrs/coords .npy
+// there (attrs PRE *0.5+0.5). Returns the report; "RESULT: OK" on success.
+PIXAL3D_EXPORT const char* pixal3d_tex_decode_run(const char* shape_dec_gguf, const char* tex_dec_gguf, const char* fixture_dir, int res, const char* out_dir) {
+    g_report.clear();
+    int rc;
+    try {
+        rc = run_tex_decode_impl(shape_dec_gguf, tex_dec_gguf, fixture_dir, res, out_dir ? out_dir : "");
     } catch (const std::exception& e) {
         rep("EXCEPTION: %s\n", e.what());
         rc = 1;
@@ -487,6 +614,11 @@ int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "--shape-decode") == 0) {
         if (argc < 4) { fprintf(stderr, "usage: %s --shape-decode <shape_dec.gguf> <fixture_dir> [res] [out_dir]\n", argv[0]); return 1; }
         const char* r = pixal3d_shape_decode_run(argv[2], argv[3], argc > 4 ? atoi(argv[4]) : 0, argc > 5 ? argv[5] : "");
+        return strstr(r, "RESULT: OK") ? 0 : 1;
+    }
+    if (argc >= 2 && strcmp(argv[1], "--tex-decode") == 0) {
+        if (argc < 5) { fprintf(stderr, "usage: %s --tex-decode <shape_dec.gguf> <tex_dec.gguf> <fixture_dir> [res] [out_dir]\n", argv[0]); return 1; }
+        const char* r = pixal3d_tex_decode_run(argv[2], argv[3], argv[4], argc > 5 ? atoi(argv[5]) : 0, argc > 6 ? argv[6] : "");
         return strstr(r, "RESULT: OK") ? 0 : 1;
     }
     if (argc >= 2 && strcmp(argv[1], "--shape512") == 0) {
