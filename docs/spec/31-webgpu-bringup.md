@@ -1263,3 +1263,135 @@ than native Dawn's here (6.6 vs 7-12 s/view) -- both are unprofiled per op.
   S=1024 (1.08 GB, B5) and the DiT MLP hidden at N=17484 (573 MB) remain untiled.
 - **Spec-floor sizing**: the 2.84 GB conditioning graph, the 920 MB attention chunk and the 2.78 GB
   weight buffer all exceed the 128 MiB / 256 MiB floors (fine on this 4 GiB-limit adapter).
+
+## 11. Sparse shape decoder on WebGPU (2026-09-06, `feat/webgpu-shape-decode`)
+
+Scope of this phase: the FlexiDualGrid shape decoder -- `from_latent` → 4 × (ConvNeXt stage +
+C2S up-block) → `output_layer` → dual-grid mesh -- on the ggml WebGPU backend natively (Dawn) and
+in Chrome (the same `web/ss/pixal3d_ss.wasm`), fed the **real sampled Shape-1024 SLAT** of
+`tools/ref_pixal3d_hr_sample.py` (`hr_sample`: `hr_coords.npy` N = 17,489 at res 64,
+`f32_shape_slat.npy`, reference decode `f32_dec_vertices/faces.npy` = 4,649,828 vertices /
+9,323,626 faces, `f32_tex_coords.npy` = the reference's 4,649,828 final voxel coords) and the
+res-512 real SLAT (`slat_sample`). Branch base: `feat/webgpu-sparse-backend-prep` (= `8c5d97c`,
+§10 of the op-gap doc), whose SET_ROWS fix, PAD→CPY regression cases and allocation trace are
+reused unchanged. Random-latent decoder fixtures are not used anywhere in this phase.
+
+### 11.1 What had to change (and what did not)
+
+Nothing in the decoder math or its host-side topology. `shape_decode` / `sparse_c2s` /
+`build_neighbor_table` run unchanged: coordinates, hashing, the neighbour tables and the octant →
+gather-index maps stay on the host (WASM in the browser), the `[C, N]` features, the 27-tap
+gather + `mul_mat` submanifold conv, the channel→spatial gather, norms, activations and the
+single-buffer PAD→CPY writes stay on the device; the only device→host→device traffic per stage is
+the `[8, N]` subdivision logits (up to 37 MB at stage 3) and the stage outputs between graphs, as
+natively.
+
+| item | change | why |
+|---|---|---|
+| ggml WebGPU `cpy` (`patches/ggml-webgpu/0005`) | I32 source for `CPY`/`CONT` | the decoder's first graph aborted on `cont(view_1d(nbr_i32, …))` -- the tap-slice of the neighbour table (op-gap §11.1); regression cases in `trellis-webgpu-ops` |
+| sparse graph runners (`shape_decoder.cpp::run1`, `sparse.cpp::GraphRun::run`) | `check_graph_supported` before allocation | on WebGPU an unsupported node throws instead of being silently skipped (§9.1 hazard) |
+| `trellis_model.cpp::tensor_to_f32` | F32 readback without the intermediate byte buffer | −1.19 GB transient host memory at the stage-3 C2S output; the wasm heap is 4 GB |
+| `shape_decoder.cpp` | `TRELLIS_DBG_STAGE_DUMP=<dir>` per-stage dump (coords in full + a coordinate-hashed ~4096-row feature subset + whole-tensor stats) | stage-by-stage parity against PyTorch / CUDA without writing any `[N, C]` tensor (§11.3) |
+| `trellis-test-pixal3d-shape-decode` | reads the `hr_sample` layout (`hr_coords` / `f32_shape_slat`), derives the final res from the input grid (`--res` overrides), reports exact final-coordinate parity vs `f32_tex_coords`, `--dump-mesh PREFIX` / `--ext-mesh PREFIX` (score a mesh decoded elsewhere, e.g. the browser's) | one scorer for CUDA, native WebGPU and Chrome meshes |
+| tools | `tools/ref_pixal3d_shape_dec_stages.py` (PyTorch per-stage reference, same dump layout, fp16 torso as the fixture's decode), `tools/compare_sparse_stages.py` | |
+| browser | `pixal3d_shape_decode_run(gguf, fixture_dir, res, out_dir)` in `src/pixal3d_wasm.cpp` (same module; `web/ss/CMakeLists.txt` now compiles `shape_decoder.cpp`, `sparse.cpp`, `dual_grid.cpp`), page `web/shape_decode/`, driver `run_playwright.js` saves `browser_{verts,faces,coords}.npy` | §11.5 |
+
+### 11.2 How to run
+
+```
+# native Dawn (build-webgpu, gpu 0); -1 = CPU backend
+./build-webgpu/trellis-test-pixal3d-shape-decode ~/pixal3d_assets/gguf/shape_dec.gguf \
+    ~/pixal3d_assets/ref/pixal3d/hr_sample 0 [--dump-mesh PREFIX]
+TRELLIS_DBG_ALLOC_TRACE=1 TRELLIS_DBG_STAGE_DUMP=DIR TRELLIS_DBG_MEM=1 ...   # trace / stage dump / N->M lines
+./build-webgpu/trellis-webgpu-ops --only i32                                 # patch 0005 regression
+# PyTorch per-stage reference (win, conda env of tools/ref_pixal3d_hr_sample.py)
+FIX=.../hr_sample OUT=.../hr_stages_torch python tools/ref_pixal3d_shape_dec_stages.py
+python tools/compare_sparse_stages.py DIR_A DIR_B          # e.g. WebGPU dump vs torch dump
+# browser (Chrome 152, JSPI): serve web/ on 8199, then
+cd web && node shape_decode/run_playwright.js <shape_dec.gguf> <fixture_dir> <out_dir> [res]
+./build-webgpu/trellis-test-pixal3d-shape-decode <gguf> <fixture_dir> --ext-mesh <out_dir>/browser_
+```
+
+`scripts/build_wasm_ss.sh` builds the module (the decoder sources are part of it now;
+`WEBGPU_RUNTIME_WAIT_TIMEOUT_MS` raised to 3600000u in `web/ss/CMakeLists.txt` because one stage
+graph is one submission).
+
+### 11.3 Stage-by-stage parity (Shape-1024 real SLAT)
+
+Three per-stage dumps of the same decode: PyTorch fp16-torso reference (RTX 4090), native CUDA
+(RTX 4090, `build-cuda`, fp16 weights / f32 activations) and native WebGPU (Apple M1 Pro, Dawn;
+`mul_mat` stages its f32 inputs as f16). `tools/compare_sparse_stages.py`: coordinate sets are
+compared exactly (A-only / B-only), features on the ~4,100 shared subset rows matched **by
+coordinate** (max|d|, mean|d|, `nrm` = mean|d| / std of the whole reference tensor, cosine).
+
+| stage (C) | PyTorch N | CUDA N (flips vs torch) | WebGPU N (flips vs torch) | CUDA vs torch mean\|d\| / nrm / cos | WebGPU vs torch mean\|d\| / nrm / cos |
+|---|---|---|---|---|---|
+| from_latent (1024) | 17,489 | 17,489 (0) | 17,489 (0) | 9.8e-4 / 3.1e-4 / 1.000000 | 6.9e-4 / 2.2e-4 / 1.000000 |
+| stage0 ConvNeXt ×4 (1024) | 17,489 | 17,489 (0) | 17,489 (0) | 4.8e-3 / 1.6e-3 / 0.999998 | 1.6e-3 / 5.4e-4 / 1.000000 |
+| stage0 C2S (512) | 71,261 | 71,261 (0) | 71,262 (+1 / −0) | 4.5e-3 / 1.5e-3 / 0.999998 | 1.7e-3 / 5.6e-4 / 1.000000 |
+| stage1 ConvNeXt ×16 (512) | 71,261 | 71,261 (0) | 71,262 (1) | 6.5e-3 / 1.9e-3 / 0.999997 | 2.3e-3 / 6.7e-4 / 0.999999 |
+| stage1 C2S (256) | 288,166 | 288,165 (3 / 4) | 288,168 (2 / 0) | 6.3e-3 / 2.7e-3 / 0.999993 | 2.5e-3 / 1.1e-3 / 0.999996 |
+| stage2 ConvNeXt ×8 (256) | 288,166 | 288,165 | 288,168 | 6.5e-3 / 1.7e-3 / 0.999994 | 2.8e-3 / 7.2e-4 / 0.999999 |
+| stage2 C2S (128) | 1,158,940 | 1,158,936 (126 / 130) | 1,158,925 (72 / 87) | 7.2e-3 / 3.4e-3 / 0.999916 | 3.3e-3 / 1.6e-3 / 0.999966 |
+| stage3 ConvNeXt ×4 (128) | 1,158,940 | 1,158,936 | 1,158,925 | 7.5e-3 / 1.5e-3 / 0.999984 | 3.6e-3 / 7.4e-4 / 0.999996 |
+| stage3 C2S (64) | 4,649,828 | 4,649,837 (1277 / 1268 = 0.055 %) | 4,649,809 (727 / 746 = 0.032 %) | 1.28e-2 / 8.6e-4 / 0.999985 | 7.5e-3 / 5.0e-4 / 0.999991 |
+| output_layer (7) | 4,649,828 | 4,649,837 | 4,649,809 | 1.28e-2 / 1.6e-3 / 0.999574 | 8.7e-3 / 1.1e-3 / 0.999671 |
+
+Reading: **coordinate parity is exact through the ConvNeXt stages and the first up-block on CUDA,
+and to within one voxel on WebGPU; from the second up-block on, both native decoders flip a small
+set of voxels whose subdivision logit sits within the torso's precision of the 0 threshold**
+(0.02 % at stage 2, 0.03-0.055 % at stage 3). Each flipped voxel perturbs its 26 neighbours' next
+conv (present vs. absent-as-zero row), which is where every localized `max|d|` in the table comes
+from (up to 17 at the output on both backends, on the same rows); the aggregate metrics stay at
+`nrm ≤ 3.4e-3`, cos ≥ 0.9995. WebGPU is *closer* to the reference than CUDA at every stage
+because its f16-staged `mul_mat` inputs mirror the reference's fp16 torso. The first stage where
+the two C++ backends diverge from each other is stage-0 C2S (one voxel of 71k), i.e. the first
+sign threshold -- there is no divergent stage before it. Gate as implemented in the tool
+(calibrated ~3× above the CUDA-vs-PyTorch envelope): flips ≤ 0.1 % and `nrm ≤ 5e-3` per stage --
+PASS for CUDA vs torch, WebGPU vs torch, WebGPU vs CUDA.
+
+### 11.4 Mesh parity and native Dawn result
+
+`trellis-test-pixal3d-shape-decode` (raw dual-grid mesh, pre-postprocess, symmetric
+nearest-vertex distance at 1 voxel = 1/res; gate: worst mean ≤ 1 voxel, face ratio in (0.9, 1.1)):
+
+| decode | V | F | final coords vs reference (common / extra / missing) | worst symmetric mean | p99 | max | wall |
+|---|---|---|---|---|---|---|---|
+| PyTorch reference (fp16 torso, RTX 4090) | 4,649,828 | 9,323,626 | -- | -- | -- | -- | -- |
+| native CUDA, RTX 4090 | 4,649,837 | 9,323,874 | 4,648,560 / 1,277 / 1,268 | 1.07e-6 (0.001 vox) | 0.008 vox | 1.03 vox | -- |
+| **native WebGPU (Dawn, M1 Pro)** | 4,649,809 | 9,323,688 | 4,649,082 / 727 / 746 | **6.34e-7 (0.001 vox)** | 0.003 vox | 1.05 vox | decode 160 s, 172 s total |
+| res-512 fixture, native WebGPU | 1,188,437 | 2,383,418 | (no coords fixture) ref V = 1,188,442 | 1.63e-6 (0.001 vox) | 0.005 vox | 1.03 vox | 46 s |
+
+Bounds are identical to the reference to 5 decimals on every axis. The 1-voxel `max` is the flipped
+voxels: a vertex that exists on one side only sits one voxel from its nearest neighbour. The
+0.001-voxel figure of the native CUDA port (roadmap M2) is reproduced, not loosened.
+
+### 11.5 Browser (Chrome 152 / WASM)
+
+Same `web/ss/pixal3d_ss.wasm` (emcc 6.0.9, emdawnwebgpu, JSPI, `--profiling-funcs`), Chrome
+152.0.7977.82 on the M1 Pro, files handed to the page as `File` objects (WORKERFS, no copy),
+`web/shape_decode/run_playwright.js`; the mesh files come back as downloads and are scored by the
+native binary with `--ext-mesh`:
+
+| fixture | browser result | V / F | coords vs reference | native score of the browser mesh | vs native WebGPU mesh | wall (browser) |
+|---|---|---|---|---|---|---|
+| res-512 (`slat_sample`) | RESULT: OK | 1,188,437 / 2,383,418 | -- | worst mean 1.6252e-6 (0.001 vox), PASS | identical V/F and metrics | 56.8 s (decode 55.0 s) |
+| **Shape-1024 (`hr_sample`)** | **RESULT: OK** | 4,649,809 / 9,323,688 | 4,649,082 common / 727 extra / 746 missing (same set as native) | **worst mean 6.3448e-7 (0.001 vox), p99 0.003 vox, PASS** | `faces.npy` and `coords.npy` byte-identical; `verts.npy` differs on 81 of 4.65M vertices by ≤ 5.96e-8 (one f32 ULP: wasm libm vs macOS libm in the dual-grid `sigmoid`) | 292.6 s (decode 287.8 s, native Dawn 160 s) |
+
+The first Shape-1024 browser attempt trapped in stage-3 C2S (`RuntimeError: memory access out of
+bounds`, after the `N=1158925 -> M=4649809` line): the backend's `get_tensor` maps a staging
+buffer of the whole 1.19 GB result and emdawnwebgpu materialises the mapped range in the wasm
+heap, on top of the 1.19 GB destination vector and ~1.4 GB of live host vectors -- past the 4 GB
+heap. Fixed in the shared runtime (`tensor_to_f32` reads in 256 MiB slices, memory doc §9.3);
+the second run above is with that fix. Peak memory (`footprint`, sampled every 2 s): Chrome GPU
+process 9.93 GB, all Chrome processes 16.0 GB (res-512: 4.03 / 5.81 GB) -- memory doc §9.4.
+
+### 11.6 Not done / open
+
+- The texture decoder is untouched (task scope); `trellis-test-pixal3d-tex-decode` has not been
+  run on WebGPU. Everything it needs is in the shared runtime (op-gap §11.3).
+- Spec-floor adapters (128 MiB `maxStorageBufferBindingSize`, WG_SIZE 256): unchanged from
+  op-gap §10.5 -- the `[C, N]` stage tensors, `[Cout, M+1]` seed buffers and `[M, 27]` tables
+  exceed the binding from stage 2 on; a buffer split is a graph-construction change still deferred.
+- Timing is not a goal of this phase; the Mac GPU was shared with another session's Shape-1024
+  flow probe during part of the measurements.
