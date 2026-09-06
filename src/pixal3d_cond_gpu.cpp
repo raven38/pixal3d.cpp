@@ -150,19 +150,30 @@ Pixal3dCond pixal3d_cond_ss_gpu(const Model& dinov3, const std::vector<Pixal3dVi
 
 Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
                                    const std::vector<Pixal3dView>& views,
-                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats) {
+                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats,
+                                   const std::vector<std::array<int, 3>>* coords) {
     const auto t0 = std::chrono::steady_clock::now();
     const int S = prm.S, R = prm.R, Tn = prm.naf_T;
+    // Token set: the whole R^3 grid, or only the given voxels (grid token k = x*R*R + y*R + z).
+    std::vector<int64_t> tok;
+    if (coords) {
+        tok.reserve(coords->size());
+        for (const auto& c : *coords) {
+            if (c[0] < 0 || c[0] >= R || c[1] < 0 || c[1] >= R || c[2] < 0 || c[2] >= R)
+                throw std::runtime_error("pixal3d_cond_slat_gpu: voxel coord outside the grid");
+            tok.push_back((int64_t)c[0] * R * R + (int64_t)c[1] * R + c[2]);
+        }
+    }
+    const int64_t N3 = coords ? (int64_t)tok.size() : (int64_t)R * R * R;
     Pixal3dCond out;
     out.n_global = NPREFIX;
     out.d_proj = 2 * D;
     out.global.assign((size_t)NPREFIX * D, 0.0f);
-    out.proj.assign((size_t)R * R * R * 2 * D, 0.0f);
+    out.proj.assign((size_t)N3 * 2 * D, 0.0f);
 
     const int V = (int)views.size();
     if (V == 0) return out;
     const int Hp = S / 16, Wp = Hp, NP = Hp * Wp;
-    const int64_t N3 = (int64_t)R * R * R;
     if (naf.backend == nullptr || dinov3.backend == nullptr)
         throw std::runtime_error("pixal3d_cond_slat_gpu: models must be loaded on a backend");
 
@@ -212,6 +223,17 @@ Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
         std::vector<float> w_lr[4], w_hr[4];
         proj_grid_bilinear_taps(Hp, Wp, R, S, cam, idx_lr, w_lr);
         proj_grid_bilinear_taps(Tn, Tn, R, S, cam, idx_hr, w_hr);
+        if (coords) {                                      // keep only the requested tokens, in their order
+            for (int t = 0; t < 4; ++t) {
+                std::vector<int32_t> il(N3), ih(N3);
+                std::vector<float> wl(N3), wh(N3);
+                for (int64_t k = 0; k < N3; ++k) {
+                    il[k] = idx_lr[t][tok[k]]; wl[k] = w_lr[t][tok[k]];
+                    ih[k] = idx_hr[t][tok[k]]; wh[k] = w_hr[t][tok[k]];
+                }
+                idx_lr[t].swap(il); w_lr[t].swap(wl); idx_hr[t].swap(ih); w_hr[t].swap(wh);
+            }
+        }
         for (int t = 0; t < 4; ++t)                       // NAF map rows are in block-major pixel order
             for (int32_t& i : idx_hr[t]) i = bm_of_raster[i];
 

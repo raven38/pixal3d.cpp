@@ -99,9 +99,14 @@ Pixal3dCond pixal3d_cond_slat(const Model& dinov3, const Model& naf,
 // released before the next view; the fused condition is read back once at the end and
 // interleaved to the [R^3, 2048] host layout. `naf` must be loaded on the same device as
 // `dinov3` (its weights are read by the DINOv3 backend's graph).
+// `coords` (optional): accumulate only the grid tokens k = x*R*R + y*R + z of these voxels, in
+// this order -- the result's `proj` is then [coords.size(), 2048] token-major, i.e. exactly
+// pixal3d_gather_proj(dense, R, 2048, coords) of the dense result, without the dense [R^3, 2048]
+// accumulators (2.15 GB at R=64; the Shape-1024 flow only ever reads its active voxels).
 Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
                                    const std::vector<Pixal3dView>& views,
-                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats = nullptr);
+                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats = nullptr,
+                                   const std::vector<std::array<int, 3>>* coords = nullptr);
 
 // Gathers the dense SLAT proj condition [R^3, C] (token k = x*R*R + y*R + z, as
 // produced by pixal3d_cond_slat) at a sparse set of active voxel coords (x,y,z),

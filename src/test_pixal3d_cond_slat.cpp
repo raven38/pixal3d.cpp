@@ -5,8 +5,9 @@
 //   trellis-test-pixal3d-cond-slat <dinov3.gguf> <pixal3d_naf.gguf> <fixture_dir> [gpu] [--full] [--stage host|gpu|all]
 //
 // Default run: s512 stage (V=4 and V=1). --full additionally runs the s1024 stage
-// (DINO tokens at S=1024, full cond, gather at sparse coords) -- its fixtures are
-// ~1GB and the NAF/DINO passes at S=1024 take a few minutes on CPU/Metal.
+// (DINO tokens at S=1024, the NAF S=1024->T=512 map of view 0, full cond, gather at the
+// fixture's sparse coords; with the device path gathered at those coords directly) -- its
+// fixtures are ~1GB and the NAF/DINO passes at S=1024 take a few minutes on CPU/Metal.
 // --stage gpu runs only the device-resident s512 path (pixal3d_cond_slat_gpu: one graph per
 // view, DINOv3 -> NAF -> both projections -> MV average, V=4 and V=1) against the fixture and
 // against the host path on the same backend, with memory/timing stats; `all` (default) runs
@@ -203,7 +204,7 @@ static bool run_s512(const Model& dinov3, const Model& naf, const string& dir,
 }
 
 static bool run_s1024(const Model& dinov3, const Model& naf, const string& dir,
-                       const vector<Pixal3dView>& views_src, float mesh_scale) {
+                       const vector<Pixal3dView>& views_src, float mesh_scale, bool do_host, bool do_gpu) {
     const int S = 1024, R = 64, T = 512; // shape_1024 config: NAF target stays 512
     bool all_ok = true;
 
@@ -242,15 +243,6 @@ static bool run_s1024(const Model& dinov3, const Model& naf, const string& dir,
         all_ok &= compare(nm, toks[v], ref_v);
     }
 
-    printf("\n=== s1024 stage 5b: full cond + gather ===\n");
-    Pixal3dSlatCondParams prm{S, R, T, mesh_scale};
-    auto t2 = std::chrono::steady_clock::now();
-    Pixal3dCond cond = pixal3d_cond_slat(dinov3, naf, views, prm);
-    auto t3 = std::chrono::steady_clock::now();
-    printf("  pixal3d_cond_slat(S=1024,R=64) runtime: %.2fs\n",
-           std::chrono::duration<double>(t3 - t2).count());
-    all_ok &= compare("s1024_z_global", cond.global, z_global);
-
     const int64_t N = coords_a.shape[0];
     vector<std::array<int, 3>> coords((size_t)N);
     for (int64_t n = 0; n < N; ++n) {
@@ -259,8 +251,55 @@ static bool run_s1024(const Model& dinov3, const Model& naf, const string& dir,
                      (int)std::lround(coords_a.data[n * 4 + 2]),
                      (int)std::lround(coords_a.data[n * 4 + 3])};
     }
-    vector<float> gathered = pixal3d_gather_proj(cond.proj, R, 2 * D, coords);
-    all_ok &= compare("s1024_z_proj_gathered", gathered, z_proj_g);
+    npy::Array zg_lr, zg_hr;
+    zg_lr.shape = {N, D}; zg_lr.data = proj_half(z_proj_g.data, (size_t)N, false);
+    zg_hr.shape = {N, D}; zg_hr.data = proj_half(z_proj_g.data, (size_t)N, true);
+
+    // ---- stage 5a': NAF map of view 0 at S=1024 -> T=512 (pool k=2, d = 512/64 = 8 blocks) ----
+    npy::Array naf_hr_v0;
+    if (try_load(dir + "/s1024_naf_hr_v0.npy", naf_hr_v0)) {
+        printf("\n=== s1024 stage 5a': NAF map (view 0, S=1024 -> T=512) ===\n");
+        const int Hp = S / 16, Wp = Hp;
+        vector<float> chw0 = patch_tokens_to_chw(toks[0], Hp, Wp);
+        auto t0 = std::chrono::steady_clock::now();
+        vector<float> naf0 = naf_upsample(naf, views[0].rgb_premult.data(), S, chw0.data(), D, Hp, Wp, T);
+        printf("  naf_upsample(view0, S=%d, T=%d) runtime: %.2fs\n", S, T,
+               std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+        all_ok &= compare("s1024_naf_hr_v0", naf0, naf_hr_v0, 3e-3);
+        naf_hr_v0.data.clear(); naf_hr_v0.data.shrink_to_fit();
+    } else {
+        printf("\n  s1024_naf_hr_v0.npy not found -- NAF S=1024 map check SKIPPED\n");
+    }
+    toks.clear(); toks.shrink_to_fit();
+
+    Pixal3dSlatCondParams prm{S, R, T, mesh_scale};
+    vector<float> host_g, host_lr, host_hr;
+    if (do_host) {
+        printf("\n=== s1024 stage 5b: full cond (host path) + gather ===\n");
+        auto t2 = std::chrono::steady_clock::now();
+        Pixal3dCond cond = pixal3d_cond_slat(dinov3, naf, views, prm);
+        auto t3 = std::chrono::steady_clock::now();
+        printf("  pixal3d_cond_slat(S=1024,R=64) runtime: %.2fs\n",
+               std::chrono::duration<double>(t3 - t2).count());
+        all_ok &= compare("s1024_z_global", cond.global, z_global);
+        vector<float> gathered = pixal3d_gather_proj(cond.proj, R, 2 * D, coords);
+        all_ok &= compare("s1024_z_proj_gathered", gathered, z_proj_g);
+        host_g = cond.global; host_lr = proj_half(gathered, (size_t)N, false); host_hr = proj_half(gathered, (size_t)N, true);
+    }
+    if (do_gpu) {
+        printf("\n=== s1024 stage 5c: pixal3d_cond_slat_gpu (device-resident, gathered at the %lld fixture voxels) ===\n", (long long)N);
+        Pixal3dCondStats st;
+        Pixal3dCond g = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st, &coords);
+        print_stats("gpu s1024", st);
+        all_ok &= compare("gpu s1024 z_global vs ref", g.global, z_global);
+        all_ok &= compare("gpu s1024 gathered lr vs ref", proj_half(g.proj, (size_t)N, false), zg_lr);
+        all_ok &= compare("gpu s1024 gathered hr vs ref", proj_half(g.proj, (size_t)N, true), zg_hr);
+        if (!host_g.empty()) {
+            all_ok &= compare_vec("gpu s1024 z_global vs host", g.global, host_g, 1e-3);
+            all_ok &= compare_vec("gpu s1024 gathered lr vs host", proj_half(g.proj, (size_t)N, false), host_lr, 1e-3);
+            all_ok &= compare_vec("gpu s1024 gathered hr vs host", proj_half(g.proj, (size_t)N, true), host_hr, 1e-2);
+        }
+    }
 
     return all_ok;
 }
@@ -323,7 +362,7 @@ int main(int argc, char** argv) {
     }
 
     if (full) {
-        all_ok &= run_s1024(dinov3, naf, dir, views_meta, mesh_scale);
+        all_ok &= run_s1024(dinov3, naf, dir, views_meta, mesh_scale, do_host, do_gpu);
     } else {
         printf("\n(s1024 stage skipped -- pass --full to run it; its fixtures are ~1GB and DINO/NAF"
                " at S=1024 take a few minutes on CPU/Metal)\n");

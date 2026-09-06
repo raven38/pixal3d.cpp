@@ -118,9 +118,9 @@ if(TARGET ggml-webgpu AND NOT PIXAL3D_WEBGPU_SUBGROUP_MATRIX)
   target_compile_definitions(ggml-webgpu PRIVATE GGML_WEBGPU_SUBGROUP_MATRIX=0)
 endif()
 # One DiT forward is a single graph submission; upstream's 30 s queue-wait ceiling aborts it on
-# slow adapters (patches/ggml-webgpu/0002). 10 minutes.
+# slow adapters (patches/ggml-webgpu/0002). 2 hours: one Shape-1024 forward (N=17489, exact SDPA) is minutes in Chrome.
 if(TARGET ggml-webgpu)
-  target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=600000u)
+  target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=7200000u)
 endif()
 set(CMAKE_INSTALL_RPATH "$ORIGIN")
 
@@ -467,6 +467,10 @@ set_target_properties(trellis-test-pixal3d-ss-sample PROPERTIES BUILD_RPATH "${G
 add_executable(trellis-test-pixal3d-slat-sample src/test_pixal3d_slat_sample.cpp)
 target_link_libraries(trellis-test-pixal3d-slat-sample PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-slat-sample PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-pixal3d-hr-coords src/test_pixal3d_hr_coords.cpp)
+target_link_libraries(trellis-test-pixal3d-hr-coords PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-hr-coords PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 add_executable(trellis-test-pixal3d-shape-decode src/test_pixal3d_shape_decode.cpp)
 target_link_libraries(trellis-test-pixal3d-shape-decode PRIVATE trellis_core)

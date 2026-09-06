@@ -21,7 +21,7 @@ add_compile_definitions(GGML_MAX_NAME=128)
 add_subdirectory(${GGML_DIR} ${CMAKE_CURRENT_BINARY_DIR}/ggml)
 # patches/ggml-webgpu/0002: one DiT forward is one graph submission and takes minutes in a
 # browser; upstream's 30 s queue-wait ceiling aborts it. (0001 is moot under Emscripten.)
-target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=600000u)
+target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=7200000u)
 
 add_executable(pixal3d-webgpu-ss-wasm
   ${REPO}/src/pixal3d_wasm.cpp
@@ -52,11 +52,11 @@ target_link_options(pixal3d-webgpu-ss-wasm PRIVATE
   "-sALLOW_MEMORY_GROWTH=1"
   "-sINITIAL_MEMORY=268435456"
   "-sMAXIMUM_MEMORY=4294967296"
-  "-sEXPORTED_FUNCTIONS=[_pixal3d_ss_run,_pixal3d_ss_latent,_pixal3d_ss_latent_size,_pixal3d_ss_steps,_pixal3d_ss_n_steps,_pixal3d_shape512_run,_pixal3d_shape512_latent,_pixal3d_shape512_latent_size,_pixal3d_shape512_steps,_pixal3d_shape512_n_steps,_malloc,_free]"
+  "-sEXPORTED_FUNCTIONS=[_pixal3d_ss_run,_pixal3d_ss_latent,_pixal3d_ss_latent_size,_pixal3d_ss_steps,_pixal3d_ss_n_steps,_pixal3d_shape512_run,_pixal3d_shape512_latent,_pixal3d_shape512_latent_size,_pixal3d_shape512_steps,_pixal3d_shape512_n_steps,_pixal3d_shape1024_run,_malloc,_free]"
   "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPF32]"
   "-sMODULARIZE=1"
   "-sEXPORT_NAME=createPixal3dSS"
-  "-sJSPI_EXPORTS=[pixal3d_ss_run,pixal3d_shape512_run]"
+  "-sJSPI_EXPORTS=[pixal3d_ss_run,pixal3d_shape512_run,pixal3d_shape1024_run]"
   "-sENVIRONMENT=worker"
 )
 
