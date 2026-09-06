@@ -10,14 +10,30 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
+// Checkpoint/resume probe (only the flow GGUF and the hr_sample files are handed over; the module
+// runs steps [K, K+N) of its own sampler `repeat` times from the same serialized latent):
+//   node shape1024/run_playwright.js <dinov3.gguf> <pixal3d_naf.gguf> <pixal3d_shape_flow_1024_mv.gguf>
+//                                   <cond_slat_dir> <hr_sample_dir> <out_dir> --step K [--num-steps N] [--repeat R]
+//                                   [--input-latent F.npy] [--expected-latent F.npy]
+// Writes browser_x_step<K+N>.npy (run 0's output) for trellis-test-pixal3d-slat-sample --expected-latent.
 (async () => {
-  const [dinov3, naf, flow, condDir, sampleDir, outDir, viewsArg, ownArg] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const opt = {};
+  for (let i = 0; i < argv.length; ++i) {
+    if (/^--(step|num-steps|repeat|input-latent|expected-latent)$/.test(argv[i])) { opt[argv[i].slice(2)] = argv[i + 1]; argv.splice(i, 2); --i; }
+  }
+  const [dinov3, naf, flow, condDir, sampleDir, outDir, viewsArg, ownArg] = argv;
   const views = viewsArg || '0';
   const own = ownArg === '1';
+  const stepMode = opt.step !== undefined;
+  const K = parseInt(opt.step || '0', 10), nSteps = parseInt(opt['num-steps'] || '1', 10), repeat = parseInt(opt.repeat || '1', 10);
   fs.mkdirSync(outDir, { recursive: true });
   const listNpy = (d, keep) => fs.readdirSync(d).filter(f => f.endsWith('.npy') && keep(f)).map(f => path.join(d, f));
   const condFiles = listNpy(condDir, f => !/naf_hr|s512_|s1024_dino|s1024_z_proj|s1024_coords/.test(f));
-  const sampleFiles = listNpy(sampleDir, f => !/dec_|cuda_|cpp_|tex_|_coords\.npy/.test(f) || /hr_coords/.test(f));
+  const stepRe = new RegExp('shape_x_step(' + K + '|' + (K + nSteps) + ')\\.npy$');
+  const sampleFiles = stepMode
+    ? listNpy(sampleDir, f => /^hr_coords|^hr_cond_|^shape_sampler_params/.test(f) || (/^(f32|bf16|cuda|cuda_nofa)_/.test(f) && stepRe.test(f)))
+    : listNpy(sampleDir, f => !/dec_|cuda_|cpp_|tex_|_coords\.npy/.test(f) || /hr_coords/.test(f));
   const browser = await chromium.launch({
     channel: 'chrome', headless: false,
     args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan,WebGPU', '--use-angle=metal'],
@@ -26,11 +42,17 @@ const { chromium } = require('playwright');
   const consoleLog = [];
   page.on('console', m => consoleLog.push('[' + m.type() + '] ' + m.text()));
   await page.goto('http://localhost:8199/shape1024/index.html', { waitUntil: 'load' });
-  await page.setInputFiles('#models', [dinov3, naf, flow]);
-  await page.setInputFiles('#cond', condFiles);
+  await page.setInputFiles('#models', stepMode ? [flow] : [dinov3, naf, flow]);
+  if (!stepMode) await page.setInputFiles('#cond', condFiles);
   await page.setInputFiles('#sample', sampleFiles);
   await page.fill('#views', views);
   if (own) await page.check('#own');
+  if (stepMode) {
+    await page.check('#stepmode');
+    await page.fill('#start', String(K)); await page.fill('#nsteps', String(nSteps)); await page.fill('#repeat', String(repeat));
+    if (opt['input-latent']) await page.setInputFiles('#inlatent', [opt['input-latent']]);
+    if (opt['expected-latent']) await page.setInputFiles('#explatent', [opt['expected-latent']]);
+  }
   const t0 = Date.now();
   await page.click('#run');
   try {
@@ -64,7 +86,8 @@ const { chromium } = require('playwright');
       return buf;
     };
     const n = res.latent.length, N = n / 32;
-    fs.writeFileSync(path.join(outDir, 'browser_x_final.npy'), npy(res.latent, [N, 32]));
+    if (stepMode) fs.writeFileSync(path.join(outDir, 'browser_x_step' + (K + nSteps) + '.npy'), npy(res.latent, [N, 32]));
+    else fs.writeFileSync(path.join(outDir, 'browser_x_final.npy'), npy(res.latent, [N, 32]));
     for (let k = 0; k < res.nSteps; ++k)
       fs.writeFileSync(path.join(outDir, 'browser_x_step' + (k + 1) + '.npy'), npy(res.steps.slice(k * n, (k + 1) * n), [N, 32]));
   }

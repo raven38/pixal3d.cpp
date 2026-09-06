@@ -20,6 +20,13 @@ prints the report.</p>
 <label>hr_sample fixture files (hr_coords, shape_noise, hr_cond_*, shape_sampler_params, f32_/bf16_shape_x_*): <input id="sample" type="file" multiple></label>
 <label>Views (0 = all): <input id="views" type="number" value="0" min="0" max="4"></label>
 <label><input id="own" type="checkbox"> sample with the computed condition instead of the fixture's</label>
+<fieldset>
+<legend>Checkpoint/resume probe (pixal3d_shape_step_run: only the flow GGUF + hr_sample files; the conditioning stage is skipped)</legend>
+<label><input id="stepmode" type="checkbox"> run only Euler steps [start, start+n) from a serialized latent, `repeat` times from the same input</label>
+<label>start step: <input id="start" type="number" value="5" min="0" max="11"> num steps: <input id="nsteps" type="number" value="1" min="1" max="12"> repeat: <input id="repeat" type="number" value="1" min="1" max="100"></label>
+<label>input latent .npy (optional; default f32_shape_x_step&lt;start&gt;.npy from the sample files): <input id="inlatent" type="file"></label>
+<label>expected latent .npy (optional; the fixture's step references are always scored): <input id="explatent" type="file"></label>
+</fieldset>
 <button id="run">Run</button>
 <pre id="out"></pre>
 <script src="main.js"></script>
