@@ -1,5 +1,5 @@
 // Drives web/texture/index.html in a real Chrome (WebGPU + JSPI) and saves the report and the
-// latents the module returned. Usage (from web/, with `python3 -m http.server 8199` serving it):
+// latents the module returned. Usage (from web/, with `python3 -m http.server 8199` serving it; PIXAL3D_WEB_PORT overrides the port):
 //   node texture/run_playwright.js <pixal3d_tex_flow_1024_mv.gguf> <hr_sample_dir> <out_dir>
 //                                  [concat_cond.npy|-] [own_cond 0|1] [dinov3.gguf] [pixal3d_naf.gguf] [cond_slat_dir] [views]
 // Files are handed to the page's <input type=file> elements as real File objects, so the browser
@@ -31,7 +31,7 @@ const { chromium } = require('playwright');
   const page = await browser.newPage();
   const consoleLog = [];
   page.on('console', m => consoleLog.push('[' + m.type() + '] ' + m.text()));
-  await page.goto('http://localhost:8199/texture/index.html', { waitUntil: 'load' });
+  await page.goto('http://localhost:' + (process.env.PIXAL3D_WEB_PORT || '8199') + '/texture/index.html', { waitUntil: 'load' });
   await page.setInputFiles('#models', modelFiles);
   await page.setInputFiles('#sample', sampleFiles);
   if (concat) await page.setInputFiles('#concat', [concat]);

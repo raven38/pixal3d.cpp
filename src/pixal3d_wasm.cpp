@@ -465,7 +465,7 @@ int run_texture_impl(const string& dinov3_gguf, const string& naf_gguf, const st
         ggml_backend_name(mf.backend), mf.total_bytes() / 1048576.0, run->alloc_bytes() / 1048576.0,
         (cond_g.size() + proj.size()) * 4 / 1048576.0, (neg_cond.size() + neg_proj.size()) * 4 / 1048576.0,
         (long long)Cin, sample.size() * 4 / 1048576.0, concat_cond.size() * 4 / 1048576.0, (long long)(2 * Cin), (double)2 * Cin * N * 4 / 1048576.0,
-        (mf.total_bytes() + run->alloc_bytes() + (cond_g.size() + proj.size() + neg_cond.size() + neg_proj.size() + sample.size() + 2 * Cin * N) * 4) / 1048576.0);
+        ((double)mf.total_bytes() + (double)run->alloc_bytes() + (double)(cond_g.size() + proj.size() + neg_cond.size() + neg_proj.size() + sample.size() + 2 * Cin * N) * 4) / 1048576.0);   // summed in double: the byte total exceeds 32-bit size_t under wasm32
     int n_fwd = 0; double fwd_ms = 0;
     vector<float> x64((size_t)2 * Cin * N);
     FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* c, const float* pj) {
