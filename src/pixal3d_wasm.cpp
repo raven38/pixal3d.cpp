@@ -13,9 +13,17 @@
 //                    active voxels (ProjectAttention shape flow, exact SDPA) -> sample_flow
 //                    -> final latent [N,32]
 //
-// The decoders are not run here (Conv3D / sparse conv have no WebGPU kernels yet); the
-// latents are returned so the native tests can score/decode them.
+//   Shape decode: real sampled shape SLAT fixture -> shape_decode (from_latent -> 4 x
+//                    (ConvNeXt stage + C2S) -> output_layer, sparse conv on the shared
+//                    neighbor tables) -> dual_grid_to_mesh -> raw mesh + final voxel coords
+//                    (web/shape_decode/; scored natively by trellis-test-pixal3d-shape-decode
+//                    --ext-mesh, see docs/PIXAL3D_WEBGPU_MEMORY.md §9)
+//
+// The SS decoder (dense Conv3D) and the texture decoder are not run here; the latents are
+// returned so the native tests can score/decode them.
 #include "pixal3d_cond.h"
+#include "shape_decoder.h"
+#include "dual_grid.h"
 #include "dinov3.h"
 #include "naf.h"
 #include "trellis_model.h"
@@ -34,6 +42,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #ifdef __EMSCRIPTEN__
@@ -345,9 +354,88 @@ int run_shape512_impl(const string& dinov3_gguf, const string& naf_gguf, const s
     return 0;
 }
 
+// ---- shape decoder on a real SLAT fixture (slat_sample or hr_sample layout, as the native test) ----
+int run_shape_decode_impl(const string& gguf, const string& fixture_dir, int res_arg, const string& out_dir) {
+    const auto t_all = std::chrono::steady_clock::now();
+    const string cp = file_exists(fixture_dir + "/coords.npy") ? fixture_dir + "/coords.npy" : fixture_dir + "/hr_coords.npy";
+    const string sp = file_exists(fixture_dir + "/f32_slat.npy") ? fixture_dir + "/f32_slat.npy" : fixture_dir + "/f32_shape_slat.npy";
+    vector<int32_t> co; vector<int64_t> cshape;
+    if (!load_npy_i32(cp, co, cshape) || cshape.size() != 2) { rep("ERROR: %s\n", cp.c_str()); return 2; }
+    npy::Array slat = npy::load(sp);
+    const int64_t N = cshape[0], cw = cshape[1];
+    if (slat.shape.size() != 2 || slat.shape[0] != N || slat.shape[1] != 32) { rep("ERROR: %s is not [N=%lld,32]\n", sp.c_str(), (long long)N); return 2; }
+    vector<std::array<int, 3>> coords0(N);
+    int cmax = 0;
+    for (int64_t i = 0; i < N; ++i) {
+        coords0[i] = { co[i * cw + cw - 3], co[i * cw + cw - 2], co[i * cw + cw - 1] };
+        cmax = std::max({ cmax, coords0[i][0], coords0[i][1], coords0[i][2] });
+    }
+    const int in_res = cmax < 32 ? 32 : 64;
+    const int res = res_arg > 0 ? res_arg : in_res * 16;
+    vector<float> latent(slat.data.begin(), slat.data.begin() + (size_t)32 * N);   // [N,32] row-major == ggml [32,N]
+    rep("input: N=%lld active voxels @res%d (%s) -> decode @res%d\n", (long long)N, in_res, cp.c_str(), res);
+    setenv("TRELLIS_DBG_MEM", "1", 0);   // per-stage N -> M lines on stderr (part of the browser report)
+
+    auto t0 = std::chrono::steady_clock::now();
+    Model m = Model::load(gguf, 0);
+    rep("shape_dec: %zu tensors on %s, %.1f MB weights, load %.0f ms\n", m.tensors.size(),
+        ggml_backend_name(m.backend), m.total_bytes() / 1048576.0, ms_since(t0));
+    t0 = std::chrono::steady_clock::now();
+    ShapeOut so = shape_decode(m, latent, coords0, res);
+    const double dec_ms = ms_since(t0);
+    m.free();
+    rep("decoded voxels @res%d = %zu  (%.1f s)\n", so.res, so.coords.size(), dec_ms / 1000.0);
+    Mesh mesh = dual_grid_to_mesh(so);
+    float mn[3] = { 1e30f, 1e30f, 1e30f }, mx[3] = { -1e30f, -1e30f, -1e30f };
+    for (size_t i = 0; i + 2 < mesh.verts.size(); i += 3)
+        for (int a = 0; a < 3; ++a) { mn[a] = std::min(mn[a], mesh.verts[i + a]); mx[a] = std::max(mx[a], mesh.verts[i + a]); }
+    rep("mesh: V=%d F=%d bounds x[%.5f,%.5f] y[%.5f,%.5f] z[%.5f,%.5f]\n", mesh.V(), mesh.F(), mn[0], mx[0], mn[1], mx[1], mn[2], mx[2]);
+
+    // exact final-coordinate parity against the reference decode, when the fixture carries it
+    vector<int32_t> rc; vector<int64_t> rshape;
+    if (load_npy_i32(fixture_dir + "/f32_tex_coords.npy", rc, rshape) && rshape.size() == 2 && rshape[1] == 3) {
+        auto key = [](int x, int y, int z) { return ((uint64_t)(uint32_t)x << 40) | ((uint64_t)(uint32_t)y << 20) | (uint32_t)z; };
+        std::unordered_map<uint64_t, uint8_t> rs; rs.reserve((size_t)rshape[0] * 2);
+        for (int64_t i = 0; i < rshape[0]; ++i) rs[key(rc[3 * i], rc[3 * i + 1], rc[3 * i + 2])] = 0;
+        int64_t common = 0, extra = 0;
+        for (const auto& c : so.coords) { auto it = rs.find(key(c[0], c[1], c[2])); if (it == rs.end()) ++extra; else { ++common; it->second = 1; } }
+        int64_t missing = 0; for (auto& kv : rs) if (!kv.second) ++missing;
+        rep("final coords vs reference: mine=%zu ref=%lld common=%lld extra=%lld missing=%lld -> %s\n",
+            so.coords.size(), (long long)rshape[0], (long long)common, (long long)extra, (long long)missing,
+            (extra == 0 && missing == 0) ? "EXACT" : "DIFFERENT");
+    }
+    if (!out_dir.empty()) {   // raw mesh + coords for the native scorer (--ext-mesh PREFIX)
+        vector<int32_t> ci(so.coords.size() * 3);
+        for (size_t i = 0; i < so.coords.size(); ++i) for (int a = 0; a < 3; ++a) ci[3 * i + a] = so.coords[i][a];
+        npy::save(out_dir + "/verts.npy", mesh.verts.data(), { (int64_t)mesh.V(), 3 });
+        npy::save_i32(out_dir + "/faces.npy", mesh.faces.data(), { (int64_t)mesh.F(), 3 });
+        npy::save_i32(out_dir + "/coords.npy", ci.data(), { (int64_t)so.coords.size(), 3 });
+        rep("wrote %s/{verts,faces,coords}.npy\n", out_dir.c_str());
+    }
+    rep("total %.1f s\n", ms_since(t_all) / 1000.0);
+    return 0;
+}
+
 } // namespace
 
 extern "C" {
+
+// Runs the shape decoder on a real SLAT fixture directory (coords + f32 slat, optional
+// f32_tex_coords for coordinate parity). res <= 0 derives the final resolution from the input
+// grid (16x). out_dir != "" writes verts/faces/coords .npy there (MEMFS in the browser; the
+// worker hands them to the page for download). Returns the report; "RESULT: OK" on success.
+PIXAL3D_EXPORT const char* pixal3d_shape_decode_run(const char* shape_dec_gguf, const char* fixture_dir, int res, const char* out_dir) {
+    g_report.clear();
+    int rc;
+    try {
+        rc = run_shape_decode_impl(shape_dec_gguf, fixture_dir, res, out_dir ? out_dir : "");
+    } catch (const std::exception& e) {
+        rep("EXCEPTION: %s\n", e.what());
+        rc = 1;
+    }
+    rep(rc == 0 ? "RESULT: OK\n" : "RESULT: FAIL\n");
+    return g_report.c_str();
+}
 
 // Runs the SS path. Paths are inside the module's filesystem (WORKERFS mounts in the browser).
 // n_views <= 0 uses every view in the fixture. Returns the report text; "RESULT: OK" on success.
@@ -396,6 +484,11 @@ PIXAL3D_EXPORT int pixal3d_shape512_n_steps(void) { return g_n_steps; }
 
 #ifndef __EMSCRIPTEN__
 int main(int argc, char** argv) {
+    if (argc >= 2 && strcmp(argv[1], "--shape-decode") == 0) {
+        if (argc < 4) { fprintf(stderr, "usage: %s --shape-decode <shape_dec.gguf> <fixture_dir> [res] [out_dir]\n", argv[0]); return 1; }
+        const char* r = pixal3d_shape_decode_run(argv[2], argv[3], argc > 4 ? atoi(argv[4]) : 0, argc > 5 ? argv[5] : "");
+        return strstr(r, "RESULT: OK") ? 0 : 1;
+    }
     if (argc >= 2 && strcmp(argv[1], "--shape512") == 0) {
         if (argc < 7) {
             fprintf(stderr, "usage: %s --shape512 <dinov3.gguf> <pixal3d_naf.gguf> <pixal3d_shape_flow_512_mv.gguf> <cond_slat_dir> <slat_sample_dir> [n_views] [own_cond] [dump_prefix]\n", argv[0]);
