@@ -268,3 +268,42 @@ stalls a WebGPU command queue (no async pipelining) and, in a browser, forces an
    WASM side, the feature buffer itself should stay GPU-resident and only the (much smaller)
    coordinate/neighbor int32 arrays should cross the WASM↔GPU boundary — currently the full f32
    feature buffer crosses every time.
+
+## 6. Measured: SS stage on the ggml WebGPU backend (2026-09-06, `feat/webgpu-ss`)
+
+Buffer-allocation accounting, not a live VRAM query (`ggml_backend_webgpu_device_get_memory()` is
+a stub, §1/spec 31 §5): weights = `ggml_backend_buffer_get_size` of the model buffer, activations =
+`ggml_gallocr_get_buffer_size` of the graph allocator (the size ggml actually requests from the
+backend for all temporaries of one graph), conditioning = the persistent accumulator buffer.
+Apple M1 Pro (32 GB unified), native Dawn 18eb229 / Chrome 152; same numbers on the RTX 4090 since
+they are graph properties. Printed by `trellis-test-pixal3d-cond-ss … gpu` and
+`trellis-test-pixal3d-ss-sample`.
+
+| component | weights resident | activations / temporaries | conditioning tensors | peak (sum) | notes |
+|---|---|---|---|---|---|
+| DINOv3 @512, one view graph | 578.6 MB (f16 GGUF) | 88.4 MB (gallocr; largest tensor 67.8 MB = `[1029,1029,16]` f32 scores) | -- | 667 MB | `dinov3_encode`, freed after each call |
+| projection + MV average (`pixal3d_cond_ss_gpu`), **1 view** | 578.6 MB | 88.4 MB (same graph + 4 `[1024,4096]` taps reuse the DINOv3 scratch) | 16.0 MB (`[1024,5]` + `[1024,4096]` f32 accumulators) | **683.0 MB** | 1.04 s/view native Dawn |
+| same, **2 views** | 578.6 MB | 88.4 MB | 16.0 MB | **683.0 MB** | 2.07 s |
+| same, **4 views** | 578.6 MB | 88.4 MB | 16.0 MB | **683.0 MB** | 4.14 s native; 5.6 s in Chrome |
+| SS flow DiT, one forward, exact SDPA (`--no-fa`) | 2556.8 MB (f16 GGUF) | 930.1 MB (dominant: one `[4096,4096,12]` f32 score chunk = 805 MB; MLP hidden `[8192,4096]` f32 = 134 MB) | 16.0 MB (global + proj inputs, re-uploaded per forward) | **3503 MB** | 16.0 s/forward native Dawn (M1 Pro); CUDA 4090: 257 ms |
+| SS flow DiT, FlashAttention (CUDA production path, for reference) | 2556.8 MB | 266.1 MB | 16.0 MB | 2839 MB | not available on WebGPU (BF16 K/V) |
+| SS sampling (12 steps, 22 forwards) | as one forward | as one forward (graph reused) | 16.0 MB ×2 (cond + zero neg) | **3503 MB** | 351 s native Dawn; CUDA 5.7 s (exact) / 4.1 s (FA) |
+
+Findings:
+
+- **View-sequential conditioning verified**: the per-view graph is allocated and freed inside the
+  view loop, so the 1/2/4-view peaks are identical (683.0 MB); only wall time scales with V. The
+  alternative (all views' DINOv3 graphs alive at once) would add 88.4 MB per extra view -- small at
+  S=512, but the same loop will carry S=1024's ~1.1 GB score tensors later.
+- **Peak of the whole SS stage is the flow, not conditioning**: DINOv3 is freed before the flow
+  weights load (`pixal3d_wasm.cpp`, mirroring `trellis_run_mv`'s per-stage `Model::free`), so the
+  stage peak is 3.5 GB, of which 805 MB is the exact-attention score chunk. On WebGPU that single
+  chunk is the first thing to shrink for a spec-floor (128 MiB binding) adapter: `kAttnChunkBytes`
+  at 64-96 MiB would cut the activation buffer to ~250 MB with no numerical change (query chunking
+  is exact), at the cost of ~40 more `CONCAT` nodes per attention (§5 B2).
+- **Weights are the floor**: 2.56 GB of f16 flow weights sit in one `GPUBuffer` (under this
+  adapter's 4 GiB `maxBufferSize`; a 256 MiB-floor adapter would need `Model::load` to split the
+  weight buffer -- `ggml_backend_alloc_ctx_tensors` already does that per `max_size`, untested here).
+- **Browser (Chrome 152, WORKERFS-mounted GGUFs)**: the 2.68 GB flow GGUF streams from the on-disk
+  `File` into the WebGPU buffer in 4.7 s without a copy in the wasm heap (per-tensor `fread` through
+  FileReaderSync into a 25 MB staging vector); wasm heap stays well under 1 GB for the SS stage.

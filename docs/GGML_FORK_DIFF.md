@@ -95,7 +95,7 @@ What the fork *does* provide that upstream doesn't is **fixed CUDA kernel behavi
 
 ## CMake wiring (context for the diff)
 
-`CMakeLists.txt`: `GGML_DIR=thirdparty/ggml`, `add_compile_definitions(GGML_MAX_NAME=128)` (both ggml and pixal3d.cpp sources need it — DiT/sparse tensor names exceed ggml's default 64-char limit; the header guards it with `#ifndef` so no submodule patch is needed), `add_subdirectory(thirdparty/ggml)` builds it in-tree, backend selected by the *upstream* flags (`-DGGML_CUDA=ON`/`-DGGML_VULKAN=ON`/`-DGGML_HIP=ON`; Metal auto-enables on Apple). Backends actually built by this project: **CUDA, HIP/ROCm, Vulkan, Metal, CPU** (`ggml-cpu` always linked as the base target); no BLAS backend is wired in. `GGML_WEBGPU` does not exist on this fork's `trellis-patches` branch.
+`CMakeLists.txt`: `GGML_DIR=thirdparty/ggml`, `add_compile_definitions(GGML_MAX_NAME=128)` (both ggml and pixal3d.cpp sources need it — DiT/sparse tensor names exceed ggml's default 64-char limit; the header guards it with `#ifndef` so no submodule patch is needed), `add_subdirectory(thirdparty/ggml)` builds it in-tree, backend selected by the *upstream* flags (`-DGGML_CUDA=ON`/`-DGGML_VULKAN=ON`/`-DGGML_HIP=ON`; Metal auto-enables on Apple). Backends actually built by this project: **CUDA, HIP/ROCm, Vulkan, Metal, CPU** (`ggml-cpu` always linked as the base target); no BLAS backend is wired in. `GGML_WEBGPU` **does** exist on this fork (corrected 2026-09-06 -- see `docs/spec/31-webgpu-bringup.md` §3; the sentence above predates that audit).
 
 ## Custom ops outside ggml ("trellis/Pixal3D custom kernels")
 
@@ -109,7 +109,7 @@ These are hand-written GPU kernels in `src/`, dispatched independently of ggml's
 
 ## Implications for a WebGPU port
 
-`GGML_WEBGPU` doesn't exist on `trellis-patches`; upstream's `ggml-webgpu` backend has matured considerably since this fork's `v0.15.1` base (upstream is now 517 commits / ~7 minor versions ahead, at `v0.23.0`). Any WebGPU work means either (a) rebasing this fork's ggml onto a much newer upstream that carries `ggml-webgpu`, or (b) vendoring `ggml-webgpu` separately and re-applying only the patches that still matter. Per patch:
+(Correction 2026-09-06: `GGML_WEBGPU` does exist on `trellis-patches` and is what this project builds -- `docs/spec/31-webgpu-bringup.md` §3. The rebase analysis below is kept for the record.) Upstream's `ggml-webgpu` backend has matured considerably since this fork's `v0.15.1` base (upstream is now 517 commits / ~7 minor versions ahead, at `v0.23.0`). Any WebGPU work means either (a) rebasing this fork's ggml onto a much newer upstream that carries `ggml-webgpu`, or (b) vendoring `ggml-webgpu` separately and re-applying only the patches that still matter. Per patch:
 
 | Patch | Relevant to WebGPU? | Rebase effort onto newer upstream | Why |
 |---|---|---|---|
@@ -121,6 +121,22 @@ These are hand-written GPU kernels in `src/`, dispatched independently of ggml's
 | `f33ab068` PAD grid-stride | CUDA-only; WebGPU compute dispatch has its own per-dimension limits (workgroup count ceilings), so an equivalent grid-stride rewrite of any WebGPU PAD shader is likely needed anyway | **Moderate** — self-contained single-kernel rewrite, but must re-verify against upstream's own PAD changes since v0.15.1 (`b07ff832` non-contiguous-src0 support) which the fork's version predates | Function is small and isolated, but upstream moved the surrounding code |
 
 Net: **none** of the 9 patches carry over mechanically to a WebGPU backend (different language/dispatch model entirely), but **all 9 identify real bug classes** (32-bit index/stride overflow at the 1024-cascade's tensor sizes, and FP16 accumulation bias in long-sequence attention) that a from-scratch WebGPU FA/binbcast/unary/pad shader will need to guard against independently — this document is the checklist for that, not a literal patch set to reapply.
+
+## Local patches (`patches/ggml-webgpu/`, applied at configure time)
+
+Added 2026-09-06 on `feat/webgpu-ss`. The submodule pin is **unchanged** (`737e88f2`); the root
+`CMakeLists.txt` applies every `patches/ggml-webgpu/*.patch` to the submodule working tree with
+`git apply` at configure time for `-DGGML_WEBGPU=ON` builds (idempotent: a patch that already
+applies in reverse is skipped; `-DPIXAL3D_GGML_PATCHES=OFF` disables the step; `git -C
+thirdparty/ggml checkout .` reverts). `git status` therefore shows `thirdparty/ggml` as
+"modified content" in a configured WebGPU checkout -- expected, do not commit the submodule.
+Both patches only add `#ifndef` guards around existing constants, so they are upstreamable and
+are no-ops unless the build passes the define.
+
+| patch | what | why (measured) |
+|---|---|---|
+| `0001-webgpu-optional-subgroup-matrix-path.patch` | `GGML_WEBGPU_SUBGROUP_MATRIX` (default 1): when 0, never request `ChromiumExperimentalSubgroupMatrix`, so `mul_mat`/`flash_attn` take the `reg_tile` shaders (f16-staged inputs, **f32** accumulation) instead of the subgroup-matrix shaders (**f16** accumulation, per the shader's own TODO) | On the native Dawn/Metal build the f16-accumulating path overflowed DINOv3's attention scores (>65504) to NaN on 3 of 4 fixture views and gave `rel≈1.3e-2` on the 4th; with it off DINOv3 matches PyTorch at `rel 2.3e-4..8.7e-4` (`docs/spec/31-webgpu-bringup.md` §9). Emscripten builds never have the feature, so the browser was already on the good path. Root CMake defines it 0 unless `-DPIXAL3D_WEBGPU_SUBGROUP_MATRIX=ON`. |
+| `0002-webgpu-overridable-queue-wait-timeout.patch` | `WEBGPU_RUNTIME_WAIT_TIMEOUT_MS` (default 30000u) becomes overridable | One SS DiT forward is a single graph submission; in Chrome it takes longer than 30 s, and the fixed ceiling aborted the browser run (`ggml_webgpu: Queue wait timed out after 30000 ms`). Root CMake and `web/ss/CMakeLists.txt` set 600000u. |
 
 ## Summary
 

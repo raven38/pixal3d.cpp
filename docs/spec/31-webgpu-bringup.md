@@ -829,3 +829,218 @@ root-caused in this pass (different Dawn builds/toggles between Chrome's bundled
 No failures were observed in this browser run — the harness has not yet been tested with
 `-DGGML_WEBGPU_JSPI=OFF` (the `ASYNCIFY` fallback path) or in headless Chrome; both remain
 untested items for a future pass if JSPI or headed-only operation ever becomes a blocker.
+
+## 9. First real Pixal3D neural path on WebGPU: SS conditioning + SS flow (2026-09-06, `feat/webgpu-ss`)
+
+Scope of this phase: DINOv3 → pixel-aligned projection → multiview average → SS conditioning →
+ProjectAttention SS flow → 12-step sampling, on the ggml WebGPU backend, natively (Dawn) and in
+the browser (Emscripten/WASM), against the **existing** fixtures (`tools/ref_pixal3d_cond_ss.py`,
+`ref_pixal3d_proj_grid.py`, `ref_pixal3d_ss_flow.py`, `ref_pixal3d_ss_sample.py`) and against the
+native CUDA reference (`v0.1.0-native-cuda-e2e` lineage, re-run on the same commit). NAF, the
+SLAT stages, the decoders and the mesh path were not touched. Branch base:
+`v0.2.0-webgpu-bringup` (= `d41e126`).
+
+### 9.1 What had to change (and what did not)
+
+Nothing in the model math. The shared C++ graphs (`dinov3.cpp`, `dit.cpp`, `flow_runner.cpp`)
+run unchanged on WebGPU except for two graph-construction accommodations, both numerically
+neutral and both now used by every backend:
+
+| item | change | why |
+|---|---|---|
+| DiT 3D RoPE index build | `ggml_arange`+cast (122 nodes/graph) → one host-built I32 `[head_dim]` input (`dit_rope_index`, views for even/odd), `ggml_arange` kept as the fallback when no index tensor is passed | WebGPU has no `ARANGE` kernel (op-gap C2); identical integers |
+| silent-skip guard | `check_graph_supported(backend, graph, tag)` after every graph build (DINOv3, cond, DiT); throws on WebGPU, warns elsewhere | `ggml_webgpu_encode` returns `nullopt` for unsupported nodes and the compute loop just moves on -- outputs would be uninitialized memory, not an error |
+| FlashAttention | not used on WebGPU: the tests/wasm entry set the existing `--no-fa` exact chunked SDPA (`g_no_fa`) | the default path casts K/V to BF16, which the backend has no kernels for (C1) |
+| SS conditioning | new device-resident variant `pixal3d_cond_ss_gpu` (`src/pixal3d_cond_gpu.cpp`): DINOv3 graph + `get_rows`×4 + weighted sum + running average, one graph per view, persistent accumulators; host path `pixal3d_cond_ss` unchanged and still the CLI's | task requirement: no GPU→CPU→GPU round trip of the feature map; no custom WGSL was needed -- at R=16 the four `[1024,4096]` tap intermediates are 16.8 MB each |
+| ggml (`patches/ggml-webgpu/`, submodule pin unchanged) | 0001: `GGML_WEBGPU_SUBGROUP_MATRIX` guard (root CMake sets 0); 0002: `WEBGPU_RUNTIME_WAIT_TIMEOUT_MS` guard (set 600 s) | see 9.2 and 9.6 -- both are `#ifndef` no-ops by default |
+| SS decoder | still CPU backend (`dec_gpu=-1` in the sampling test; not run in the browser) | Conv3D/IM2COL_3D missing (C3), out of scope |
+
+Native CUDA behavior: the four Pixal3D SS tests re-run on the RTX 4090 at this commit reproduce
+the previous numbers exactly (cond-ss PASS, proj-grid PASS, SS sampling IoU 0.9977 vs f32 /
+0.9932 vs bf16, baseline 0.9945 -- the same values recorded before this branch; §9.5).
+
+### 9.2 The one real backend problem: f16 accumulation in the subgroup-matrix shaders
+
+First native run of DINOv3 on WebGPU: view 0 `rel 1.3e-2`, views 1-3 **all NaN**. Localized with a
+throwaway probe (every MUL_MAT/SOFT_MAX/NORM flagged as graph output): the layer-2 attention
+score `mul_mat` `[1029,1029,16]` reaches `max 65472` on view 1 and then `inf` → softmax NaN.
+Cause, read from the source: `ggml_webgpu_shader_lib::get_mul_mat_fast_pipeline` picks
+`mul_mat_subgroup_matrix.wgsl` whenever the adapter reports `ChromiumExperimentalSubgroupMatrix`
+(native Dawn/Metal does); that shader accumulates in `subgroup_matrix_result<f16>` and its own
+header carries `// TODO: ... f16 accumulation causes NaNs`. `mul_mat_reg_tile.wgsl` (what
+Emscripten builds always use, the feature being `#ifndef __EMSCRIPTEN__`) stages inputs as f16
+but accumulates in f32. Patch 0001 makes the feature request compile-time optional; with it off:
+
+| DINOv3 tokens vs PyTorch f32 (per view) | max\|d\| | mean\|d\| | rel | cos |
+|---|---|---|---|---|
+| WebGPU, subgroup-matrix path (before) | 3.8e-1 / NaN / NaN / NaN | 8.7e-3 / NaN | 1.3e-2 / -- | 0.99992 / 0 |
+| **WebGPU, reg_tile path (after; native Dawn and Chrome identical)** | 6.9e-3 / 2.5e-2 / 2.1e-2 / 1.1e-2 | 2.6e-4 / 3.4e-4 / 4.4e-4 / 3.5e-4 | **2.3e-4 / 8.7e-4 / 7.2e-4 / 3.7e-4** | 0.9999999 / 0.9999999 / 0.9999998 / 0.9999999 |
+| CPU backend (ggml-cpu, same fixture) | 3.2e-2 / 3.2e-2 / 8.5e-2 / 3.4e-2 | 8.8e-4 / 9.6e-4 / 1.4e-3 / 1.0e-3 | 1.1e-3 / 1.1e-3 / 2.9e-3 / 1.2e-3 | 0.9999993 / 0.9999991 / 0.9999976 / 0.9999990 |
+| CUDA (RTX 4090, production) | 3.1e-2 / 5.1e-2 / 1.2e-1 / 6.3e-2 | 1.2e-3 / 1.4e-3 / 2.0e-3 / 1.5e-3 | 1.0e-3 / 1.8e-3 / 4.0e-3 / 2.1e-3 | 0.9999986 / 0.9999981 / 0.9999953 / 0.9999978 |
+
+WebGPU's DINOv3 is now the *closest* of the three C++ backends to PyTorch (ggml-cpu pays for its
+f16 GELU table, CUDA for f16-staged GEMM inputs plus a different reduction order). The existing
+2e-2 tolerance was not touched.
+
+### 9.3 Projection and multiview fusion (`trellis-test-proj-grid`, `trellis-test-pixal3d-cond-ss … gpu`)
+
+`proj_grid_bilinear_taps` reproduces `proj_grid_sample` on the host to `max|d| 4.8e-7` (fixture
+and `--selftest`, all PASS; the tap indices are checked to lie inside `[0, H·W)`). On the device
+the same four taps are `get_rows` on a *view* of the DINOv3 output at token offset 5 (no copy of
+the patch map), multiplied by `[1,4096]` broadcast weights, summed, scaled by `1/V` and added into
+the persistent accumulators through `ggml_cpy` (the ADD reads the accumulator the CPY then
+overwrites -- in-order execution on every backend):
+
+| `pixal3d_cond_ss_gpu` on WebGPU | vs PyTorch | vs host path on the same backend |
+|---|---|---|
+| V=1 `z_global` / `z_proj` | rel 7.2e-5 / 2.5e-4, cos 0.9999999 / 1.0000000 | bit-exact / max\|d\| 3.8e-6 (rel 1.6e-7) |
+| V=2 | (no fixture) | bit-exact / max\|d\| 3.8e-6 |
+| V=4 `z_global` / `z_proj` | **rel 9.5e-5 / 2.2e-4**, cos 0.9999999 / 1.0000000 | bit-exact / max\|d\| 5.7e-6 (rel 2.4e-7) |
+
+The host-vs-device residual is exactly the f64→f32 accumulation of four products; the
+device-vs-PyTorch residual is DINOv3's. Peak memory is flat in V (683.0 MB for 1/2/4 views, memory
+doc §6); wall time 1.04 s/view natively, 1.4 s/view in Chrome. The same function on CUDA: 29 ms/view,
+same parity numbers to the printed digits.
+
+### 9.4 SS flow block test (`trellis-test-pixal3d-ss-flow`, WebGPU, exact SDPA, f16 weights)
+
+Per spec 30 §5 this is a bug detector, not the gate: the flow has ~6.5e4 massive activations and
+every backend's per-op rounding is amplified through 30 blocks.
+
+| tensor | max\|d\| | mean\|d\| | rel | cos |
+|---|---|---|---|---|
+| after_input_layer | 4.2e-3 | 1.4e-4 | 2.9e-4 | 1.0000000 |
+| t_emb_mod | 8.2e-4 | 4.0e-5 | 4.9e-5 | 1.0000000 |
+| blk0 msa / global_out / **proj_out** / cross_out / mlp | 8.8e-2 / 2.2e-2 / 4.9e-3 / 2.2e-2 / 3.7e-2 | 9.7e-4 / 2.4e-4 / 3.0e-4 / 4.4e-4 / 3.8e-4 | 4.6e-4 / 6.0e-4 / **3.2e-4** / 6.0e-4 / 4.4e-4 | ≥ 0.9999999 |
+| after_block0 | 3.2e-1 | 1.2e-3 | 5.7e-4 | 1.0000000 |
+| after_block29 | 2.0e+3 | 1.1e-1 | 3.1e-2 | 0.9999963 |
+| prefinal / output | 1.9e+0 / 3.2e-1 | 5.8e-4 / 1.2e-3 | 5.6e-2 / **9.0e-2** | 0.9999958 / 0.9999767 |
+
+For calibration on the same fixture and commit: CUDA with the same f16 weights gives `output rel
+0.53` (FA) / `0.55` (exact), the spec-30 table's CPU/Metal/CUDA f32-weight numbers are
+8.3e-2 / 6.3e-2 / 5.6e-2. WebGPU (f16-staged inputs, f32 accumulate) lands in the f32-weight
+class. Wiring is exact (block 0 ≤ 6e-4 everywhere, ProjectAttention's `proj_linear` at 3.2e-4).
+Before patch 0001 the same test read `after_block0 rel 1.6e-1`, `output cos 0.943`.
+
+### 9.5 SS sampling gate (`trellis-test-pixal3d-ss-sample`, identical serialized noise, `cond_proj` fixture)
+
+Three-way comparison, all on this commit. `cuda_*` = the CUDA production run (FlashAttention,
+BF16 K/V) dumped by the same test with `dump_dir`; a CUDA exact-SDPA run was dumped too.
+
+| per Euler step, latent vs PyTorch f32 (`rel` / `cos`) | 1 | 4 | 8 | 12 (final) |
+|---|---|---|---|---|
+| CUDA production (FA) | 5.1e-3 / 0.9999955 | 2.7e-2 / 0.9998782 | 9.9e-2 / 0.9996946 | 0.567 / 0.9761509 |
+| **WebGPU native, exact SDPA** | 5.1e-3 / 0.9999955 | 2.7e-2 / 0.9998777 | 9.8e-2 / 0.9997046 | 0.570 / 0.9764922 |
+| WebGPU vs CUDA production | 4.1e-4 / 1.0000000 | 1.3e-3 / 0.9999998 | 2.6e-2 / 0.9999932 | 0.236 / 0.9992852 |
+| WebGPU vs CUDA exact SDPA | 4.2e-4 / 0.9999999 | 1.2e-3 / 0.9999997 | 5.2e-3 / 0.9999983 | 0.097 / 0.9998378 |
+| (CUDA FA vs CUDA exact) | | | | 0.231 / 0.9993950 |
+| (PyTorch f32 vs PyTorch bf16) | | | | 0.415 / 0.9929590 |
+
+Latent statistics track to the third digit at every step (step 12: WebGPU mean −0.002812, std
+0.605355, max 4.2011; CUDA −0.002855, 0.605394, 4.1902; no non-finite values anywhere). The
+WebGPU-vs-CUDA gap (cos 0.99929 vs the production path, 0.99984 vs the exact path) is *smaller*
+than CUDA's own FA-vs-exact gap (0.99940) and an order of magnitude smaller than the reference's
+f32-vs-bf16 gap -- i.e. precision noise, not an implementation difference. Occupancy after the
+(CPU-backend) SS decoder:
+
+| run | N active @res32 | IoU vs f32 ref | IoU vs bf16 ref | IoU vs CUDA production |
+|---|---|---|---|---|
+| CUDA production (FA) | 4373 | 0.9977 | 0.9932 | -- |
+| CUDA exact SDPA | 4373 | 0.9977 | 0.9932 | 1.0000 |
+| **WebGPU native (Dawn, M1 Pro)** | 4373 | **0.9977** | **0.9932** | **1.0000** |
+| f32 ref vs bf16 ref (calibration) | 4377 / 4369 | 0.9945 | | |
+
+Verdict line of the existing test: `PASS: IoU(mine,bf16) >= IoU(f32,bf16) - 0.05` -- the same
+criterion and the same numbers as the native milestone (≈0.998 vs f32). Occupancy logits vs the
+CUDA run: cos 0.99996 (CUDA FA vs CUDA exact: 0.99996).
+
+Timing (M1 Pro, native Dawn): 16.0 s per DiT forward, 22 forwards = 351 s; CUDA 4090: 184 ms (FA)
+/ 257 ms (exact) per forward.
+
+### 9.6 Browser / WASM (`web/ss/`, Chrome 152.0.7977.82, macOS 26.5, Apple M1 Pro)
+
+Architecture as required: `run_playwright.js` / `index.html` → `main.js` (collect `File`
+objects, spawn a Worker) → `worker.js` (WORKERFS mounts, one `ccall` under JSPI, post the report
+and latents back) → `pixal3d_ss.wasm` (`src/pixal3d_wasm.cpp`, `pixal3d_ss_run`) → the same
+`pixal3d_cond_ss_gpu` / `DitRunner` / `sample_flow` C++ as native → `ggml-webgpu` (emdawnwebgpu)
+→ GPU. JavaScript never sees a tensor other than the returned latent. Model files are read from
+disk lazily through WORKERFS (`Model::load`'s per-tensor `fread` becomes FileReaderSync slices):
+the 2.68 GB flow GGUF lands in its `GPUBuffer` in 4.5 s with no copy in the wasm heap.
+
+| stage (browser, V=4) | time | parity |
+|---|---|---|
+| DINOv3 load (607 MB) | 0.88 s | -- |
+| conditioning, 4 views (DINOv3 + projection + average, device-resident) | 5.6 s (1.42 s slowest view; peak 683.0 MB, same as native) | `z_global rel 9.5e-5`, `z_proj rel 2.2e-4` -- **identical digits to native Dawn** |
+| flow load (2.68 GB) | 4.5 s | -- |
+| DiT graph build + alloc (930.1 MB activations) | 6 ms | -- |
+| sampling, 22 forwards | 442.5 s (20.1 s / forward) | see below |
+| **total** | 453.6 s in-page (453.7 s Playwright wall) | `RESULT: OK` |
+
+Browser latents vs the other runs (`browser_x_step*.npy` saved by the driver, compared offline):
+
+| step | vs native WebGPU (Dawn) | vs CUDA production | vs PyTorch f32 |
+|---|---|---|---|
+| 1 | rel 2.0e-4, cos 1.0000000 | rel 5.3e-4, cos 0.9999999 | cos 0.9999955 |
+| 4 | rel 8.8e-4, cos 0.9999999 | rel 1.8e-3, cos 0.9999996 | |
+| 8 | rel 1.1e-2, cos 0.9999989 | rel 1.5e-2, cos 0.9999943 | |
+| 12 (final) | rel 4.8e-2, **cos 0.9999436** | rel 0.236, cos 0.9991944 | rel 0.570, cos 0.9763807 |
+
+Final latent statistics: mean −0.002811, std 0.605325, max 4.1989 (native WebGPU −0.002812 /
+0.605355 / 4.2011; CUDA −0.002855 / 0.605394 / 4.1902), no non-finite values. Chrome's Dawn and
+the prebuilt native Dawn are not bit-identical (different WGSL compiler builds/toggles; the same
+was seen in §8's smoke test), but the browser run sits closer to native WebGPU than either sits to
+CUDA. Occupancy of the browser latent, decoded natively on the CPU backend
+(`trellis-test-pixal3d-ss-sample … [latent_npy]`):
+
+| | N active @res32 | IoU vs f32 ref | IoU vs bf16 ref | IoU vs CUDA production |
+|---|---|---|---|---|
+| **browser (Chrome, WASM + WebGPU)** | 4374 | **0.9975** | **0.9929** | **0.9998** (1 voxel differs) |
+| native WebGPU (Dawn) | 4373 | 0.9977 | 0.9932 | 1.0000 |
+| CUDA production | 4373 | 0.9977 | 0.9932 | -- |
+
+Verdict: `PASS` under the existing criterion (`IoU(mine,bf16) ≥ IoU(f32,bf16) − 0.05`, with
+IoU(f32,bf16) = 0.9945); the ≈0.998-vs-f32 level of the native milestone is reproduced in the
+browser.
+
+Two browser-only failures were hit and fixed on the way: (1) `ggml_webgpu: Queue wait timed out
+after 30000 ms` → abort inside the first DiT forward (patch 0002, §9.1); (2) the Playwright
+driver's `waitForFunction` took its options in the wrong argument slot (30 s default) -- a harness
+bug, not a pipeline one. Not tested: `-DGGML_WEBGPU_JSPI=OFF` (ASYNCIFY), headless Chrome, any
+non-Apple adapter.
+
+### 9.7 Performance breakdown per component
+
+| component | CUDA (RTX 4090, production) | WebGPU native (Dawn/Metal, M1 Pro) | WebGPU browser (Chrome, M1 Pro) |
+|---|---|---|---|
+| DINOv3 @512, one view (graph build + alloc + compute + readback) | 29 ms (in the cond graph) | ≈0.9 s | ≈1.3 s |
+| projection + MV accumulate, one view (delta of the cond graph over DINOv3 alone) | ≈1 ms | ≈0.1 s | ≈0.1 s |
+| conditioning, V=4 total | 132 ms | 4.1 s | 5.6 s |
+| flow weight load (2.68 GB GGUF → device) | (not timed) | ≈6 s | 4.5 s (WORKERFS) |
+| SS DiT forward (30 blocks, exact SDPA on WebGPU; FA on CUDA) | 184 ms FA / 257 ms exact | 16.0 s | 20.1 s |
+| SS sampling, 22 forwards | 4.1 s / 5.7 s | 351 s | 442.5 s |
+
+The WebGPU forward is ≈60× the CUDA exact-SDPA forward. Where it goes (not profiled per op --
+`GGML_WEBGPU_GPU_PROFILE` was not enabled; derived from the graph): ≈40 % is the two batched
+attention GEMMs + softmax over the `[4096,4096,12]` score tensor per block (`reg_tile` f32×f32,
+no FlashAttention), the rest the 245 f16×f32 linears at N=4096 through the same `reg_tile`
+kernel (which the smoke test already showed to be a generic tile shader, not a tensor-core path).
+The obvious next levers, in order: FlashAttention with F16 K/V on the WebGPU tile path (needs its
+own parity check, B1), then `kAttnChunkBytes` retune (memory, not speed), then whatever upstream
+does to `mul_mat_reg_tile`. Per-view conditioning is dominated by DINOv3's 24-layer plain
+attention, not by projection.
+
+### 9.8 Unsupported / unvalidated operations remaining for the next stage
+
+- `FLASH_ATTN_EXT` on WebGPU (F16 K/V, tile path): compiles, `supports_op` true on this adapter,
+  **never executed** here; needs the mask built without `ARANGE` and a parity run against the
+  exact path (op-gap B1/C1). BF16 K/V stays impossible.
+- `IM2COL_3D` / `CONV_3D` (SS decoder, C3): the only missing kernel between this milestone and a
+  fully-on-GPU SS stage; the decoder ran on the CPU backend for every IoU number above.
+- Spec-floor sizing: the 805 MB attention chunk and the 2.56 GB single weight buffer both exceed
+  the 128 MiB / 256 MiB WebGPU floors (fine on this 4 GiB-limit adapter): B2 retune and a split
+  weight buffer are needed before any non-Apple/mobile claim.
+- Everything from shape-512 onward (sparse gather/scatter chunking, SparseConv3D, NAF's
+  `PAD_REFLECT_1D`/`GROUP_NORM`/`POOL_2D`/neighborhood attention, decoders) -- untouched, per the
+  phase scope; op-gap §6/§7 ordering still stands.
+- Native Dawn only: the subgroup-matrix shaders remain off (patch 0001); if upstream fixes their
+  accumulation precision the define can be dropped.

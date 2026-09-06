@@ -442,3 +442,38 @@ and size (cheapest wins first):
 *Instrumentation: `include/graph_dump.h`, `src/graph_dump.cpp`. Trace log:
 `/mnt/hdd1/pixal3d/out/ops_trace.log`. Raw per-node dump:
 `/mnt/hdd1/pixal3d/out/ops_dump.txt` (remote, `ssh win`, not copied into the repo).*
+
+## 8. Validated on WebGPU (2026-09-06, `feat/webgpu-ss`, SS stage)
+
+"Validated" here means: the op **executed on the ggml WebGPU backend inside the real Pixal3D
+graph** (not merely `supports_op == true`, not merely compiled), and the stage's output matched the
+existing PyTorch/CUDA fixtures (`docs/spec/31-webgpu-bringup.md` §9 has the numbers). Every graph
+below is also gated at build time by `check_graph_supported()` (`src/trellis_model.cpp`), which
+throws on the WebGPU backend if any node fails `supports_op` -- necessary because the WebGPU graph
+encoder **silently skips** nodes it has no kernel for (`ggml_webgpu_encode` returns `nullopt`,
+leaving the output buffer uninitialized). Counts are per graph, from `TRELLIS_DUMP_OPS` on the
+WebGPU build (native Dawn) -- the Emscripten build runs the identical graphs.
+
+| graph (tag) | ops executed on WebGPU (count/graph) | parity result |
+|---|---|---|
+| DINOv3 @512 (`dinov3_S512`, 1410 nodes) | IM2COL 1 (f32→f16 patch embed), MUL_MAT 145 (f16×f32 and f32×f32, incl. the batched `[64,1029,16]` attention scores/values), SOFT_MAX 24, NORM 49, UNARY:GELU_ERF 24, CONCAT 50, ADD 217, MUL 192 (incl. `[1024]`→`[1024,1029]` broadcast), SCALE 48, CPY 2 (f16→f32 cls/reg), CONT 266, VIEW 168, PERMUTE 98, RESHAPE 126 | per-view tokens vs PyTorch `rel 2.3e-4 … 8.7e-4`, cos ≥ 0.9999998 (native Dawn and Chrome give identical numbers) |
+| SS conditioning, device-resident (`pixal3d_cond_ss_gpu_S512_R16_v<i>`, 1429 nodes = DINOv3 + 19) | + GET_ROWS 4 (f32 `[1024,1024]` patch map, I32 `[4096]` indices, src0 is a **view** at token offset 5), MUL 4 (`[1,4096]` weight broadcast), ADD 5, SCALE 2, CPY 2 (`ggml_cpy` into the persistent accumulators, aliasing the ADD's own input), VIEW 2 | `z_proj`/`z_global` vs PyTorch `rel 2.2e-4 / 9.5e-5`, cos 1.0000000; vs the host projection on the same backend: `z_global` bit-exact, `z_proj` max\|d\| 5.7e-6 (f32 vs f64 tap accumulation); V=1/2/4 |
+| SS flow DiT, exact SDPA (`dit_N4096_dcond5_proj1` with `--no-fa`, 30 blocks, 3943 nodes, largest tensor 805 MB) | MUL_MAT 365 (f16 weights × f32 activations for every linear incl. `proj_linear`; f32×f32 batched `[4096,4096,12]` scores and `[128,4096,12]` values per attention), SOFT_MAX 60 (scale 0.088, no mask), RMS_NORM 120, NORM 91, UNARY:GELU 30 (tanh) + UNARY:SILU 2 (t-embedder), SET_ROWS 120 (f32 dst, **I32 index views** of the host-built `rope_idx` input -- replaces ARANGE, C2), CPY 120 (f16→f32 RMSNorm gammas), SUB 60 / ADD 605 / MUL 510 (incl. `[1536]` adaLN view_1d broadcasts), SCALE 60, CONT 510 / VIEW 570 / PERMUTE 240 / RESHAPE 480; no CONCAT (one query chunk at N=4096) | block-0 intermediates `rel ≤ 6.0e-4` (msa 4.6e-4, global 6.0e-4, proj_linear 3.2e-4, mlp 4.4e-4); `output rel 9.0e-2, cos 0.99998` -- the same class as CPU/Metal/CUDA (spec 30 §5; CUDA f16-weights gives 0.53) |
+| SS sampling (12 Euler/CFG steps, 22 forwards, same serialized noise) | the DiT graph above, re-run 22× with new inputs; sampler arithmetic on the host | final latent vs CUDA exact-SDPA run: `mean\|d\| 4.1e-3, cos 0.99984`; occupancy IoU vs f32 ref **0.9977**, vs bf16 ref **0.9932** (baseline f32↔bf16 0.9945), vs the CUDA production run **1.0000** (identical active-voxel set) |
+
+Not exercised / still open after this stage:
+
+- **FLASH_ATTN_EXT** (B1, F16 K/V tile path): not used -- the SS run takes the exact chunked SDPA.
+  At N=4096 the score tensor is 805 MB in one chunk (fits this adapter's 4 GiB binding limit, not
+  the 128 MiB spec floor: B2's `kAttnChunkBytes` retune is still pending).
+- **BF16** anywhere (C1): still unsupported; the WebGPU build must run with `--no-fa` (or the
+  F16-K/V FA variant, unvalidated).
+- **ARANGE** (C2): resolved by graph construction for the DiT RoPE (host `rope_idx` input);
+  `build_pad_mask` still uses it, which only matters once FA is enabled on WebGPU.
+- **IM2COL_3D / CONV_3D** (C3): the SS decoder ran on the CPU backend for the IoU measurement.
+- **New hazard found (not in §5)**: the native backend's subgroup-matrix `mul_mat`/`flash_attn`
+  shaders accumulate in **f16** and overflowed DINOv3's attention scores to NaN; disabled by
+  `patches/ggml-webgpu/0001` (`docs/GGML_FORK_DIFF.md` "Local patches"). The Emscripten build
+  never selects that path.
+- **Queue-wait ceiling**: upstream's fixed 30 s wait aborts a browser DiT forward;
+  `patches/ggml-webgpu/0002` makes it a build-time define (600 s here).

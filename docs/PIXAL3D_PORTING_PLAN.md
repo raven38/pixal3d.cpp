@@ -79,6 +79,11 @@ on CUDA before WebGPU optimization.
 
 ## Phase 8 — WebGPU backend integration
 
+**Status (2026-09-06, `feat/webgpu-ss`): done for the SS stage.** The vendored fork's own
+`ggml-webgpu` is used at the unchanged pin, plus two `#ifndef`-guarded patches in
+`patches/ggml-webgpu/` (f16-accumulating subgroup-matrix shaders off; queue-wait ceiling
+overridable) -- `docs/spec/31-webgpu-bringup.md` §7-§9, `docs/GGML_FORK_DIFF.md` "Local patches".
+
 Inventory the exact ggml version/fork used by trellis.cpp.
 
 Preferred path: bring upstream WebGPU backend changes into the trellis ggml fork while preserving trellis-specific patches.
@@ -88,6 +93,11 @@ Alternative: port trellis patches onto a newer upstream ggml with WebGPU.
 Keep this integration separate from Pixal3D model logic.
 
 ## Phase 9 — Fill missing WebGPU ops
+
+**Status (2026-09-06):** 3D RoPE and pixel-aligned projection / MV accumulation needed no new
+kernel (host index input; `get_rows` + weighted sum on the device) and are validated on WebGPU
+(spec 31 §9). Dense Conv3D, sparse Conv3D/gather-scatter and NAF remain open
+(`docs/PIXAL3D_WEBGPU_OP_GAP.md` §8).
 
 Likely high-risk operations:
 
@@ -101,6 +111,11 @@ Likely high-risk operations:
 Implement them in the backend rather than as a separate TypeScript compute pipeline.
 
 ## Phase 10 — WASM/browser target
+
+**Status (2026-09-06):** SS stage runs in Chrome as one WASM module (`web/ss/`,
+`src/pixal3d_wasm.cpp`: `pixal3d_ss_run` + latent getters, WORKERFS-mounted GGUFs, JSPI);
+occupancy IoU 0.9975 vs f32 / 0.9998 vs CUDA (spec 31 §9.6). The stable `pixal3d_create /
+generate / destroy` API below is still to be shaped around it.
 
 Build the C++ runtime via Emscripten and expose a small stable API.
 
