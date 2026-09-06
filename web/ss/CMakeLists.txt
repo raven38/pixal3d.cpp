@@ -49,6 +49,7 @@ target_compile_options(pixal3d-webgpu-ss-wasm PRIVATE "-fwasm-exceptions")
 # unchanged. JSPI lets pixal3d_ss_run suspend across the backend's async WebGPU waits.
 target_link_options(pixal3d-webgpu-ss-wasm PRIVATE
   "--use-port=emdawnwebgpu"
+  "--profiling-funcs"   # keep function names: a wasm trap then names the frame, not wasm-function[N]
   "-sJSPI"
   "-fwasm-exceptions"
   "-lworkerfs.js"

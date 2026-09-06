@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <thread>
@@ -235,7 +236,13 @@ std::vector<float> tensor_to_f32(ggml_tensor* t) {
     std::vector<float> out(ne);
     const size_t nbytes = ggml_nbytes(t);
     if (t->type == GGML_TYPE_F32) {   // straight into the result: no second [C,N]-sized host copy
-        ggml_backend_tensor_get(t, out.data(), 0, nbytes);
+        // Sliced: the WebGPU backend stages every get_tensor through one MapRead buffer of the
+        // request size, and in the browser the mapped range is itself a wasm-heap copy -- a
+        // 1.19 GB stage-3 C2S output needed 2x that on top of the live host vectors and trapped
+        // (memory access out of bounds). 256 MiB slices bound both to a fixed size; exact.
+        constexpr size_t kSlice = 256u << 20;
+        for (size_t off = 0; off < nbytes; off += kSlice)
+            ggml_backend_tensor_get(t, (uint8_t*)out.data() + off, off, std::min(kSlice, nbytes - off));
         return out;
     }
     std::vector<uint8_t> raw(nbytes);
