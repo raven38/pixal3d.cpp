@@ -234,11 +234,13 @@ std::vector<float> tensor_to_f32(ggml_tensor* t) {
     const int64_t ne = ggml_nelements(t);
     std::vector<float> out(ne);
     const size_t nbytes = ggml_nbytes(t);
+    if (t->type == GGML_TYPE_F32) {   // straight into the result: no second [C,N]-sized host copy
+        ggml_backend_tensor_get(t, out.data(), 0, nbytes);
+        return out;
+    }
     std::vector<uint8_t> raw(nbytes);
     ggml_backend_tensor_get(t, raw.data(), 0, nbytes);
-    if (t->type == GGML_TYPE_F32) {
-        memcpy(out.data(), raw.data(), ne * sizeof(float));
-    } else if (t->type == GGML_TYPE_F16) {
+    if (t->type == GGML_TYPE_F16) {
         ggml_fp16_to_fp32_row((const ggml_fp16_t*)raw.data(), out.data(), ne);
     } else {
         throw std::runtime_error("tensor_to_f32: unsupported type");

@@ -62,12 +62,35 @@ inline void save(const std::string& path, const float* data, const std::vector<i
     hdr.append(pad, ' '); hdr += '\n';
     uint16_t hlen = (uint16_t)hdr.size();
     FILE* f = fopen(path.c_str(), "wb");
+    if (!f) throw std::runtime_error("npy: cannot open for write " + path);
     fwrite("\x93NUMPY\x01\x00", 1, 8, f);
     fwrite(&hlen, 2, 1, f);
     fwrite(hdr.data(), 1, hdr.size(), f);
     int64_t n = std::accumulate(shape.begin(), shape.end(), (int64_t)1, std::multiplies<int64_t>());
-    fwrite(data, sizeof(float), n, f);
+    const bool ok = (int64_t)fwrite(data, sizeof(float), n, f) == n;
     fclose(f);
+    if (!ok) throw std::runtime_error("npy: short write (disk full?) " + path);
+}
+
+// int32 twin of save() ('<i4'); coords / index dumps.
+inline void save_i32(const std::string& path, const int32_t* data, const std::vector<int64_t>& shape) {
+    std::string sh = "(";
+    for (size_t i = 0; i < shape.size(); ++i) sh += std::to_string(shape[i]) + (shape.size() == 1 ? "," : (i + 1 < shape.size() ? ", " : ""));
+    sh += ")";
+    std::string hdr = "{'descr': '<i4', 'fortran_order': False, 'shape': " + sh + ", }";
+    size_t total = 10 + hdr.size() + 1;
+    size_t pad = (64 - (total % 64)) % 64;
+    hdr.append(pad, ' '); hdr += '\n';
+    uint16_t hlen = (uint16_t)hdr.size();
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) throw std::runtime_error("npy: cannot open for write " + path);
+    fwrite("\x93NUMPY\x01\x00", 1, 8, f);
+    fwrite(&hlen, 2, 1, f);
+    fwrite(hdr.data(), 1, hdr.size(), f);
+    int64_t n = std::accumulate(shape.begin(), shape.end(), (int64_t)1, std::multiplies<int64_t>());
+    const bool ok = (int64_t)fwrite(data, sizeof(int32_t), n, f) == n;
+    fclose(f);
+    if (!ok) throw std::runtime_error("npy: short write (disk full?) " + path);
 }
 
 } // namespace npy
