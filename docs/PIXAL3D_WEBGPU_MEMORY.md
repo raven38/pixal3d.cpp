@@ -324,12 +324,15 @@ native Dawn 18eb229 / Chrome 152. Printed by `trellis-test-naf --ggml`,
 | NAF alone, S=512 → T=512 (inside the conditioning graph) | 1.3 MB | see next row | RoPE tables `[262144,64]` f32 × 2 = 134 MB, window index 0.3 MB, block index 1 MB | | output `[1024,262144]` = 1 GB, produced twice (attention output + its channel-major transpose) |
 | **Shape-512 conditioning, one view graph** (`pixal3d_cond_slat_gpu`), V=1 and V=4 | 579.9 MB (DINOv3 + NAF) | **2837.8 MB** (gallocr; dominated by NAF at T=512: the two 1 GB `[1024,262144]` maps, the 340 MB `[81,256,4,1024]` logits/probabilities and gathered values; DINOv3's 88 MB reuses the same buffer) | 256.0 MB (`[1024,32768]` lr + hr accumulators + global) | **3673.8 MB** | flat in V (per-view buffer freed before the next view); 7.6 s (V=1) / 31.9 s (V=4, 11.9 s slowest view) native Dawn |
 | host path for comparison (`pixal3d_cond_slat` on WebGPU: NAF on device, projection on host) | 579.9 MB | NAF graph alone | 268 MB host `[32768,2048]` + 1 GB host NAF map per view | | 56 s for V=4 (1 GB readback + host bilinear sampling per view) |
-| Shape-512 flow DiT, one forward, exact SDPA (`--no-fa`), N=4377 | TBD-MEM-DIT | | | | |
-| Shape-512 sampling (12 steps, 22 forwards) | as one forward | as one forward (graph reused) | | | TBD-MEM-SAMPLE |
+| Shape-512 flow DiT, one forward, exact SDPA (`--no-fa`), N=4377 | 2646.9 MB (f16 GGUF) | **1067.8 MB** (gallocr; dominant: one `[4377,4377,12]` f32 score chunk = 920 MB, `[8192,4377]` MLP hidden 143 MB) | 36.1 MB (`[2048,4377]` proj + `[1024,5]` global, re-uploaded per forward) | **3751 MB** | 21-24 s/forward; CUDA 4090: 0.11 s (FA) / 0.16 s (exact) |
+| Shape-512 sampling (12 steps, 20 forwards) | as one forward | as one forward (graph reused) | 36.1 MB ×2 (cond + zero neg) | **3751 MB** | 423 s native Dawn, 473 s Chrome; CUDA 2.2 s (FA) / 3.2 s (exact) |
 
 Findings:
 
-- **The stage peak is the conditioning graph, not the flow**: 3.67 GB, of which 2 GB is the NAF
+- **The two stage peaks are close**: conditioning 3.67 GB (DINOv3+NAF weights 580 MB + 2.84 GB
+  graph) and flow 3.75 GB (2.65 GB weights + 1.07 GB graph); DINOv3/NAF are freed before the flow
+  weights load (`pixal3d_wasm.cpp`, mirroring `trellis_run_mv`), so they never coexist.
+- **The conditioning graph is the NAF map**: 3.67 GB, of which 2 GB is the NAF
   map materialized twice (`[C/4, d², 4, blk]` mul_mat output and its `[C, T·T]` channel-major
   copy that the projection `get_rows` consumes). Spec 30 §4's on-demand evaluation (only the
   R³×4 = 131k tap pixels of the 262k are ever read at R=32) or a block-chunked attention with the
@@ -339,4 +342,8 @@ Findings:
 - **Spec-floor adapters**: the 1 GB maps, the 920 MB attention score chunk and the 2.78 GB weight
   buffer all exceed the 128 MiB / 256 MiB floors; nothing in this phase changed that (§4's verdicts
   stand).
-- **Browser**: TBD-MEM-BROWSER
+- **Browser (Chrome 152, WORKERFS-mounted GGUFs)**: identical buffer numbers to native (peak
+  3673.8 MB cond / 1067.8 MB DiT activations, same graphs); the 2.78 GB flow GGUF streams into its
+  `GPUBuffer` in 4.8 s; the wasm heap holds the fixture arrays (the 257 MB `s512_z_proj.npy`
+  reference for the parity print is the largest) and stays under 1 GB. `-sMAXIMUM_MEMORY` is
+  4 GiB, unchanged.
