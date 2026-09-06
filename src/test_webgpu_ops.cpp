@@ -92,6 +92,12 @@ std::vector<float> read_f32(T* out) {
         ggml_backend_tensor_get(out, r.data(), 0, ggml_nbytes(out));
         return r;
     }
+    if (out->type == GGML_TYPE_I32) {   // index tensors: exact in f32 below 2^24 (row indices are)
+        std::vector<int32_t> iv(ne);
+        ggml_backend_tensor_get(out, iv.data(), 0, ggml_nbytes(out));
+        for (size_t i = 0; i < ne; ++i) r[i] = (float)iv[i];
+        return r;
+    }
     std::vector<uint8_t> raw(ggml_nbytes(out));
     ggml_backend_tensor_get(out, raw.data(), 0, raw.size());
     ggml_get_type_traits(out->type)->to_float(raw.data(), r.data(), (int64_t)ne);
@@ -434,6 +440,21 @@ int ops_main(int argc, char** argv) {
     cases.push_back({ "cont(view) [512,300000] @ +614 MB", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
               T* x = in_f32(c, ins, 512, 600000);
               return ggml_cont(c, ggml_view_2d(c, x, 512, 300000, x->nb[1], (size_t)300000 * x->nb[1])); }, nullptr, nullptr });
+    // I32 CONT of a neighbor-table slice (patch 0005: the cpy shader had no I32 source).
+    // submconv_range takes tap t's rows [r0, r0+nr) of the tap-major [27*N] table as
+    // cont(view_1d(nbr, nr, (t*N + r0)*4)); the byte offset is generally not a multiple of the
+    // 256 B storage-binding alignment, so both an aligned and a misaligned offset are covered.
+    cases.push_back({ "cont(view) i32 nbr tap slice [4377] @ +17508 B", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
+              T* nbr = in_idx(c, ins, (int64_t)27 * 4377, 4378);
+              return ggml_cont(c, ggml_view_1d(c, nbr, 4377, (size_t)1 * 4377 * sizeof(int32_t))); }, nullptr, nullptr });
+    cases.push_back({ "cont(view) i32 nbr chunk [768000] @ tap 13 +390936", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t N = 1158936;
+              T* nbr = in_idx(c, ins, 27 * N, (int32_t)(N + 1));
+              return ggml_cont(c, ggml_view_1d(c, nbr, 768000, ((size_t)13 * N + 390936) * sizeof(int32_t))); }, nullptr, nullptr });
+    cases.push_back({ "cont(view) i32 [4649837] tap 26 (M rows)", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t M = 4649837;
+              T* nbr = in_idx(c, ins, 27 * M, (int32_t)(M + 1));
+              return ggml_cont(c, ggml_view_1d(c, nbr, M, (size_t)26 * M * sizeof(int32_t))); }, nullptr, nullptr });
 
     bool all = true;
     for (const Case& cs : cases) {
