@@ -24,16 +24,18 @@ static bool compare(const char* name, const vector<float>& mine, const npy::Arra
         printf("  %-20s SIZE MISMATCH mine=%zu ref=%lld\n", name, mine.size(), (long long)ref.numel());
         return false;
     }
-    double maxabs = 0, sumabs = 0, refmax = 0;
+    double maxabs = 0, sumabs = 0, refmax = 0, dot = 0, na = 0, nb = 0;
     for (size_t i = 0; i < mine.size(); ++i) {
         double d = std::fabs((double)mine[i] - ref.data[i]);
         maxabs = std::max(maxabs, d); sumabs += d;
         refmax = std::max(refmax, std::fabs((double)ref.data[i]));
+        dot += (double)mine[i] * ref.data[i]; na += (double)mine[i] * mine[i]; nb += (double)ref.data[i] * ref.data[i];
     }
     const double rel = refmax > 0 ? maxabs / refmax : maxabs;
+    const double cos = (na > 0 && nb > 0) ? dot / std::sqrt(na * nb) : 0.0;
     const bool ok = rel < 2e-2;
-    printf("  %-20s max|d|=%.4e mean|d|=%.4e  rel=%.4e  %s\n",
-           name, maxabs, sumabs / mine.size(), rel, ok ? "OK" : "**");
+    printf("  %-20s max|d|=%.4e mean|d|=%.4e  rel=%.4e cos=%.7f  %s\n",
+           name, maxabs, sumabs / mine.size(), rel, cos, ok ? "OK" : "**");
     return ok;
 }
 
@@ -103,13 +105,18 @@ int main(int argc, char** argv) {
     ggml_tensor* gcos = ggml_new_tensor_4d(c, GGML_TYPE_F32, 1, half, 1, L);  ggml_set_input(gcos);
     ggml_tensor* gsin = ggml_new_tensor_4d(c, GGML_TYPE_F32, 1, half, 1, L);  ggml_set_input(gsin);
     ggml_tensor* gpj  = ggml_new_tensor_2d(c, GGML_TYPE_F32, Dp, L);          ggml_set_input(gpj);
+    // Host-built RoPE even/odd index input (the WebGPU backend has no ARANGE kernel and would
+    // silently skip the fallback's nodes -- same input DitRunner supplies).
+    ggml_tensor* gidx = ggml_new_tensor_1d(c, GGML_TYPE_I32, p.head_dim);      ggml_set_input(gidx);
+    vector<int32_t> ridx; trellis::dit_rope_index(p.head_dim, ridx);
 
     std::map<string, ggml_tensor*> inter;
-    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj);
+    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj, gidx);
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 262144, false);
     ggml_build_forward_expand(g, out);
     for (auto& [k, v] : inter) ggml_set_output(v);
+    trellis::check_graph_supported(m.backend, g, "test_pixal3d_slat_flow");
 
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) { fprintf(stderr, "alloc failed\n"); return 1; }
@@ -120,18 +127,25 @@ int main(int argc, char** argv) {
     ggml_backend_tensor_set(gcos, rcos.data(),    0, rcos.size() * 4);
     ggml_backend_tensor_set(gsin, rsin.data(),    0, rsin.size() * 4);
     ggml_backend_tensor_set(gpj,  pj.data(),      0, pj.size()   * 4);
+    ggml_backend_tensor_set(gidx, ridx.data(),    0, ridx.size() * sizeof(int32_t));
 
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) { fprintf(stderr, "compute failed\n"); return 1; }
 
     printf("\nwalking the DiT (rel<2e-2 = OK); the FIRST ** is where it breaks:\n");
-    const char* names[] = { "after_input_layer", "t_emb_mod", "blk0_global_out", "blk0_proj_out", "blk0_cross_out",
-                            "after_block0", "after_block1", "after_block29", "prefinal" };
-    for (const char* n : names) {
+    // fixture name -> intermediate name (blk0_msa/blk0_mlp are dumped as *_out.npy)
+    const char* names[][2] = { {"after_input_layer", "after_input_layer"}, {"t_emb_mod", "t_emb_mod"},
+                               {"blk0_msa_out", "blk0_msa"}, {"blk0_global_out", "blk0_global_out"},
+                               {"blk0_proj_out", "blk0_proj_out"}, {"blk0_cross_out", "blk0_cross_out"},
+                               {"blk0_mlp_out", "blk0_mlp"}, {"after_block0", "after_block0"},
+                               {"after_block1", "after_block1"}, {"after_block29", "after_block29"},
+                               {"prefinal", "prefinal"} };
+    for (auto& nm : names) {
+        const char* fx = nm[0]; const char* n = nm[1];
         if (!inter.count(n)) continue;
-        FILE* f = fopen((ref + "/" + n + ".npy").c_str(), "rb");
-        if (!f) { printf("  %-20s (no golden dump)\n", n); continue; }
+        FILE* f = fopen((ref + "/" + fx + ".npy").c_str(), "rb");
+        if (!f) { printf("  %-20s (no golden dump)\n", fx); continue; }
         fclose(f);
-        compare(n, trellis::tensor_to_f32(inter[n]), npy::load(ref + "/" + n + ".npy"));
+        compare(fx, trellis::tensor_to_f32(inter[n]), npy::load(ref + "/" + fx + ".npy"));
     }
     compare("output", trellis::tensor_to_f32(out), npy::load(ref + "/output.npy"));
 

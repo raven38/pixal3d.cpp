@@ -48,6 +48,12 @@
 //   against structured_latent_flow.py: `x = sp.sparse_cat([x, concat_cond], dim=-1)` -- noise
 //   channels first (0:32), concat_cond appended after (32:64) -- matching trellis_cli.cpp.
 //   trellis-test-pixal3d-slat-sample <flow.gguf> <fixture_dir> [gpu] [--stage shape512|shape_hr|tex]
+//                                    [--dump DIR] [--ext PREFIX]
+//   --dump DIR    write this run's per-step latents as DIR/cpp_x_step<k>.npy and DIR/cpp_x_final.npy
+//                 ([N,32] row-major, the fixture's layout) -- e.g. the native CUDA run, copied into the
+//                 fixture dir as cuda_x_step<k>.npy / cuda_x_final.npy, becomes a third reference here.
+//   --ext PREFIX  also score externally produced latents PREFIXx_step<k>.npy / PREFIXx_final.npy
+//                 (e.g. the browser/WASM run's) against the same references and against this run.
 #include "trellis_model.h"
 #include "flow_runner.h"
 #include "dit.h"
@@ -189,10 +195,12 @@ int main(int argc, char** argv) {
     }
     const string gguf_flow = argv[1], fdir = argv[2];
     int gpu = 0;
-    string stage_name = "shape512";
+    string stage_name = "shape512", dump_dir, ext_prefix;
     for (int i = 3; i < argc; ++i) {
         string a = argv[i];
         if (a == "--stage" && i + 1 < argc) stage_name = argv[++i];
+        else if (a == "--dump" && i + 1 < argc) dump_dir = argv[++i];
+        else if (a == "--ext" && i + 1 < argc) ext_prefix = argv[++i];
         else gpu = atoi(a.c_str());
     }
     enum class Stage { SHAPE512, SHAPE_HR, TEX } stage;
@@ -335,15 +343,38 @@ int main(int argc, char** argv) {
     // ---- per-step latent parity vs f32 and bf16 refs, plus f32-vs-bf16 calibration ----
     printf("\nper-step latent parity ([N=%lld,C=%lld], ggml channel-major == npy row-major, no remap):\n",
            (long long)N, (long long)Cin);
+    auto lat_stats = [&](const vector<float>& v) {
+        double m = 0, mx = 0; size_t bad = 0;
+        for (float x : v) { if (!std::isfinite(x)) { ++bad; continue; } m += x; mx = std::max(mx, (double)std::fabs(x)); }
+        m /= v.size(); double var = 0; for (float x : v) if (std::isfinite(x)) var += (x - m) * (x - m);
+        printf("    latent mean=%+.6f std=%.6f max|x|=%.4f nonfinite=%zu\n", m, std::sqrt(var / v.size()), mx, bad);
+    };
+    const std::vector<int64_t> lat_shape = { N, Cin };
     for (int k = 0; k <= sp.steps; ++k) {
         const vector<float>& mine = (k == 0) ? sample : trace[k - 1];   // trace[i] = sample after step i+1
-        npy::Array rf, rb;
-        bool hf = load_opt(fdir + "/f32_" + sf.x_step_prefix + std::to_string(k) + ".npy", rf);
-        bool hb = load_opt(fdir + "/bf16_" + sf.x_step_prefix + std::to_string(k) + ".npy", rb);
+        npy::Array rf, rb, rc, re;
+        const string sk = sf.x_step_prefix + std::to_string(k) + ".npy";
+        bool hf = load_opt(fdir + "/f32_" + sk, rf);
+        bool hb = load_opt(fdir + "/bf16_" + sk, rb);
+        bool hc = load_opt(fdir + "/cuda_" + sk, rc);
+        bool he = !ext_prefix.empty() && load_opt(ext_prefix + sk, re);
         printf("  step %2d:\n", k);
-        if (hf) print_stats("f32", diff_stats(mine, rf)); else printf("    f32  (missing)\n");
+        lat_stats(mine);
+        if (hf) { print_stats("f32", diff_stats(mine, rf)); printf("         cos(mine,f32)=%.7f\n", mean_cosine(mine, rf, (int)Cin, N)); }
+        else printf("    f32  (missing)\n");
         if (hb) print_stats("bf16", diff_stats(mine, rb)); else printf("    bf16 (missing)\n");
+        if (hc) { print_stats("cuda", diff_stats(mine, rc)); printf("         cos(mine,cuda)=%.7f\n", mean_cosine(mine, rc, (int)Cin, N)); }
         if (hf && hb) print_stats("f32v.bf16[calib]", diff_stats2(rf, rb));
+        if (he) {
+            printf("    [ext] %s%s\n", ext_prefix.c_str(), sk.c_str());
+            lat_stats(re.data);
+            if (hf) { print_stats("ext-f32", diff_stats(re.data, rf)); printf("         cos(ext,f32)=%.7f\n", mean_cosine(re.data, rf, (int)Cin, N)); }
+            if (hb) print_stats("ext-bf16", diff_stats(re.data, rb));
+            if (hc) { print_stats("ext-cuda", diff_stats(re.data, rc)); printf("         cos(ext,cuda)=%.7f\n", mean_cosine(re.data, rc, (int)Cin, N)); }
+            npy::Array rm; rm.shape = lat_shape; rm.data = mine;
+            print_stats("ext-mine", diff_stats(re.data, rm)); printf("         cos(ext,mine)=%.7f\n", mean_cosine(re.data, rm, (int)Cin, N));
+        }
+        if (!dump_dir.empty() && k > 0) npy::save(dump_dir + "/cpp_" + sk, mine.data(), lat_shape);
     }
 
     // Explicit final-latent check (redundant with trace.back(), ships as its own file).
@@ -358,7 +389,24 @@ int main(int argc, char** argv) {
         if (hf) { final_f32 = diff_stats(out, rf); has_final_f32 = true; print_stats("f32", final_f32); cos_f32 = mean_cosine(out, rf, (int)Cin, N); }
         else printf("    f32  (missing)\n");
         if (hb) print_stats("bf16", diff_stats(out, rb)); else printf("    bf16 (missing)\n");
+        npy::Array rc;
+        if (load_opt(fdir + "/cuda_" + sf.x_final + ".npy", rc)) {
+            print_stats("cuda", diff_stats(out, rc)); printf("         cos(mine,cuda)=%.7f\n", mean_cosine(out, rc, (int)Cin, N));
+        }
         if (hf && hb) { final_calib = diff_stats2(rf, rb); has_final_calib = true; print_stats("f32v.bf16[calib]", final_calib); }
+        if (!dump_dir.empty()) npy::save(dump_dir + "/cpp_" + sf.x_final + ".npy", out.data(), lat_shape);
+        npy::Array re;
+        if (!ext_prefix.empty() && load_opt(ext_prefix + sf.x_final + ".npy", re)) {
+            printf("    [ext] %s%s.npy\n", ext_prefix.c_str(), sf.x_final.c_str());
+            lat_stats(re.data);
+            if (hf) { Stats se = diff_stats(re.data, rf); print_stats("ext-f32", se); printf("         cos(ext,f32)=%.7f\n", mean_cosine(re.data, rf, (int)Cin, N));
+                      const double thr = std::max(2.0 * (hb ? diff_stats2(rf, rb).rel : 0.0), 5e-2);
+                      printf("         ext verdict: rel(ext, f32 ref) = %.4e ; threshold = %.4e -> %s\n", se.rel, thr, se.rel <= thr ? "PASS" : "FAIL"); }
+            if (hb) print_stats("ext-bf16", diff_stats(re.data, rb));
+            if (rc.numel() > 0) { print_stats("ext-cuda", diff_stats(re.data, rc)); printf("         cos(ext,cuda)=%.7f\n", mean_cosine(re.data, rc, (int)Cin, N)); }
+            npy::Array rm; rm.shape = lat_shape; rm.data = out;
+            print_stats("ext-mine", diff_stats(re.data, rm)); printf("         cos(ext,mine)=%.7f\n", mean_cosine(re.data, rm, (int)Cin, N));
+        }
     }
     if (cos_f32 >= 0) printf("  mean per-token cosine-similarity(mine, f32 ref) = %.6f\n", cos_f32);
 

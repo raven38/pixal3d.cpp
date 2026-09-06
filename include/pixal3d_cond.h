@@ -90,6 +90,19 @@ Pixal3dCond pixal3d_cond_slat(const Model& dinov3, const Model& naf,
                                const std::vector<Pixal3dView>& views,
                                const Pixal3dSlatCondParams& prm);
 
+// Device-resident variant of pixal3d_cond_slat with identical semantics (the WebGPU/WASM path):
+// per view, ONE ggml graph on the DINOv3 model's backend runs DINOv3 -> NAF (naf_build, the
+// all-ggml upsampler, fed the DINOv3 patch map straight from the same graph) -> the two
+// pixel-aligned bilinear projections (get_rows x4 over the [1024, Hp*Wp] patch map for lr and
+// over the [1024, T*T] NAF map for hr, tap indices remapped to naf_block_order) -> running
+// averages into three persistent accumulators (global, lr, hr). The view's temporaries are
+// released before the next view; the fused condition is read back once at the end and
+// interleaved to the [R^3, 2048] host layout. `naf` must be loaded on the same device as
+// `dinov3` (its weights are read by the DINOv3 backend's graph).
+Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
+                                   const std::vector<Pixal3dView>& views,
+                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats = nullptr);
+
 // Gathers the dense SLAT proj condition [R^3, C] (token k = x*R*R + y*R + z, as
 // produced by pixal3d_cond_slat) at a sparse set of active voxel coords (x,y,z),
 // producing the [N, C] layout the SLAT DiT's SparseTensor feats consume.
