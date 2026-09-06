@@ -18,11 +18,12 @@
 //
 // Verdict: Nh must match, the ordering of the shared tokens must be identical, and the HR token
 // symmetric difference must be at most 2 tokens (one substituted voxel). That bound is the
-// observed spread of this C++ path across its own backends against the fixture (CPU f32: 12 of
-// 1,188,442 raw voxels differ, CUDA: 28; both resolve to the same single token (41,21,5) vs
-// (41,21,6)) -- the reference decoder runs fp16 (use_fp16=True), so a subdivision logit within
-// rounding of the threshold can flip; the topology otherwise agrees to 99.99 %. Not a tuned
-// tolerance: it is the measured backend-vs-reference spread, documented in spec 31 §11.
+// observed spread of this C++ path across its own backends against the fixture (raw 512^3
+// voxels: CPU f32 235 only-mine / 223 only-ref of 1,188,442 (0.02 %), CUDA 346 / 318 (0.03 %);
+// both resolve to the same single HR token (41,21,5) vs (41,21,6), shared 17488/17489) -- the
+// reference decoder runs fp16 (use_fp16=True), so a subdivision logit within rounding of the
+// threshold can flip; the topology otherwise agrees to 99.99 %. Not a tuned tolerance: it is
+// the measured backend-vs-reference spread, documented in spec 31 §11.
 //
 //   trellis-test-pixal3d-hr-coords <shape_dec.gguf> <slat_sample_dir> <hr_sample_dir> [gpu]
 #include "trellis_model.h"
