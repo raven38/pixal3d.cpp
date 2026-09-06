@@ -89,7 +89,13 @@ std::vector<float> read_f32(T* out) {
     const size_t ne = (size_t)ggml_nelements(out);
     std::vector<float> r(ne);
     if (out->type == GGML_TYPE_F32) {
-        ggml_backend_tensor_get(out, r.data(), 0, ggml_nbytes(out));
+        // 256 MiB slices, as trellis_model.cpp::tensor_to_f32 reads the sparse-decoder outputs:
+        // the WebGPU backend maps a staging buffer per request, so the >= 1 GB cases here are the
+        // regression for the sliced readback (whole-tensor mapping trapped in the browser).
+        const size_t nbytes = ggml_nbytes(out);
+        constexpr size_t kSlice = 256u << 20;
+        for (size_t off = 0; off < nbytes; off += kSlice)
+            ggml_backend_tensor_get(out, (uint8_t*)r.data() + off, off, std::min(kSlice, nbytes - off));
         return r;
     }
     if (out->type == GGML_TYPE_I32) {   // index tensors: exact in f32 below 2^24 (row indices are)
