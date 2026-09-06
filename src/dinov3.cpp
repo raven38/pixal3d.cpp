@@ -54,11 +54,10 @@ static T* attn(ggml_context* c, const Model& m, const std::string& p, T* x, T* c
     return lin(c, m, p + ".proj", sdpa(c, q, k, v));
 }
 
-std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, int S) {
+void dinov3_rope_tables(int S, std::vector<float>& rcos, std::vector<float>& rsin) {
     const int Hp = S / 16, NP = Hp * Hp, Ntok = NP + NPREFIX;
-
     // host RoPE tables [Ntok*HD]: prefix tokens identity, patches dinov3 2D half-split
-    std::vector<float> rcos((size_t)Ntok * HD, 1.0f), rsin((size_t)Ntok * HD, 0.0f);
+    rcos.assign((size_t)Ntok * HD, 1.0f); rsin.assign((size_t)Ntok * HD, 0.0f);
     float inv[16]; for (int j = 0; j < 16; ++j) inv[j] = 1.0f / std::pow(100.0f, (float)j / 16.0f);
     const float TWO_PI = 6.283185307179586f;
     for (int p = 0; p < NP; ++p) {
@@ -69,12 +68,14 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
         size_t base = (size_t)(p + NPREFIX) * HD;
         for (int d = 0; d < 64; ++d) { float a = ang[d % 32]; rcos[base + d] = std::cos(a); rsin[base + d] = std::sin(a); }
     }
+}
 
-    size_t meta = ggml_tensor_overhead() * 8192 + ggml_graph_overhead_custom(16384, false) + (1 << 20);
-    ggml_context* c = ggml_init({ meta, nullptr, true });
+T* dinov3_build(ggml_context* c, const Model& m, int S, Dinov3Inputs& in) {
+    const int Hp = S / 16, NP = Hp * Hp, Ntok = NP + NPREFIX;
     T* img  = ggml_new_tensor_4d(c, GGML_TYPE_F32, S, S, 3, 1);       ggml_set_input(img);
     T* gcos = ggml_new_tensor_3d(c, GGML_TYPE_F32, HD, 1, Ntok);      ggml_set_input(gcos);
     T* gsin = ggml_new_tensor_3d(c, GGML_TYPE_F32, HD, 1, Ntok);      ggml_set_input(gsin);
+    in.img = img; in.cos = gcos; in.sin = gsin; in.ntok = Ntok;
 
     // patch embed: conv2d k16 s16 -> [Wp,Hp,1024,1] -> [1024, NP] (token = h*Hp + w) + bias
     T* pe = ggml_conv_2d(c, m.get("patch_embed.proj.weight"), img, 16, 16, 0, 0, 1, 1);
@@ -100,16 +101,29 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
         x = ggml_add(c, x, y);
     }
     x = ln(c, x, 1e-5f);                                              // final non-affine LN
+    return x;
+}
+
+std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, int S) {
+    std::vector<float> rcos, rsin;
+    dinov3_rope_tables(S, rcos, rsin);
+
+    size_t meta = ggml_tensor_overhead() * 8192 + ggml_graph_overhead_custom(16384, false) + (1 << 20);
+    ggml_context* c = ggml_init({ meta, nullptr, true });
+    Dinov3Inputs in{};
+    T* x = dinov3_build(c, m, S, in);
     ggml_set_output(x);
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 16384, false);
     ggml_build_forward_expand(g, x);
-    trellis_graph_dump(("dinov3_S" + std::to_string(S)).c_str(), g);
+    const std::string tag = "dinov3_S" + std::to_string(S);
+    trellis_graph_dump(tag.c_str(), g);
+    check_graph_supported(m.backend, g, tag.c_str());
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("dinov3: alloc failed");
-    ggml_backend_tensor_set(img,  chw.data(), 0, chw.size() * 4);
-    ggml_backend_tensor_set(gcos, rcos.data(), 0, rcos.size() * 4);
-    ggml_backend_tensor_set(gsin, rsin.data(), 0, rsin.size() * 4);
+    ggml_backend_tensor_set(in.img, chw.data(), 0, chw.size() * 4);
+    ggml_backend_tensor_set(in.cos, rcos.data(), 0, rcos.size() * 4);
+    ggml_backend_tensor_set(in.sin, rsin.data(), 0, rsin.size() * 4);
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("dinov3: compute failed");
     std::vector<float> out = tensor_to_f32(x);   // [D, Ntok] ggml -> flat d + D*tok
     ggml_gallocr_free(alloc); ggml_free(c);

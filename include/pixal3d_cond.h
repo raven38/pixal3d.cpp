@@ -7,6 +7,7 @@
 // (docs/spec/30-pixal3d-cond.md section 4) -- proj = [lr || hr], 2048-wide.
 #pragma once
 #include <array>
+#include <cstddef>
 #include <vector>
 
 namespace trellis {
@@ -44,6 +45,27 @@ std::vector<float> pixal3d_imagenet_normalize(const std::vector<float>& rgb_prem
 // distance0 = norm(views[0].c2w[:3,3]). global and proj are averaged over views.
 Pixal3dCond pixal3d_cond_ss(const Model& dinov3, const std::vector<Pixal3dView>& views,
                              int S, int R, float mesh_scale);
+
+// Per-view / per-stage resource accounting for the device-resident conditioning path.
+struct Pixal3dCondStats {
+    size_t weight_bytes = 0;     // DINOv3 weight buffer (resident for the whole call)
+    size_t cond_bytes = 0;       // persistent accumulators (global + proj) on the device
+    size_t view_alloc_bytes = 0; // largest per-view graph buffer (DINOv3 activations + projection temporaries)
+    size_t peak_bytes = 0;       // weight_bytes + cond_bytes + view_alloc_bytes (buffers are freed per view)
+    double total_ms = 0;         // wall time of the whole call
+    double view_ms_max = 0;      // slowest single view (graph build + alloc + compute)
+    int views = 0;
+};
+
+// Device-resident variant of pixal3d_cond_ss with identical semantics: per view, one ggml graph
+// runs DINOv3 -> pixel-aligned bilinear projection (proj_grid_bilinear_taps: get_rows x4 +
+// weighted sum over the [1024, Hp*Wp] patch map, never leaving the device) -> running average
+// into two persistent accumulators on the model's backend; the view's temporaries are released
+// before the next view, so peak memory is independent of V. The fused global/proj are read back
+// once at the end (same host layout as pixal3d_cond_ss). Numerics differ from the host path
+// only by f32 (device) vs f64 (host) accumulation of the four bilinear taps.
+Pixal3dCond pixal3d_cond_ss_gpu(const Model& dinov3, const std::vector<Pixal3dView>& views,
+                                 int S, int R, float mesh_scale, Pixal3dCondStats* stats = nullptr);
 
 // SLAT-stage (shape or texture) config: S = view image resolution (512 or 1024),
 // R = ProjGrid resolution (32 or 64), naf_T = NAF target resolution (512 for the
