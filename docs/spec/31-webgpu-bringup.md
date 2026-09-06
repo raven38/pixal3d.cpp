@@ -1185,13 +1185,65 @@ the same criterion).
 Timing (M1 Pro, native Dawn, concurrent with the WASM build): 422.8 s for 20 forwards = 21.1 s per
 forward at N=4377; CUDA 4090: 0.11 s (FA) / 0.16 s (exact) per forward.
 
-### 10.7 Browser / WASM (`web/shape512/`)
+### 10.7 Browser / WASM (`web/shape512/`, Chrome 152.0.7977.82, macOS 26.5, Apple M1 Pro)
 
-TBD-BROWSER
+Architecture as required: `run_playwright.js` / `index.html` → `main.js` (collect `File` objects,
+spawn a Worker) → `worker.js` (WORKERFS mounts, one `ccall` under JSPI, post the report and
+latents back) → the same `web/ss/pixal3d_ss.wasm` module (`src/pixal3d_wasm.cpp`,
+`pixal3d_shape512_run`; `locateFile` points the worker at `../ss/`) → the same
+`pixal3d_cond_slat_gpu` / `naf_build` / sparse `DitRunner` / `sample_flow` C++ as native →
+`ggml-webgpu` (emdawnwebgpu) → GPU. JavaScript never sees a tensor other than the returned
+latents. The three GGUFs (607 MB + 1.3 MB + 2.78 GB) and 49 fixture `.npy` files are read lazily
+from disk through WORKERFS. Serve `web/` (not `web/ss/`) on port 8199 for this page; the SS driver
+still expects `web/ss/` as the server root.
+
+| stage (browser, V=4) | time | parity |
+|---|---|---|
+| DINOv3 + NAF load (580 MB) | 0.83 s | -- |
+| conditioning, 4 views (DINOv3 → NAF → lr/hr projections → average, device-resident) | 26.3 s (6.6 s slowest view; peak 3673.8 MB, same as native) | `z_global rel 9.5e-5`, `z_proj lr 2.4e-4 / hr 1.9e-4` -- **identical digits to native Dawn** |
+| flow load (2.78 GB) | 4.8 s | -- |
+| DiT graph build + alloc (1067.8 MB activations) | 8 ms | -- |
+| sampling, 20 forwards (fixture condition, the calibrated gate) | 473.4 s (23.7 s / forward) | see below |
+| **total** | 506.5 s in-page (506.7 s Playwright wall) | `RESULT: OK` |
+
+Browser latents (`browser_x_step*.npy` saved by the driver, scored offline):
+
+| step | vs native WebGPU (Dawn) | vs CUDA production | vs CUDA exact | vs PyTorch f32 |
+|---|---|---|---|---|
+| 1 | rel 5.6e-8, cos 1.0000000 | 9.3e-4 / 0.9999999 | 7.4e-4 / 0.9999999 | 1.9e-4 / 1.0000000 |
+| 4 | rel 3.9e-4, cos 1.0000000 | 3.5e-3 / 0.9999990 | 2.7e-3 / 0.9999993 | 8.7e-4 / 1.0000000 |
+| 8 | rel 4.3e-3, cos 0.9999998 | 3.3e-2 / 0.9999821 | 1.3e-2 / 0.9999919 | 8.9e-3 / 0.9999991 |
+| 12 (final) | rel 3.9e-2, **cos 0.9999963** | 0.187 / 0.9995195 | 0.082 / 0.9999406 | **0.2064 / 0.9973378** |
+
+Final latent statistics: mean −0.024692, std 0.930319, max 4.8469 (native WebGPU −0.024694 /
+0.930319 / 4.8459; CUDA FA −0.024870 / 0.930339 / 4.8569), no non-finite values. Chrome's Dawn and
+the prebuilt native Dawn are again not bit-identical (§9.6), but the browser run sits closer to
+native WebGPU (cos 0.999996) than either sits to CUDA. Verdict under the existing criterion
+(`rel(mine, f32) = 0.2064 ≤ max(2·0.262, 0.05)`): **PASS**, the same class as native WebGPU
+(0.2101), CUDA FA (0.2195) and CUDA exact (0.2210).
+
+One browser-only failure was hit and fixed on the way: with the module in `../ss/`, Emscripten
+resolved `pixal3d_ss.wasm` relative to the worker's own URL (404 → "expected magic word") until
+`locateFile` was set. The SS harness (`web/ss/`) was re-run on the rebuilt module (now carrying both entry points): `RESULT: OK` in 438 s, conditioning `z_global rel 9.5e-5 / z_proj 2.2e-4`, final SS latent mean −0.002811, std 0.605325, max 4.1989, `rel 0.570 / cos 0.9763807` vs PyTorch f32 -- the same digits as §9.6, i.e. the SS path is unchanged.
 
 ### 10.8 Performance per component (Apple M1 Pro unless noted)
 
-TBD-PERF
+| component | CUDA (RTX 4090, production) | WebGPU native (Dawn/Metal) | WebGPU browser (Chrome) |
+|---|---|---|---|
+| NAF, S=512 → T=128, one view (encoder at 512², attention over 16k pixels) | 0.96 s (`naf_attn.cu` path) | 4.6 s (4.4 s compute) | -- |
+| NAF, S=512 → T=512, one view (host-path call inside cond-slat stage 2) | -- | 10.8 s incl. the 1 GB readback and host reorder | -- |
+| Shape-512 conditioning, one view (DINOv3 + NAF + projections, one graph) | -- | 7-12 s | 6.6 s (slowest view) |
+| Shape-512 conditioning, V=4 | -- | 31.9 s (device) / 56 s (host path) | 26.3 s |
+| flow weight load (2.78 GB GGUF → device) | -- | ≈6 s | 4.8 s (WORKERFS) |
+| Shape-512 DiT forward, N=4377 (exact SDPA on WebGPU; FA on CUDA) | 0.11 s FA / 0.16 s exact | 21.1 s (concurrent with the WASM build) | 23.7 s |
+| Shape-512 sampling, 20 forwards | 2.2 s / 3.2 s | 422.8 s | 473.4 s |
+
+The WebGPU DiT forward is dominated, as in §9.7, by the `reg_tile` GEMMs (no FlashAttention, no
+tensor-core path) -- ≈40 % of it the two batched attention GEMMs + softmax over the
+`[4377,4377,12]` score tensor per block. NAF's WebGPU time is dominated by the direct `conv2d`
+shader at 512² (ten 128-channel convolutions, the `[512,512,128]` activations are 134 MB each);
+the attention part is small (two batched GEMMs of 5 and 22 GFLOP). Chrome's cond stage is faster
+than native Dawn's here (6.6 vs 7-12 s/view) -- both are unprofiled per op.
 
 ### 10.9 Unsupported / unvalidated operations remaining for the next stages
 
