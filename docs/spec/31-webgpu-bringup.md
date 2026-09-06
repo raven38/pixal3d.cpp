@@ -1044,3 +1044,170 @@ attention, not by projection.
   phase scope; op-gap §6/§7 ordering still stands.
 - Native Dawn only: the subgroup-matrix shaders remain off (patch 0001); if upstream fixes their
   accumulation precision the define can be dropped.
+
+## 10. Shape-512 conditioning and flow on WebGPU (2026-09-06, `feat/webgpu-shape512-flow`)
+
+Scope of this phase: DINOv3 → NAF → SLAT conditioning (S=512, R=32, T=512) → ProjectAttention
+Shape-512 flow → 12-step sampling, on the ggml WebGPU backend natively (Dawn) and in the browser
+(Emscripten/WASM), against the **existing** fixtures (`tools/ref_pixal3d_naf.py`,
+`ref_pixal3d_cond_slat.py`, `ref_pixal3d_slat_flow.py`, `ref_pixal3d_slat_sample.py`) and the native
+CUDA run of the same commit. Branch base: `v0.3.0-webgpu-ss` (= `fe4aa20`). The shape decoder,
+sparse conv, shape-1024 and texture stages were not touched (§10.9).
+
+### 10.1 What had to change (and what did not)
+
+Nothing in the model math. The DiT graph (`dit.cpp` / `flow_runner.cpp`) runs the sparse
+Shape-512 flow unchanged on WebGPU with the same `--no-fa` exact SDPA and host-built RoPE index as
+the SS stage. The new work is NAF, the SLAT conditioning graph, and one backend patch:
+
+| item | change | why |
+|---|---|---|
+| ggml WebGPU dispatch (`patches/ggml-webgpu/0003`) | `soft_max`, `sum_rows`, `norm`/`rms_norm`, `get_rows`, `concat`, `pad`, `repeat` dispatch on a 2D workgroup grid (`compute_2d_workgroups`, the mechanism the binary/unary/cpy encoders already used); the shaders linearize `wid.x + num_wg.x * wid.y`. `cpy`'s shader was already dispatched 2D upstream but ignored `gid.y` | every row-parallel op with more than `maxComputeWorkgroupsPerDimension` (65535) rows failed validation and was silently skipped (§9.1's silent-skip hazard); NAF needs a 1M-row softmax, a 4M-row `sum_rows` and 1 GB `cont`s. The `cpy` bug meant every `CONT`/`CPY` over 64 Mi elements (256 MB f32) wrote only the first `1/wg_y` of its output -- latent on the SS stage (largest CONT 25 MB), fatal here (§10.2) |
+| NAF (`src/naf_gpu.cpp`, `naf_build` / `naf_upsample_ggml`) | the whole upsampler as one ggml graph: encoder, RoPE (host cos/sin tables, rotate-half via views + concat), k pooling, the neighborhood attention and the `[C, T·T]` map. No custom kernel: with an integer factor d = T/h every pixel of a d×d block shares one clamped 9×9 window (`naf_attn.h`), so the attention is `get_rows` of the 81 window keys/values per block and two batched `mul_mat`s over `[blocks × heads]` plus a softmax over 81 logits. Output is pixel-major in block-major pixel order (`naf_block_order`) | `naf_attn.cu` is CUDA-only (op-gap D1) and the CPU reference is ~52 s/view; the block formulation keeps everything on the device in ops the backend already has |
+| NAF op lowering (`NafGgmlOpts`, `naf_ggml_opts_for`) | `GROUP_NORM` → `ggml_norm` over a `[W·H·C/8, 8]` reshape; `PAD_REFLECT_1D` → `concat` of the mirrored border column/row views; `POOL_2D` (avg, k=s) → `sum_rows` over a `[k, …]` reshape per axis; `ggml_conv_2d` (im2col) → `ggml_conv_2d_direct`. Chosen per backend by probing `supports_op`; the CUDA graph (`naf_upsample_gpu`) and the CPU reference are byte-for-byte what they were | the three ops have no WebGPU kernel (op-gap C4/C5/C6); the lowerings are exact re-expressions, not approximations. Direct conv avoids the 604 MB f16 im2col buffer (op-gap B6) and keeps activations f32 |
+| SLAT conditioning (`pixal3d_cond_slat_gpu`, `src/pixal3d_cond_gpu.cpp`) | one graph per view on the DINOv3 backend: DINOv3 → `naf_build` (fed the patch-token view of the DINOv3 output, no copy) → lr taps (`get_rows`×4 over the patch map) and hr taps (`get_rows`×4 over the NAF map, tap indices remapped to block order) → running averages in three persistent accumulators; host path `pixal3d_cond_slat` unchanged and still the CLI's (on WebGPU its `naf_upsample` call also takes the ggml path) | no GPU→CPU→GPU round trip of the 1 GB NAF map (memory doc §5 item 3); peak flat in V |
+| tests | `trellis-webgpu-ops` (patch 0003 shapes vs ggml-cpu); `trellis-test-naf --ggml/--generic`; `trellis-test-pixal3d-cond-slat --stage gpu`; `trellis-test-pixal3d-slat-flow` now feeds the RoPE index input (its `ggml_arange` fallback was silently skipped on WebGPU -- a test bug, the first run read `blk0_global_out rel 0.56`) and checks the graph; `trellis-test-pixal3d-slat-sample --dump/--ext` + `cuda_*` third reference | |
+| browser | `pixal3d_shape512_run` in the same module (`src/pixal3d_wasm.cpp`, `web/ss/pixal3d_ss.wasm`), `web/shape512/` page/worker/driver | §10.7 |
+
+### 10.2 Backend patch 0003 and the op regression test
+
+`trellis-webgpu-ops` (native Dawn, Apple M1 Pro) runs each shape on the WebGPU device and on
+ggml-cpu with identical inputs; the inputs are not f16-representable so f16 staging shows up.
+
+| op (shape) | out | max\|d\| | mean\|d\| | rel | cos |
+|---|---|---|---|---|---|
+| soft_max `[81,256,4,1024]` (1M rows, scale 0.125) | 324 MB | 3.7e-9 | 8.0e-10 | 2.6e-7 | 1.0000000 |
+| sum_rows `[16, 4M]` (4M rows) | 16 MB | 2.4e-7 | 4.1e-8 | 9.3e-8 | 1.0000000 |
+| norm `[4M, 8]` (8 rows of 4M -- the GroupNorm lowering) | 128 MB | 6.7e-5 | 2.8e-5 | 3.5e-5 | 1.0000000 |
+| norm `[81,256,4,1024]` (1M rows) | 324 MB | 4.8e-7 | 3.6e-8 | 2.4e-7 | 1.0000000 |
+| get_rows `[1024,1024]` × 82944 idx / `[256,262144]` × 262144 idx | 324 / 256 MB | 0 | 0 | 0 | 1 |
+| concat 4M / 16M / 67M elems | 16 / 64 / 256 MB | 0 | 0 | 0 | 1 |
+| pad 33M elems, repeat 16M elems | 128.5 / 64 MB | 0 | 0 | 0 | 1 |
+| mul_mat `[64,81,4,1024]ᵀ[64,256,4,1024]` (NAF logits) | 324 MB | 3.4e-3 | 7.5e-4 | 1.2e-4 | 1.0000000 |
+| mul_mat `[81,256,4,1024]ᵀ[81,256,4,1024]` (NAF output) | 1024 MB | 7.1e-3 | 8.9e-4 | 1.9e-4 | 1.0000000 |
+| cont(permute) 64 MB / 256 MB / 512 MB / 1 GB | | 0 | 0 | 0 | 1 |
+
+Before the patch: every row/element op past the limit was skipped, and `cont` at 256 / 512 /
+1024 MB returned 50 % / 66.6 % / 79.9 % garbage (exactly `1 − 1/wg_y`, `wg_y` = 2 / 3 / 5) --
+the `cpy` shader read `gid.x` only. `mul_mat` is the only non-exact row (f16-staged inputs,
+f32 accumulation, §7); the NAF attention inherits its 1-2e-4.
+
+### 10.3 NAF on WebGPU
+
+Ops executed on the WebGPU device for one NAF call (`TRELLIS_DUMP_OPS`, tag `naf_ggml_S512_T128`,
+204 nodes; T=512 differs only by the pooling: `SUM_ROWS` 1 instead of 3, two fewer
+`CONT`/`TRANSPOSE`): `CONV_2D` 10 (direct, f16 kernel × f32 input), `CONCAT` 22 (20 mirrored
+border views = the reflect-pad lowering, e1‖e2, RoPE rotate-half), `NORM` 8 (GroupNorm lowering,
+8 rows × 4M elements at S=512), `UNARY:SILU` 8, `UNARY:NEG` 1, `MUL` 10 / `ADD` 19 (affine, bias,
+RoPE), `GET_ROWS` 3 (block reorder of q, window gathers of k and v), `SUM_ROWS` 3 (avg-pool
+lowering ×2, k pooling), `MUL_MAT` 2 (batched `[·,·,4,1024]`), `SOFT_MAX` 1 (`d²·4·1024` rows),
+`SCALE` 2, `CONT` 30, `PERMUTE` 5, `TRANSPOSE` 3, `RESHAPE` 55, `VIEW` 22. **No custom backend op or
+WGSL kernel was required**; the three missing ops are lowered (§10.1) and the attention is
+expressed in existing ops.
+
+| `trellis-test-naf` (fixture `naf/`, S=512, h=w=32) | enc_cat | enc_pooled | q_rope | k_pooled | out (rel, tol 3e-3) | time |
+|---|---|---|---|---|---|---|
+| CPU reference loops (unchanged) | bit-exact | | | | 0 | ~52 s/view @T=512 (32 cores) |
+| CPU backend, ggml graph, native ops + im2col conv (`--ggml`) | 3.1e-3 | 1.5e-3 | 1.4e-3 | 5.5e-4 | **1.1e-4** | 4.1 s @T=128 |
+| CPU backend, WebGPU lowering + direct conv (`--generic`) | 3.1e-3 | 1.6e-3 | 1.5e-3 | 5.5e-4 | **1.1e-4** | 8.3 s @T=128 |
+| **WebGPU (Dawn/Metal, M1 Pro)** | **6.6e-4** | 4.2e-4 | 3.8e-4 | 2.7e-4 | **4.0e-4** (max\|d\| 9.8e-3, mean 8.6e-5) | 4.6 s @T=128 (S=512 encoder) |
+| CUDA (RTX 4090, `naf_attn.cu` path, regression) | | | | | 4.2e-4 | 0.96 s @T=128 |
+| **WebGPU, T=512** (`s512_naf_hr_v0`, cond-slat stage 2) | | | | | **5.5e-4** (max\|d\| 1.3e-2, mean 2.0e-4) | 10.8 s/view |
+
+The encoder-stage numbers on the ggml paths are f16-staged GEMM precision (the same 1e-2
+tolerance the CUDA path uses); WebGPU's direct conv keeps activations f32 and is the closest of
+the three to PyTorch. The rope tables, window set (5 probes) and coords/angles match exactly.
+
+Memory (`naf_upsample_ggml` stats): T=128/S=512 -- weights 1.3 MB, activations 919 MB (the S=512
+encoder dominates), output 64 MB. T=512 -- see §10.4 (inside the conditioning graph).
+
+### 10.4 Shape-512 SLAT conditioning (`trellis-test-pixal3d-cond-slat`, WebGPU, fixture `cond_slat/`)
+
+| tensor vs PyTorch f32 | host path (`pixal3d_cond_slat`, NAF on device, projection on host) | device-resident (`pixal3d_cond_slat_gpu`) |
+|---|---|---|
+| DINOv3 tokens, 4 views | rel 2.3e-4 / 8.7e-4 / 7.2e-4 / 3.7e-4 (same as §9.2) | (same graph) |
+| V=4 `z_global` | rel 9.5e-5 (max\|d\| 2.8e-3, mean 2.2e-4) | **9.5e-5** |
+| V=4 `z_proj` lr half | rel 2.4e-4 (5.9e-3 / 1.8e-4) | **2.4e-4** |
+| V=4 `z_proj` hr half (NAF) | rel 1.9e-4 (4.5e-3 / 1.5e-4) | **1.9e-4** |
+| V=1 `z_global` / lr / hr | 7.2e-5 / 2.7e-4 / 4.1e-4 | 7.2e-5 / 2.7e-4 / 4.1e-4 |
+
+The device path reproduces the host path to the printed digits (the two differ only by f64 vs
+f32 tap accumulation, ≤ 6e-6). Per view: weights 579.9 MB (DINOv3 + NAF), accumulators 256 MB
+(`[1024,32768]` × 2 + global), per-view graph buffer **2837.8 MB** (DINOv3 88 MB; NAF: the
+`[1024, 262144]` attention output and its transposed copy 1 GB each, `[81,256,4,1024]` logits /
+probabilities 340 MB, gathered values 340 MB), peak **3673.8 MB** for V=1 and V=4 alike; 8-12 s per
+view natively (host path 56 s for V=4 incl. the 1 GB readbacks and host projection).
+
+### 10.5 Shape-512 flow block test (`trellis-test-pixal3d-slat-flow`, WebGPU, exact SDPA, f16 weights, N=2000)
+
+| tensor | max\|d\| | mean\|d\| | rel | cos |
+|---|---|---|---|---|
+| blk0 msa / global_out / **proj_out** / cross_out / mlp | 5.6e-1 / 1.5e-2 / 6.0e-3 / 1.5e-2 / 2.8e-2 | 1.3e-2 / 8.4e-4 / 4.4e-4 / 9.8e-4 / 4.7e-4 | 3.3e-4 / 8.2e-4 / **3.4e-4** / 6.7e-4 / 7.3e-4 | ≥ 0.9999999 |
+| after_block0 / after_block1 | 2.8 / 4.1 | 2.5e-2 / 3.2e-2 | 4.5e-4 / 6.0e-4 | 1.0000000 |
+| after_block29 | 66.3 | 2.9e-1 | 1.3e-3 | 0.9999999 |
+| output | 2.3e-2 | 1.2e-3 | **5.6e-3** | 0.9999980 |
+
+Every probe is under the test's 2e-2; the SLAT flow drifts far less than the SS flow (§9.4,
+output 9.0e-2) because its activations are smaller (spec 30 §5). ProjectAttention's
+`proj_linear` on the 2048-wide `[lr ‖ hr]` condition is at 3.4e-4.
+
+### 10.6 Shape-512 sampling gate (`trellis-test-pixal3d-slat-sample`, identical fixture noise and condition, N=4377)
+
+Three-way comparison, all on this commit: `cuda_*` = the CUDA production run on the RTX 4090
+(FlashAttention, BF16 K/V) dumped by the same test with `--dump`; a CUDA exact-SDPA run
+(`TRELLIS_NOFA=1`, `cuda_nofa_*`) was dumped too. 12 Euler steps, 20 forwards (the guidance
+interval `[0.6, 1.0]` with `rescale_t` 3 drops the negative forward on the last 4 steps).
+
+| per Euler step, latent vs PyTorch f32 (`rel` / `cos`) | 1 | 4 | 8 | 12 (final) |
+|---|---|---|---|---|
+| CUDA production (FA) | 9.3e-4 / 0.9999999 | 3.6e-3 / 0.9999990 | 3.3e-2 / 0.9999821 | 0.2195 / 0.9969538 |
+| CUDA exact SDPA | 7.2e-4 / 0.9999999 | 2.8e-3 / 0.9999993 | 2.2e-2 / 0.9999917 | 0.2210 / 0.9972891 |
+| **WebGPU native, exact SDPA** | 1.9e-4 / 1.0000000 | 8.6e-4 / 1.0000000 | 8.8e-3 / 0.9999991 | **0.2101 / 0.9973606** |
+| WebGPU vs CUDA production | 9.3e-4 / 0.9999999 | 3.6e-3 / 0.9999990 | 3.3e-2 / 0.9999821 | 0.187 / 0.9995158 |
+| WebGPU vs CUDA exact SDPA | 7.4e-4 / 0.9999999 | 2.6e-3 / 0.9999993 | 1.3e-2 / 0.9999919 | 0.080 / 0.9999437 |
+| (CUDA FA vs CUDA exact) | 7.2e-4 / 0.9999999 | 2.2e-3 / 0.9999990 | 2.5e-2 / 0.9999802 | 0.177 / 0.9995896 |
+| (PyTorch f32 vs PyTorch bf16) | 2.8e-3 / 0.9999979 | 1.4e-2 / 0.9999642 | 8.1e-2 / 0.9995234 | 0.266 / 0.9964067 |
+
+(`cos` = mean per-token cosine over the 32 channels; `rel` = max\|d\| / max\|ref\|.) Latent statistics
+track to the third digit at every step (final: WebGPU mean −0.024694, std 0.930319, max 4.8459;
+CUDA FA −0.024870 / 0.930339 / 4.8569; CUDA exact −0.024703 / 0.930112 / 4.8540; PyTorch f32
+−0.024923 / 0.929842 / 4.9551; no non-finite values). Up to step 8 WebGPU sits closest to the f32
+reference of the three C++ runs; the step-9 jump (rel 1e-2 → 1e-1 in every run, including PyTorch's
+own bf16) is where the guidance interval ends. The final WebGPU-vs-CUDA-exact gap (cos 0.99994) is
+smaller than CUDA's own FA-vs-exact gap (0.99959) and an order of magnitude smaller than the
+reference's f32-vs-bf16 gap -- precision noise, not an implementation difference. Denormalized SLAT:
+rel 0.222 vs f32 (calibration 0.267).
+
+Verdict line of the existing test: `rel(mine, f32 ref) = 2.1009e-01 ; threshold =
+max(2*rel(f32,bf16)=5.2401e-01, 5e-2)` → **PASS** (CUDA production 0.2195, CUDA exact 0.2210 under
+the same criterion).
+
+Timing (M1 Pro, native Dawn, concurrent with the WASM build): 422.8 s for 20 forwards = 21.1 s per
+forward at N=4377; CUDA 4090: 0.11 s (FA) / 0.16 s (exact) per forward.
+
+### 10.7 Browser / WASM (`web/shape512/`)
+
+TBD-BROWSER
+
+### 10.8 Performance per component (Apple M1 Pro unless noted)
+
+TBD-PERF
+
+### 10.9 Unsupported / unvalidated operations remaining for the next stages
+
+- **Sparse decoder** (shape-512 → mesh): `GET_ROWS`/`MUL_MAT`/`NORM`/`ADD` over 1.2-1.6 GB tensors
+  (op-gap B8, chunk budgets `kBlockChunkBytes`/`kMulMatRowChunk` are native-VRAM-tuned), the
+  single-buffer `PAD`+`CPY`-into-views pattern (B9, structural), `REPEAT`/`CONCAT` of 256-590 MB
+  (B10), `output_layer` row chunks of 256 MB (B11). No missing op type, but every one of these
+  exceeds the 128 MiB spec floor; patch 0003 removes the row-count ceiling they would also hit
+  (`GET_ROWS` at millions of rows). The `SET_ROWS` encoder is still 1D-dispatched (fine for the
+  DiT RoPE scatter, ≤ 65535 workgroups at N ≤ 21k tokens).
+- **SS decoder**: `IM2COL_3D` / `CONV_3D` (C3) -- unchanged, the SS occupancy still decodes on the
+  CPU backend.
+- **FLASH_ATTN_EXT** (B1/C1): still unused; the exact chunked SDPA is the WebGPU attention.
+  BF16 K/V remains impossible; the F16 tile path is unvalidated.
+- **Shape-1024 / texture**: NAF at S=1024/T=512 uses `POOL_2D` k=2 (lowered form validated only at
+  k=4, T=128) and the d = 8 block size (validated at d = 4 and 16); DINOv3 attention scores at
+  S=1024 (1.08 GB, B5) and the DiT MLP hidden at N=17484 (573 MB) remain untiled.
+- **Spec-floor sizing**: the 2.84 GB conditioning graph, the 920 MB attention chunk and the 2.78 GB
+  weight buffer all exceed the 128 MiB / 256 MiB floors (fine on this 4 GiB-limit adapter).

@@ -96,8 +96,11 @@ Keep this integration separate from Pixal3D model logic.
 
 **Status (2026-09-06):** 3D RoPE and pixel-aligned projection / MV accumulation needed no new
 kernel (host index input; `get_rows` + weighted sum on the device) and are validated on WebGPU
-(spec 31 §9). Dense Conv3D, sparse Conv3D/gather-scatter and NAF remain open
-(`docs/PIXAL3D_WEBGPU_OP_GAP.md` §8).
+(spec 31 §9). NAF likewise needed no kernel: the neighborhood attention is a block-window
+formulation in `get_rows` + batched `mul_mat` + `soft_max`, and GroupNorm / reflect-pad / avg-pool
+are lowered exactly to `norm` / `concat` / `sum_rows` (spec 31 §10.3); the one backend change was
+patch 0003 (2D dispatch for row-parallel ops, `docs/GGML_FORK_DIFF.md`). Dense Conv3D and sparse
+Conv3D/gather-scatter remain open (`docs/PIXAL3D_WEBGPU_OP_GAP.md` §8/§9).
 
 Likely high-risk operations:
 
@@ -114,8 +117,10 @@ Implement them in the backend rather than as a separate TypeScript compute pipel
 
 **Status (2026-09-06):** SS stage runs in Chrome as one WASM module (`web/ss/`,
 `src/pixal3d_wasm.cpp`: `pixal3d_ss_run` + latent getters, WORKERFS-mounted GGUFs, JSPI);
-occupancy IoU 0.9975 vs f32 / 0.9998 vs CUDA (spec 31 §9.6). The stable `pixal3d_create /
-generate / destroy` API below is still to be shaped around it.
+occupancy IoU 0.9975 vs f32 / 0.9998 vs CUDA (spec 31 §9.6). The Shape-512 stage (conditioning
+with NAF + sparse flow sampling) runs in the same module (`pixal3d_shape512_run`, `web/shape512/`,
+spec 31 §10.7). The stable `pixal3d_create / generate / destroy` API below is still to be shaped
+around them.
 
 Build the C++ runtime via Emscripten and expose a small stable API.
 

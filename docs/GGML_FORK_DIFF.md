@@ -130,13 +130,16 @@ Added 2026-09-06 on `feat/webgpu-ss`. The submodule pin is **unchanged** (`737e8
 applies in reverse is skipped; `-DPIXAL3D_GGML_PATCHES=OFF` disables the step; `git -C
 thirdparty/ggml checkout .` reverts). `git status` therefore shows `thirdparty/ggml` as
 "modified content" in a configured WebGPU checkout -- expected, do not commit the submodule.
-Both patches only add `#ifndef` guards around existing constants, so they are upstreamable and
-are no-ops unless the build passes the define.
+Patches 0001/0002 only add `#ifndef` guards around existing constants, so they are upstreamable
+and are no-ops unless the build passes the define. Patch 0003 (added on
+`feat/webgpu-shape512-flow`) changes encoder/shader behavior for every shape; it is a bug fix
+worth upstreaming as-is.
 
 | patch | what | why (measured) |
 |---|---|---|
 | `0001-webgpu-optional-subgroup-matrix-path.patch` | `GGML_WEBGPU_SUBGROUP_MATRIX` (default 1): when 0, never request `ChromiumExperimentalSubgroupMatrix`, so `mul_mat`/`flash_attn` take the `reg_tile` shaders (f16-staged inputs, **f32** accumulation) instead of the subgroup-matrix shaders (**f16** accumulation, per the shader's own TODO) | On the native Dawn/Metal build the f16-accumulating path overflowed DINOv3's attention scores (>65504) to NaN on 3 of 4 fixture views and gave `rel≈1.3e-2` on the 4th; with it off DINOv3 matches PyTorch at `rel 2.3e-4..8.7e-4` (`docs/spec/31-webgpu-bringup.md` §9). Emscripten builds never have the feature, so the browser was already on the good path. Root CMake defines it 0 unless `-DPIXAL3D_WEBGPU_SUBGROUP_MATRIX=ON`. |
 | `0002-webgpu-overridable-queue-wait-timeout.patch` | `WEBGPU_RUNTIME_WAIT_TIMEOUT_MS` (default 30000u) becomes overridable | One SS DiT forward is a single graph submission; in Chrome it takes longer than 30 s, and the fixed ceiling aborted the browser run (`ggml_webgpu: Queue wait timed out after 30000 ms`). Root CMake and `web/ss/CMakeLists.txt` set 600000u. |
+| `0003-webgpu-2d-dispatch-row-ops.patch` | The `soft_max`, `sum_rows`, `row_norm` (NORM/RMS_NORM/L2_NORM), `get_rows`, `concat`, `pad` and `repeat` encoders dispatch on a 2D workgroup grid via the existing `compute_2d_workgroups`; their shaders take `@builtin(num_workgroups)` and linearize `wid.x + num_wg.x * wid.y` (workgroup-per-row shaders, with a row bound check; `sum_rows` gains an `n_rows` param) or `gid.x + num_wg.x * WG_SIZE * gid.y` (element shaders). The `cpy` shader, whose encoder was already 2D upstream, gets the same linearization (it read `gid.x` only). | Any of these ops with more than `maxComputeWorkgroupsPerDimension` (65535) rows / workgroups failed WebGPU validation and was silently skipped; `cont`/`cpy` over 64 Mi elements (256 MB f32) wrote only the first `1/wg_y` of the output (measured 50 % / 66.6 % / 79.9 % garbage at 256 / 512 / 1024 MB). The NAF attention graph needs a 1M-row softmax, a 4M-row `sum_rows`, 82944- and 262144-row `get_rows` and 1 GB `cont`s. Regression test: `trellis-webgpu-ops` (`docs/spec/31-webgpu-bringup.md` §10.2). |
 
 ## Summary
 

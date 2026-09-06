@@ -307,3 +307,36 @@ Findings:
 - **Browser (Chrome 152, WORKERFS-mounted GGUFs)**: the 2.68 GB flow GGUF streams from the on-disk
   `File` into the WebGPU buffer in 4.7 s without a copy in the wasm heap (per-tensor `fread` through
   FileReaderSync into a 25 MB staging vector); wasm heap stays well under 1 GB for the SS stage.
+
+## 7. Measured: Shape-512 stage on the ggml WebGPU backend (2026-09-06, `feat/webgpu-shape512-flow`)
+
+Same accounting as §6 (buffer allocations, not a live VRAM query): weights =
+`ggml_backend_buffer_get_size` of the model buffers, activations = the gallocr buffer of one graph,
+conditioning = the persistent accumulators / the DiT's per-forward condition inputs. Apple M1 Pro,
+native Dawn 18eb229 / Chrome 152. Printed by `trellis-test-naf --ggml`,
+`trellis-test-pixal3d-cond-slat --stage gpu`, `trellis-test-pixal3d-slat-sample` and
+`pixal3d_shape512_run`.
+
+| component | weights resident | activations / temporaries | conditioning tensors | peak (sum) | notes |
+|---|---|---|---|---|---|
+| DINOv3 @512, one view | 578.6 MB | 88.4 MB | -- | 667 MB | as §6 |
+| NAF alone, S=512 → T=128 (`naf_upsample_ggml`, test fixture) | 1.3 MB | 919.4 MB (S=512 encoder: `[512,512,128]` f32 conv outputs, 134 MB each, up to ~6 alive; direct conv, no im2col) | inputs 15.4 MB (image, RoPE tables `[16384,64]`×2, indices) | 936 MB | output `[1024,16384]` 64 MB; 4.4 s |
+| NAF alone, S=512 → T=512 (inside the conditioning graph) | 1.3 MB | see next row | RoPE tables `[262144,64]` f32 × 2 = 134 MB, window index 0.3 MB, block index 1 MB | | output `[1024,262144]` = 1 GB, produced twice (attention output + its channel-major transpose) |
+| **Shape-512 conditioning, one view graph** (`pixal3d_cond_slat_gpu`), V=1 and V=4 | 579.9 MB (DINOv3 + NAF) | **2837.8 MB** (gallocr; dominated by NAF at T=512: the two 1 GB `[1024,262144]` maps, the 340 MB `[81,256,4,1024]` logits/probabilities and gathered values; DINOv3's 88 MB reuses the same buffer) | 256.0 MB (`[1024,32768]` lr + hr accumulators + global) | **3673.8 MB** | flat in V (per-view buffer freed before the next view); 7.6 s (V=1) / 31.9 s (V=4, 11.9 s slowest view) native Dawn |
+| host path for comparison (`pixal3d_cond_slat` on WebGPU: NAF on device, projection on host) | 579.9 MB | NAF graph alone | 268 MB host `[32768,2048]` + 1 GB host NAF map per view | | 56 s for V=4 (1 GB readback + host bilinear sampling per view) |
+| Shape-512 flow DiT, one forward, exact SDPA (`--no-fa`), N=4377 | TBD-MEM-DIT | | | | |
+| Shape-512 sampling (12 steps, 22 forwards) | as one forward | as one forward (graph reused) | | | TBD-MEM-SAMPLE |
+
+Findings:
+
+- **The stage peak is the conditioning graph, not the flow**: 3.67 GB, of which 2 GB is the NAF
+  map materialized twice (`[C/4, d², 4, blk]` mul_mat output and its `[C, T·T]` channel-major
+  copy that the projection `get_rows` consumes). Spec 30 §4's on-demand evaluation (only the
+  R³×4 = 131k tap pixels of the 262k are ever read at R=32) or a block-chunked attention with the
+  taps gathered per chunk would cut this to ~1 GB with no numerical change; neither is needed on
+  this 4 GiB-limit adapter and both are deferred.
+- **Sequential view processing holds**: V=1 and V=4 have the same peak; only wall time scales.
+- **Spec-floor adapters**: the 1 GB maps, the 920 MB attention score chunk and the 2.78 GB weight
+  buffer all exceed the 128 MiB / 256 MiB floors; nothing in this phase changed that (§4's verdicts
+  stand).
+- **Browser**: TBD-MEM-BROWSER
