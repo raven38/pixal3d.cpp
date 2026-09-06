@@ -12,6 +12,11 @@
 //                    MV average, one graph per view) -> sparse DitRunner over the fixture's
 //                    active voxels (ProjectAttention shape flow, exact SDPA) -> sample_flow
 //                    -> final latent [N,32]
+//   Texture:   hr_sample fixture (Shape-1024's hr_coords + tex_1024 condition + tex_noise) and a
+//                    normalized Shape-1024 SLAT (the fixture's or a Shape-1024 run's x_final) ->
+//                    sparse DitRunner in_ch=64/out_ch=32 (state ; concat) -> sample_flow (12
+//                    single forwards, guidance 1.0) -> final texture latent [N,32]
+//                    (pixal3d_texture_run; docs/spec/32-texture-flow-webgpu-prep.md)
 //
 // The decoders are not run here (Conv3D / sparse conv have no WebGPU kernels yet); the
 // latents are returned so the native tests can score/decode them.
@@ -345,6 +350,186 @@ int run_shape512_impl(const string& dinov3_gguf, const string& naf_gguf, const s
     return 0;
 }
 
+// Texture-1024 path (docs/spec/32-texture-flow-webgpu-prep.md): the texture SLAT flow over the
+// Shape-1024 stage's token list. Inputs, all from tools/ref_pixal3d_hr_sample.py's fixture
+// (sample_dir): hr_coords.npy [N,4] i32 (the LR->HR quantized, deduplicated coords the Shape-1024
+// flow ran on), tex_noise.npy [N,32], tex_cond_global.npy [1,5,1024] + tex_cond_proj.npy [N,2048]
+// (PyTorch's tex_1024 condition -- S=1024, R=64, NAF T=1024 -- gathered at these tokens),
+// tex_sampler_params.npy (12 steps, guidance 1.0 -> one forward per step, no CFG pair) and the
+// 32-channel concat half. That half is the NORMALIZED Shape-1024 SLAT (== that stage's x_final,
+// see test_pixal3d_slat_sample.cpp --concat-cond): `concat_cond_npy` names the file to use (a
+// Shape-1024 run's own x_final dump, or "" for the fixture's f32_tex_concat_cond.npy). The DiT is
+// the same sparse ProjectAttention graph as Shape-1024 with in_ch=64 / out_ch=32; every forward
+// rebuilds the [N,64] input = [state(0:32) ; concat(32:64)] like trellis_cli.cpp's tex lambda.
+// own_cond != 0 additionally computes the tex_1024 condition on the device (pixal3d_cond_slat_gpu,
+// S=1024/R=64/T=1024: DINOv3 at 1024^2, NAF at T=1024 -> a 4 GB [1024, 1024^2] map per view plus
+// dense [64^3, 2048] accumulators) -- wired for completeness and reported against the fixture, but
+// expected to exceed a 4 GiB adapter until the on-demand NAF / coords-gathered accumulation land;
+// the default (own_cond = 0) samples with the fixture condition and never loads DINOv3/NAF.
+int run_texture_impl(const string& dinov3_gguf, const string& naf_gguf, const string& flow_gguf,
+                     const string& cond_dir, const string& sample_dir, int n_views, int own_cond,
+                     const string& concat_cond_npy) {
+    g_latent.clear(); g_steps.clear(); g_n_steps = 0;
+    const auto t_all = std::chrono::steady_clock::now();
+    g_no_fa = true;   // exact chunked SDPA (no BF16 FlashAttention on the WebGPU backend)
+    const int R = 64, S = 1024, Tn = 1024;
+
+    // ---- the token list (Shape-1024's) ----
+    vector<int32_t> co; vector<int64_t> cshape;
+    if (!load_npy_i32(sample_dir + "/hr_coords.npy", co, cshape) || cshape.size() != 2) { rep("ERROR: hr_coords.npy\n"); return 2; }
+    const int64_t N = cshape[0], cw = cshape[1];
+    vector<std::array<int, 3>> coords3(N);
+    for (int64_t i = 0; i < N; ++i)
+        coords3[i] = { co[i * cw + cw - 3], co[i * cw + cw - 2], co[i * cw + cw - 1] };
+    rep("flow tokens: N=%lld active voxels at grid %d (hr_coords.npy, shared with Shape-1024)\n", (long long)N, R);
+
+    // ---- fixture condition + noise + concat half ----
+    npy::Array noise = npy::load(sample_dir + "/tex_noise.npy");           // [N,32] row-major == ggml [32,N]
+    npy::Array zg = npy::load(sample_dir + "/tex_cond_global.npy");        // [1,5,1024]
+    npy::Array zp = npy::load(sample_dir + "/tex_cond_proj.npy");          // [N,2048]
+    const int64_t Cin = noise.shape[1], Lc = zg.shape[1], Dc = zg.shape[2], Dp = zp.shape[1];
+    if (zp.shape[0] != N || noise.shape[0] != N) { rep("ERROR: fixture token counts disagree (noise %lld, proj %lld, coords %lld)\n", (long long)noise.shape[0], (long long)zp.shape[0], (long long)N); return 2; }
+    vector<float> sample(noise.data.begin(), noise.data.begin() + (size_t)Cin * N);
+    const string cc_path = concat_cond_npy.empty() ? sample_dir + "/f32_tex_concat_cond.npy" : concat_cond_npy;
+    npy::Array cc = npy::load(cc_path);                                    // [N,32] normalized shape SLAT
+    if (cc.shape.size() != 2 || cc.shape[0] != N || cc.shape[1] != Cin) { rep("ERROR: concat cond %s is not [N=%lld,%lld]\n", cc_path.c_str(), (long long)N, (long long)Cin); return 2; }
+    vector<float> concat_cond(cc.data.begin(), cc.data.begin() + (size_t)Cin * N);
+    rep("concat half: %s [%lld,%lld]\n", cc_path.c_str(), (long long)N, (long long)Cin);
+    if (!concat_cond_npy.empty() && file_exists(sample_dir + "/f32_tex_concat_cond.npy"))
+        rep_cmp("concat vs f32 ref", cmp(concat_cond, npy::load(sample_dir + "/f32_tex_concat_cond.npy").data));
+
+    // ---- optional: tex_1024 conditioning on the device (S=1024, R=64, T=1024) ----
+    vector<float> cond_g, proj;
+    if (own_cond) {
+        npy::Array images = npy::load(cond_dir + "/s1024_images.npy");            // [1,V,3,1024,1024]
+        npy::Array camera_angle_x = npy::load(cond_dir + "/camera_angle_x.npy");  // [1,V]
+        npy::Array transform_matrix = npy::load(cond_dir + "/transform_matrix.npy"); // [1,V,4,4]
+        npy::Array mesh_scale = npy::load(cond_dir + "/mesh_scale.npy");          // [1]
+        const int Vfix = (int)images.shape[1], Sfix = (int)images.shape[3];
+        if (Sfix != S) { rep("ERROR: s1024_images.npy is %d^2, tex_1024 needs %d^2\n", Sfix, S); return 2; }
+        const int V = (n_views > 0 && n_views < Vfix) ? n_views : Vfix;
+        const size_t plane3 = (size_t)3 * S * S;
+        vector<Pixal3dView> views(V);
+        for (int v = 0; v < V; ++v) {
+            views[v].rgb_premult.assign(images.data.data() + (size_t)v * plane3, images.data.data() + (size_t)(v + 1) * plane3);
+            views[v].fov_x = camera_angle_x.data[v];
+            std::memcpy(views[v].c2w, transform_matrix.data.data() + (size_t)v * 16, 16 * sizeof(float));
+        }
+        images.data.clear(); images.data.shrink_to_fit();
+        rep("views: V=%d (fixture V=%d) S=%d R=%d T=%d mesh_scale=%.4f\n", V, Vfix, S, R, Tn, mesh_scale.data[0]);
+        rep("own cond: expected device buffers -- NAF map [1024,%d] f32 = %.0f MB (x2), dense proj accumulators [%d,2048] = %.0f MB; this exceeds a 4 GiB adapter (spec 32 section 7)\n",
+            Tn * Tn, (double)1024 * Tn * Tn * 4 / 1048576.0, R * R * R, (double)R * R * R * 2048 * 4 / 1048576.0);
+        auto t0 = std::chrono::steady_clock::now();
+        Model dinov3 = Model::load(dinov3_gguf, 0);
+        Model naf = Model::load(naf_gguf, 0);
+        rep("dinov3: %zu tensors on %s, %.1f MB weights; naf: %zu tensors, %.1f MB; load %.0f ms\n",
+            dinov3.tensors.size(), ggml_backend_name(dinov3.backend), dinov3.total_bytes() / 1048576.0,
+            naf.tensors.size(), naf.total_bytes() / 1048576.0, ms_since(t0));
+        Pixal3dCondStats st;
+        Pixal3dSlatCondParams prm{S, R, Tn, mesh_scale.data[0]};
+        Pixal3dCond cond = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st);
+        rep("cond: V=%d weights=%.1f MB cond=%.1f MB view_alloc=%.1f MB peak=%.1f MB total=%.0f ms slowest view=%.0f ms\n",
+            st.views, st.weight_bytes / 1048576.0, st.cond_bytes / 1048576.0, st.view_alloc_bytes / 1048576.0,
+            st.peak_bytes / 1048576.0, st.total_ms, st.view_ms_max);
+        naf.free();
+        dinov3.free();
+        cond_g = cond.global;                                                   // token-major == ggml [1024,5]
+        proj = pixal3d_gather_proj(cond.proj, R, cond.d_proj, coords3);         // [N,2048] at the tokens
+        cond.proj.clear(); cond.proj.shrink_to_fit();
+        if (V == Vfix) {
+            rep_cmp("z_global vs PyTorch", cmp(cond_g, npy::load(sample_dir + "/tex_cond_global.npy").data));
+            rep_cmp("proj_lr @tokens vs PyTorch", cmp(proj_half(proj, (size_t)N, false), proj_half(zp.data, (size_t)N, false)));
+            rep_cmp("proj_hr @tokens vs PyTorch", cmp(proj_half(proj, (size_t)N, true), proj_half(zp.data, (size_t)N, true)));
+        }
+        rep("sampling with the condition computed above (own cond)\n");
+    } else {
+        cond_g.assign(zg.data.begin(), zg.data.begin() + (size_t)Lc * Dc);
+        proj.assign(zp.data.begin(), zp.data.begin() + (size_t)Dp * N);
+        rep("sampling with the fixture condition (tex_cond_global/tex_cond_proj; DINOv3/NAF not loaded)\n");
+    }
+    zp.data.clear(); zp.data.shrink_to_fit();
+    vector<float> neg_cond(cond_g.size(), 0.0f), neg_proj(proj.size(), 0.0f);
+
+    // ---- texture flow sampling ----
+    auto t0 = std::chrono::steady_clock::now();
+    Model mf = Model::load(flow_gguf, 0);
+    const double flow_load_ms = ms_since(t0);
+    DiTParams p; p.in_ch = (int)(2 * Cin); p.out_ch = (int)Cin; p.d_cond = (int)Dc;
+    if (!dit_detect_proj_attn(mf, p) || p.d_proj != (int)Dp) { rep("ERROR: not a Pixal3D proj_attn checkpoint (d_proj=%d, fixture %lld)\n", p.d_proj, (long long)Dp); return 2; }
+    rep("tex_flow: %zu tensors on %s, %.1f MB weights, load %.0f ms, proj_attn d_proj=%d, in_ch=%d out_ch=%d, N=%lld\n", mf.tensors.size(),
+        ggml_backend_name(mf.backend), mf.total_bytes() / 1048576.0, flow_load_ms, p.d_proj, p.in_ch, p.out_ch, (long long)N);
+    t0 = std::chrono::steady_clock::now();
+    DitRunner* run = make_sparse_runner(mf, p, coords3, (int)Lc);
+    rep("dit graph: activation buffer %.1f MB, build+alloc %.0f ms\n", run->alloc_bytes() / 1048576.0, ms_since(t0));
+    rep("memory (%s): weights %.1f MB | dit activations %.1f MB | cond per forward %.1f MB (+ zero neg %.1f MB) | state [N,%lld] %.2f MB | tex concat half %.2f MB + [N,%lld] input %.2f MB per forward | device-resident sum %.1f MB\n",
+        ggml_backend_name(mf.backend), mf.total_bytes() / 1048576.0, run->alloc_bytes() / 1048576.0,
+        (cond_g.size() + proj.size()) * 4 / 1048576.0, (neg_cond.size() + neg_proj.size()) * 4 / 1048576.0,
+        (long long)Cin, sample.size() * 4 / 1048576.0, concat_cond.size() * 4 / 1048576.0, (long long)(2 * Cin), (double)2 * Cin * N * 4 / 1048576.0,
+        (mf.total_bytes() + run->alloc_bytes() + (cond_g.size() + proj.size() + neg_cond.size() + neg_proj.size() + sample.size() + 2 * Cin * N) * 4) / 1048576.0);
+    int n_fwd = 0; double fwd_ms = 0;
+    vector<float> x64((size_t)2 * Cin * N);
+    FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* c, const float* pj) {
+        const auto tf = std::chrono::steady_clock::now();
+        for (int64_t n = 0; n < N; ++n) {
+            for (int64_t k = 0; k < Cin; ++k) x64[(size_t)k + 2 * Cin * n]       = x[(size_t)k + Cin * n];
+            for (int64_t k = 0; k < Cin; ++k) x64[(size_t)Cin + k + 2 * Cin * n] = concat_cond[(size_t)k + Cin * n];
+        }
+        vector<float> r = run->forward(x64, ts, c, pj);
+        const double ms = ms_since(tf);
+        fwd_ms += ms; ++n_fwd;
+        rep("  forward %2d: t_scaled=%.3f %.1f ms\n", n_fwd, ts, ms);
+        return r;
+    };
+    SamplerParams sp;   // trellis_cli.cpp tex flow: steps=12 gs=1.0 gr=0.0 gi=[0.6,0.9] rescale_t=3.0
+    sp.steps = 12; sp.guidance_strength = 1.0f; sp.guidance_rescale = 0.0f;
+    sp.gi0 = 0.6f; sp.gi1 = 0.9f; sp.rescale_t = 3.0f; sp.sigma_min = 1e-5f;
+    if (file_exists(sample_dir + "/tex_sampler_params.npy")) {
+        npy::Array spa = npy::load(sample_dir + "/tex_sampler_params.npy");   // (steps, gs, gr, gi0, gi1, rescale_t)
+        if (spa.numel() >= 6) {
+            sp.steps = (int)std::lround((double)spa.data[0]); sp.guidance_strength = spa.data[1]; sp.guidance_rescale = spa.data[2];
+            sp.gi0 = spa.data[3]; sp.gi1 = spa.data[4]; sp.rescale_t = spa.data[5];
+            rep("sampler params from tex_sampler_params.npy: steps=%d gs=%.3f gr=%.3f gi=[%.2f,%.2f] rescale_t=%.2f\n",
+                sp.steps, sp.guidance_strength, sp.guidance_rescale, sp.gi0, sp.gi1, sp.rescale_t);
+        }
+    }
+    vector<vector<float>> trace;
+    vector<float> out = sample_flow(fwd, sample, cond_g.data(), neg_cond.data(), proj.data(), neg_proj.data(), sp, &trace);
+    rep("dit forwards: %d, %.1f ms each, %.1f s total\n", n_fwd, n_fwd ? fwd_ms / n_fwd : 0.0, fwd_ms / 1000.0);
+    const string backend_name = ggml_backend_name(mf.backend);
+    delete run; mf.free();
+
+    // ---- per-step parity vs the PyTorch f32/bf16 references ([N,32] row-major == ggml bytes) ----
+    rep("per-step latent parity ([N=%lld,%lld]):\n", (long long)N, (long long)Cin);
+    g_n_steps = (int)trace.size();
+    for (size_t k = 0; k < trace.size(); ++k) {
+        g_steps.insert(g_steps.end(), trace[k].begin(), trace[k].end());
+        rep("  step %2zu:\n", k + 1);
+        rep_latent(trace[k]);
+        string f32 = sample_dir + "/f32_tex_x_step" + std::to_string(k + 1) + ".npy";
+        string b16 = sample_dir + "/bf16_tex_x_step" + std::to_string(k + 1) + ".npy";
+        if (file_exists(f32)) rep_cmp("f32", cmp(trace[k], npy::load(f32).data));
+        if (file_exists(b16)) rep_cmp("bf16", cmp(trace[k], npy::load(b16).data));
+    }
+    g_latent = out;
+    rep("  final:\n");
+    rep_latent(g_latent);
+    Cmp cf{}, cb{}; bool hf = false, hb = false;
+    if (file_exists(sample_dir + "/f32_tex_x_final.npy")) { cf = cmp(g_latent, npy::load(sample_dir + "/f32_tex_x_final.npy").data); hf = true; rep_cmp("f32", cf); }
+    if (file_exists(sample_dir + "/bf16_tex_x_final.npy")) { cb = cmp(g_latent, npy::load(sample_dir + "/bf16_tex_x_final.npy").data); hb = true; rep_cmp("bf16", cb); }
+    if (hf && hb) {
+        // same PASS criterion as trellis-test-pixal3d-slat-sample: rel(mine, f32) <= max(2 * rel(f32, bf16), 5e-2)
+        const Cmp calib = cmp(npy::load(sample_dir + "/bf16_tex_x_final.npy").data, npy::load(sample_dir + "/f32_tex_x_final.npy").data);
+        const double thr = std::max(2.0 * calib.rel, 5e-2);
+        rep("  verdict: rel(mine, f32 ref) = %.4e ; threshold = max(2*rel(f32,bf16)=%.4e, 5e-2) = %.4e -> %s\n",
+            cf.rel, 2.0 * calib.rel, thr, cf.rel <= thr ? "PASS" : "FAIL");
+    }
+    rep("summary: stage=texture backend=%s N=%lld in_ch=%d steps=%d forwards=%d fwd_ms=%.1f rel_final=%.4e cos_final=%.6f%s\n",
+        backend_name.c_str(), (long long)N, p.in_ch, sp.steps, n_fwd, n_fwd ? fwd_ms / n_fwd : 0.0, hf ? cf.rel : -1.0, hf ? cf.cos : -1.0,
+        concat_cond_npy.empty() ? "" : " concat_cond=external");
+    rep("total %.1f s\n", ms_since(t_all) / 1000.0);
+    return 0;
+}
+
 } // namespace
 
 extern "C" {
@@ -392,10 +577,57 @@ PIXAL3D_EXPORT int pixal3d_shape512_latent_size(void) { return (int)g_latent.siz
 PIXAL3D_EXPORT const float* pixal3d_shape512_steps(void) { return g_steps.data(); }
 PIXAL3D_EXPORT int pixal3d_shape512_n_steps(void) { return g_n_steps; }
 
+// Runs the Texture-1024 path over the Shape-1024 token list: sample_dir = the hr_sample fixture
+// (hr_coords, tex_noise, tex_cond_*, tex_sampler_params, f32_/bf16_tex_x_*), concat_cond_npy = the
+// normalized Shape-1024 SLAT [N,32] to concatenate ("" -> sample_dir/f32_tex_concat_cond.npy; pass
+// a Shape-1024 run's x_final dump to chain the stages). own_cond != 0 also computes the tex_1024
+// condition on the device from cond_dir's s1024_images + cameras (see run_texture_impl) --
+// dinov3_gguf/naf_gguf/cond_dir are otherwise unused and may be "". Latents: [N,32] row-major.
+PIXAL3D_EXPORT const char* pixal3d_texture_run(const char* dinov3_gguf, const char* naf_gguf, const char* tex_flow_gguf,
+                                               const char* cond_dir, const char* sample_dir, int n_views, int own_cond,
+                                               const char* concat_cond_npy) {
+    g_report.clear();
+    int rc;
+    try {
+        rc = run_texture_impl(dinov3_gguf ? dinov3_gguf : "", naf_gguf ? naf_gguf : "", tex_flow_gguf,
+                              cond_dir ? cond_dir : "", sample_dir, n_views, own_cond, concat_cond_npy ? concat_cond_npy : "");
+    } catch (const std::exception& e) {
+        rep("EXCEPTION: %s\n", e.what());
+        rc = 1;
+    }
+    rep(rc == 0 ? "RESULT: OK\n" : "RESULT: FAIL\n");
+    return g_report.c_str();
+}
+PIXAL3D_EXPORT const float* pixal3d_texture_latent(void) { return g_latent.data(); }
+PIXAL3D_EXPORT int pixal3d_texture_latent_size(void) { return (int)g_latent.size(); }
+PIXAL3D_EXPORT const float* pixal3d_texture_steps(void) { return g_steps.data(); }
+PIXAL3D_EXPORT int pixal3d_texture_n_steps(void) { return g_n_steps; }
+
 } // extern "C"
 
 #ifndef __EMSCRIPTEN__
 int main(int argc, char** argv) {
+    if (argc >= 2 && strcmp(argv[1], "--texture") == 0) {
+        // --texture <tex_flow.gguf> <hr_sample_dir> [concat_cond.npy|-] [own_cond] [dinov3.gguf] [naf.gguf] [cond_slat_dir] [n_views] [dump_prefix]
+        if (argc < 4) {
+            fprintf(stderr, "usage: %s --texture <pixal3d_tex_flow_1024_mv.gguf> <hr_sample_dir> [concat_cond.npy|-] [own_cond] [dinov3.gguf] [pixal3d_naf.gguf] [cond_slat_dir] [n_views] [dump_prefix]\n", argv[0]);
+            return 1;
+        }
+        const char* cc = (argc > 4 && strcmp(argv[4], "-") != 0) ? argv[4] : "";
+        const int own = argc > 5 ? atoi(argv[5]) : 0;
+        const char* dinov3 = argc > 6 ? argv[6] : "";
+        const char* naf = argc > 7 ? argv[7] : "";
+        const char* cond_dir = argc > 8 ? argv[8] : "";
+        const int n_views = argc > 9 ? atoi(argv[9]) : 0;
+        const char* r = pixal3d_texture_run(dinov3, naf, argv[2], cond_dir, argv[3], n_views, own, cc);
+        if (argc > 10 && !g_latent.empty()) {
+            const int64_t n = (int64_t)g_latent.size() / 32;
+            npy::save(string(argv[10]) + "tex_x_final.npy", g_latent.data(), {n, 32});
+            for (int k = 0; k < g_n_steps; ++k)
+                npy::save(string(argv[10]) + "tex_x_step" + std::to_string(k + 1) + ".npy", g_steps.data() + (size_t)k * g_latent.size(), {n, 32});
+        }
+        return strstr(r, "RESULT: OK") ? 0 : 1;
+    }
     if (argc >= 2 && strcmp(argv[1], "--shape512") == 0) {
         if (argc < 7) {
             fprintf(stderr, "usage: %s --shape512 <dinov3.gguf> <pixal3d_naf.gguf> <pixal3d_shape_flow_512_mv.gguf> <cond_slat_dir> <slat_sample_dir> [n_views] [own_cond] [dump_prefix]\n", argv[0]);
@@ -414,7 +646,8 @@ int main(int argc, char** argv) {
     }
     if (argc < 5) {
         fprintf(stderr, "usage: %s <dinov3.gguf> <pixal3d_ss_flow_mv.gguf> <cond_ss_dir> <ss_sample_dir> [n_views] [latent_out.npy]\n"
-                        "       %s --shape512 <dinov3.gguf> <pixal3d_naf.gguf> <shape_flow_512.gguf> <cond_slat_dir> <slat_sample_dir> [n_views] [own_cond] [dump_prefix]\n", argv[0], argv[0]);
+                        "       %s --shape512 <dinov3.gguf> <pixal3d_naf.gguf> <shape_flow_512.gguf> <cond_slat_dir> <slat_sample_dir> [n_views] [own_cond] [dump_prefix]\n"
+                        "       %s --texture <tex_flow_1024.gguf> <hr_sample_dir> [concat_cond.npy|-] [own_cond] [dinov3.gguf] [naf.gguf] [cond_slat_dir] [n_views] [dump_prefix]\n", argv[0], argv[0], argv[0]);
         return 1;
     }
     const int n_views = argc > 5 ? atoi(argv[5]) : 0;
