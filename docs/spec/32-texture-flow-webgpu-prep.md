@@ -5,7 +5,8 @@ Branch `feat/webgpu-texture-flow-prep` (from `v0.4.0-webgpu-shape512-flow` = `1d
 (`feat/webgpu-shape1024-flow`, spec 31 §11), the texture stage can be *executed and debugged*
 immediately -- entry points, fixtures, deterministic noise, reporting, memory accounting and the
 browser harness. **No texture flow was executed on WebGPU in this phase, no backend/WGSL change
-was made, no golden tensor was created, and Shape-512 behaviour is unchanged** (§8).
+was made, no golden tensor was created, and Shape-512 behaviour is unchanged** (§8). The texture
+stage was run on CUDA through the new plumbing (§8.2) to establish the `cuda_tex_x_*` reference.
 
 Every stage number below is either measured in this phase (marked *measured*), copied from the
 sibling branches' measurements of the identical graph (marked *Shape-1024 branch*), or derived
@@ -174,7 +175,7 @@ N = 17,489, `docs/PIXAL3D_WEBGPU_MEMORY.md` §8 there):
 | condition per forward | 136.7 MB | `[2048, 17489]` proj + `[1024, 5]` global; zero negatives allocated but never uploaded (gs = 1.0) |
 | DiT input `[64, 17489]` f32 | 4.5 MB | rebuilt per forward on the host (*derived*) |
 | sampler state / concat half | 2.2 MB each | (*derived*) |
-| **device-resident sum** | **≈ 4650 MB** | same as Shape-1024's 4645 MB; fits the M1 Pro adapter (`maxBufferSize` 4,294,967,292 B per buffer) |
+| **device-resident sum** | **≈ 4650 MB** (CUDA *measured* 4777.7 MB incl. the zero negative, §8.2) | same as Shape-1024's 4645 MB; fits the M1 Pro adapter (`maxBufferSize` 4,294,967,292 B per buffer) |
 | per-step host trace | 12 × 2.2 MB = 27 MB | test / WASM report only |
 
 Time (*Shape-1024 branch*, same graph): one exact-SDPA forward at N = 17,489 is minutes in
@@ -200,10 +201,10 @@ Conditioning at tex_1024 (own-cond path, *derived* from the Shape-512/1024 measu
 New relative to the two shape stages:
 
 1. `in_ch = 64` -- `input_layer` `[1536, 64]` and the host-side `[N, 64]` concat rebuilt every
-   forward (validated on CUDA by the existing `--stage tex` parity run and the production CLI;
-   not yet on WebGPU).
+   forward (validated on CUDA, §8.2, with both FA and the exact SDPA the WebGPU path uses; not
+   yet on WebGPU).
 2. A sampler with `guidance_strength = 1.0`: the single-forward branch of `sample_flow`, 12
-   forwards, no negative condition upload, no guidance rescale (CUDA-validated, not WebGPU).
+   forwards, no negative condition upload, no guidance rescale (CUDA-validated, §8.2; not WebGPU).
 3. `tex_slat_normalization` for the denormalized comparison (`tex_norm_mean/std.npy`).
 4. NAF at T = 1024 (4 M pixels): d = 16 blocks (validated size), 4096 blocks (validated count),
    but the `[1024, 1024²]` map and the `[81, 256, 4, 4096]` logits are 4× Shape-512's -- only a
@@ -233,7 +234,9 @@ scope of every WebGPU phase so far; the latent is the gate), the mesh.
 | Shape-512 regression: the pre-change binary and the new binary on the same 256-token subset of `slat_sample` (CPU backend, `--backend cpu`) | **identical**: all 72 numeric parity lines (per-step latent mean/std/max, max\|d\|/mean\|d\|/rel vs f32/bf16, cos, final verdict) match byte-for-byte (§8.1) |
 | argument / fixture error paths of the new flags (unknown stage or backend, `--backend`/`[gpu]` conflicts, `--concat-cond` on a shape stage, noise or concat file with the wrong token count) | each rejected with a one-line message and exit 1 before any model load (*measured*) |
 | `--concat-cond f32_shape_x_final.npy` on the texture fixture | reported `rel 6.75e-8, cos 1.0000000` vs `f32_tex_concat_cond` -- the Shape-1024 latent is the concat half (*measured*, fixture-loading path; the model load that follows was not run) |
-| Shape-512 full fixture on a GPU, texture stage on any backend | **not run** -- the Mac GPU was occupied by the Shape-1024 validation, GPU jobs on win were not permitted for this phase, and the texture GGUF is not on the Mac. The texture-stage code path is therefore compile-checked only; the `--stage tex` numerics themselves are unchanged from the tag |
+| Shape-512 full fixture, CUDA (RTX 4090, `--backend cuda`, FA) | `rel(mine, f32) = 2.1947e-01`, cos 0.996954, PASS -- the digits of record (spec 31 §10.6: 0.2195) (*measured*) |
+| **Texture stage, CUDA** (RTX 4090): `--stage texture --backend cuda`, fixture concat; `--concat-cond f32_shape_x_final.npy`; `pixal3d-ss-run --texture` (the WASM entry natively, exact SDPA); `--backend webgpu` on the CUDA build | all PASS / the mismatch aborts as designed -- §8.2 (*measured*, run at the user's request after the branch was pushed) |
+| texture stage on WebGPU (native Dawn or browser) | **not run** -- the Mac GPU was occupied by the Shape-1024 validation and the texture GGUF is not on the Mac |
 
 ### 8.1 Shape-512 subset regression
 
@@ -257,3 +260,37 @@ summary: stage=shape512 backend=CPU N=256 in_ch=32 steps=12 forwards=20 fwd_ms=9
 
 (The subset's `rel_final` 1.67 / FAIL is the truncated-context artefact described above, equal in
 both binaries; the full-fixture Shape-512 numbers of record remain spec 31 §10.6.)
+
+### 8.2 Texture stage on CUDA (RTX 4090, `hr_sample`, N = 17,489, 12 forwards)
+
+Three runs of this branch's binaries on win (`build-cuda`, sm_89), the same fixture noise and
+condition, PyTorch f32 as the target and the reference's f32-vs-bf16 run as calibration.
+`cuda_tex_x_*` (run A) and `cuda_nofa_tex_x_*` (run C) are now in the fixture directory (win and
+Mac) as the third reference for the WebGPU runs, exactly like the Shape-512 phase's `cuda_*`.
+
+| run | concat half | attention | ms / forward | final rel vs f32 | cos | verdict |
+|---|---|---|---|---|---|---|
+| A `trellis-test-pixal3d-slat-sample --stage texture --backend cuda` | fixture `f32_tex_concat_cond` | FlashAttention (production) | 1655 | **3.93e-3** | 0.999993 | PASS (threshold max(2·0.345, 0.05) = 0.690) |
+| B same, `--concat-cond f32_shape_x_final.npy` | the Shape-1024 latent (rel 5.5e-8 / cos 1.0000000 vs the fixture concat, reported by the flag) | FA | 1626 | 4.71e-3 | 0.999994 | PASS, `concat_cond=external` |
+| C `pixal3d-ss-run --texture` (the WASM entry) | fixture | exact SDPA (`g_no_fa`, what WebGPU will run) | 3428 | **3.66e-3** | 0.999999 | PASS, `RESULT: OK` |
+| D `--backend webgpu` on the CUDA build | -- | -- | -- | -- | -- | exit 1: `--backend webgpu requested but the model loaded on 'CUDA0'` |
+
+| per step, run A (rel / cos vs f32) | 1 | 4 | 8 | 12 |
+|---|---|---|---|---|
+| CUDA FA | 2.5e-4 / 1.0000000 | 1.1e-3 / 1.0000000 | 4.6e-3 / 0.9999994 | 3.9e-3 / 0.9999935 |
+| CUDA exact SDPA (run C) | 1.8e-4 / 1.0000000 | 3.5e-4 / 1.0000000 | 1.3e-3 / 0.9999999 | 3.7e-3 / 0.9999988 |
+| (PyTorch f32 vs bf16) | 1.0e-2 | 5.6e-2 | 2.07e-1 | 3.45e-1 |
+
+Final latent statistics: mean −0.019715, std 0.543219, max 4.2583 (A); −0.020013 / 0.543457 /
+4.2583 (C); no non-finite values. Denormalized texture SLAT (run A): rel 3.3e-3 vs f32
+(calibration 0.290). The texture stage sits two orders of magnitude closer to the f32 reference
+than the shape stages (Shape-512: 0.22): with guidance 1.0 there is no CFG difference to amplify
+the per-op rounding through the 12 steps, and both `forwards=1` per step and the 12-forward total
+are visible in the new per-step lines.
+
+Memory (run A, `memory (CUDA0)` lines): weights 2647.0 MB, DiT activation buffer 1850.9 MB (FA)
+/ 1863.2 MB (exact SDPA, run C), condition 136.7 MB per forward (+136.7 MB zero negative,
+never uploaded), state 2.13 MB, concat half 2.13 MB + `[N,64]` input 4.27 MB per forward,
+device-resident sum **4777.7 MB**; `ggml_backend_dev_memory` free 20340 → 18488 MB across the
+DiT alloc (total 24563.5 MB). This is the §6.2 estimate (≈ 4650 MB) plus the texture-only
+inputs.
