@@ -4,9 +4,12 @@
 // subsample of each so two backends' dumps can be diffed offline (first divergent tensor). Used
 // to localize the Shape-1024 WebGPU sampling divergence (spec 31 §11.5).
 //
-//   trellis-test-pixal3d-slat-probe <flow.gguf> <fixture_dir> <x.npy> <t_scaled> <out_dir> [gpu] [n_tokens_saved]
+//   trellis-test-pixal3d-slat-probe <flow.gguf> <fixture_dir> <x.npy> <t_scaled> <out_dir> [gpu] [n_tokens_saved] [repeat]
 //     fixture_dir: hr_sample (hr_coords/hr_cond_*) or slat_sample (coords/cond_*) layout (auto)
 //     x.npy:       [N,32] latent to feed (e.g. a per-step dump cpp_shape_x_step1.npy)
+//     repeat:      re-run the same forward (inputs re-uploaded each time: gallocr reuses their
+//                  memory) and report, per run, the FIRST intermediate whose bytes differ from
+//                  run 0 -- the in-process localizer for the nondeterministic backend fault.
 #include "trellis_model.h"
 #include "dit.h"
 #include "trellis_args.h"
@@ -15,9 +18,11 @@
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <stdexcept>
@@ -57,6 +62,7 @@ int main(int argc, char** argv) {
     const float t = (float)atof(argv[4]);
     const int gpu = argc > 6 ? atoi(argv[6]) : 0;
     const int64_t nsave = argc > 7 ? atoll(argv[7]) : 2000;
+    const int repeat = argc > 8 ? atoi(argv[8]) : 1;
     if (getenv("TRELLIS_NOFA")) { trellis::g_no_fa = true; printf("(no-fa: soft_max path)\n"); }
 
     const bool hr = exists(fdir + "/hr_coords.npy");
@@ -110,15 +116,18 @@ int main(int argc, char** argv) {
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) { fprintf(stderr, "alloc failed\n"); return 1; }
     printf("graph: %d nodes, activation buffer %.1f MB (all intermediates kept)\n", ggml_graph_n_nodes(g), ggml_gallocr_get_buffer_size(alloc, 0) / 1048576.0);
-    ggml_backend_tensor_set(gh0, x.data.data(), 0, (size_t)Cin * N * 4);
-    ggml_backend_tensor_set(gtf, tfreq.data(), 0, tfreq.size() * 4);
-    ggml_backend_tensor_set(gcd, cond.data(), 0, cond.size() * 4);
-    ggml_backend_tensor_set(gcos, rcos.data(), 0, rcos.size() * 4);
-    ggml_backend_tensor_set(gsin, rsin.data(), 0, rsin.size() * 4);
-    ggml_backend_tensor_set(gpj, jA.data.data(), 0, (size_t)Dp * N * 4);
-    ggml_backend_tensor_set(gidx, ridx.data(), 0, ridx.size() * sizeof(int32_t));
-    if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) { fprintf(stderr, "compute failed\n"); return 1; }
-    ggml_backend_synchronize(m.backend);
+    auto upload_and_run = [&]() {
+        ggml_backend_tensor_set(gh0, x.data.data(), 0, (size_t)Cin * N * 4);
+        ggml_backend_tensor_set(gtf, tfreq.data(), 0, tfreq.size() * 4);
+        ggml_backend_tensor_set(gcd, cond.data(), 0, cond.size() * 4);
+        ggml_backend_tensor_set(gcos, rcos.data(), 0, rcos.size() * 4);
+        ggml_backend_tensor_set(gsin, rsin.data(), 0, rsin.size() * 4);
+        ggml_backend_tensor_set(gpj, jA.data.data(), 0, (size_t)Dp * N * 4);
+        ggml_backend_tensor_set(gidx, ridx.data(), 0, ridx.size() * sizeof(int32_t));
+        if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) { fprintf(stderr, "compute failed\n"); exit(1); }
+        ggml_backend_synchronize(m.backend);
+    };
+    upload_and_run();
 
     // deterministic order: input layer, t_emb, block-0 probes, after_block0..29, prefinal, output
     vector<string> order = { "after_input_layer", "t_emb_mod", "blk0_msa", "blk0_global_out", "blk0_proj_out", "blk0_cross_out", "blk0_mlp" };
@@ -127,6 +136,9 @@ int main(int argc, char** argv) {
     order.push_back("blk15_msa"); order.push_back("blk15_global_out"); order.push_back("blk15_proj_out"); order.push_back("blk15_cross_out"); order.push_back("blk15_mlp");
     order.push_back("prefinal"); order.push_back("output");
     printf("%-20s %14s %12s %10s %8s\n", "tensor", "max|x|", "mean|x|", ">65504", "nonfin");
+    auto fnv = [](const vector<float>& v) { uint64_t h = 1469598103934665603ull; const uint8_t* b = (const uint8_t*)v.data(); for (size_t i = 0; i < v.size() * 4; ++i) { h ^= b[i]; h *= 1099511628211ull; } return h; };
+    std::map<string, uint64_t> hash0;              // run 0: full-tensor hash per intermediate
+    std::map<string, vector<float>> sub0;          // run 0: the saved token subsample
     for (const string& nm : order) {
         auto it = inter.find(nm);
         if (it == inter.end()) continue;
@@ -141,7 +153,32 @@ int main(int argc, char** argv) {
         vector<float> sub((size_t)ns * C0);
         std::memcpy(sub.data(), v.data(), (size_t)ns * C0 * sizeof(float));
         npy::save(odir + "/" + nm + ".npy", sub.data(), { ns, C0 });
+        if (repeat > 1) { hash0[nm] = fnv(v); sub0[nm] = std::move(sub); }
     }
+    // ---- repeats: same inputs, same graph; first intermediate (in graph order) whose bytes differ from run 0 ----
+    int n_bad = 0;
+    for (int r = 1; r < repeat; ++r) {
+        upload_and_run();
+        string first_div; int n_div = 0; double fmax = 0, fmean = 0;
+        for (const string& nm : order) {
+            auto it = inter.find(nm);
+            if (it == inter.end()) continue;
+            vector<float> v = trellis::tensor_to_f32(it->second);
+            if (fnv(v) == hash0[nm]) continue;
+            ++n_div;
+            if (first_div.empty()) {
+                first_div = nm;
+                const vector<float>& a = sub0[nm]; double sum = 0;
+                for (size_t i = 0; i < a.size(); ++i) { const double d = std::fabs((double)v[i] - a[i]); if (std::isfinite(d)) { fmax = std::max(fmax, d); sum += d; } else fmax = INFINITY; }
+                fmean = sum / a.size();
+                npy::save(odir + "/" + nm + "_run" + std::to_string(r) + ".npy", v.data(), { (int64_t)a.size() / it->second->ne[0], it->second->ne[0] });
+            }
+        }
+        if (first_div.empty()) printf("run %2d: bit-identical to run 0 (all %zu intermediates)\n", r, hash0.size());
+        else { ++n_bad; printf("run %2d: DIFFERS -- first divergent tensor %s (subsample max|d|=%.3e mean|d|=%.3e), %d of %zu intermediates differ\n", r, first_div.c_str(), fmax, fmean, n_div, hash0.size()); }
+        fflush(stdout);
+    }
+    if (repeat > 1) printf("repeat summary: %d of %d re-runs differ from run 0\n", n_bad, repeat - 1);
     ggml_gallocr_free(alloc); ggml_free(c); m.free();
     return 0;
 }
