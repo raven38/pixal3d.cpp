@@ -741,3 +741,40 @@ Remaining for the texture decoder (not touched here): the tex decoder's own `gui
 C2S runs the same graphs at the same M with `Cout` channels 6 at the output, so nothing new is
 expected from the backend; the open items are the ones in memory doc §9.4 (spec-floor adapters,
 `kBlockChunkBytes` on a 128 MiB binding) and running `trellis-test-pixal3d-tex-decode` on WebGPU.
+
+## 12. Validated on WebGPU (2026-09-07, `feat/webgpu-texture-decode`, sparse texture / PBR decoder)
+
+Same meaning of "validated" as §8-§11: executed on the ggml WebGPU backend inside the real
+decoder graphs, on the **real** Texture-1024 SLAT fixture (`hr_sample`, `f32_tex_slat.npy`, N =
+17,489 → M = 4,649,809 with the shape decoder's masks), against the PyTorch reference decode of
+the same SLAT, natively (Dawn) and in Chrome. Results: `docs/spec/31-webgpu-bringup.md` §12,
+memory: `docs/PIXAL3D_WEBGPU_MEMORY.md` §10. Branch base: `v0.7.0-webgpu-shape-decode` (§11).
+
+### 12.1 Backend gaps: none
+
+The texture decoder is `decode_unet` with `guide_subs` (no `to_subdiv` graph) and `out_ch = 6`,
+so its graphs are the §11.2 shape-decoder graphs minus the four `shape_dec_c2s_stage{i}_subdiv`
+graphs, with `output_layer` `[64,6]` instead of `[64,7]`. `check_graph_supported` (§11.3) passed
+on every graph; no op type, dtype variant or dispatch size was added to the backend, and no
+patch was added to `patches/ggml-webgpu/` (0001-0005 as in §11).
+
+| graph (tag, `TRELLIS_DUMP_OPS`) | ops on WebGPU | vs shape decoder |
+|---|---|---|
+| `tex_dec_from_latent_N17489` | MUL_MAT f16×f32 `[32,1024]ᵀ[32,N]`, ADD | same |
+| `tex_dec_convnext_stage{0..3}` (4/16/8/4 blocks, 812/3248/1624/1628 nodes) | per block and chunk: SCALE + CONCAT (sentinel row), 27 × { CONT i32 idx (0005), GET_ROWS, CONT f16 tap weight, MUL_MAT, ADD }, ADD bias, NORM, MUL, ADD, MUL_MAT `[C,4C]`, ADD, SILU, MUL_MAT `[4C,C]`, ADD, CONT, ADD residual, CONCAT | same node counts and shapes |
+| `tex_dec_c2s_stage{0..3}_conv` (402/402/602/1392 nodes) | NORM, MUL, ADD, SILU (norm1), SCALE+CONCAT, conv1 (27 taps, chunked), GET_ROWS (channel→spatial gather **by the given mask's index map**), PAD + CPY into row-offset views, NORM, SILU (norm2), conv2 at M rows, GET_ROWS + REPEAT (skip), ADD, PAD + CPY | same; the mask comes from the host (`ShapeOut::subs`) instead of the `_subdiv` graph, so the `[8,N]` logits readback per stage is gone |
+| `tex_dec_output_layer_N{1000000,649809}` | NORM (no affine), MUL_MAT `[64,6]`, ADD | `[64,7]` in the shape decoder |
+
+### 12.2 Shared sparse-runtime changes: none
+
+`src/sparse.cpp`, `src/shape_decoder.cpp`, `src/trellis_model.cpp`, `include/*` and the ggml
+patches are byte-identical to `v0.7.0-webgpu-shape-decode`; the shape decoder's per-stage dumps
+from the texture run match the §11 record exactly (spec 31 §12.8). What was added is test /
+harness / tooling only: `--dump-attrs` / `--ext-attrs` and per-channel statistics in
+`trellis-test-pixal3d-tex-decode`, `pixal3d_tex_decode_run` in `src/pixal3d_wasm.cpp` (+ module
+exports), `web/tex_decode/`, `tools/ref_pixal3d_tex_dec_stages.py`, and a `PIXAL3D_WEB_PORT`
+override in the two browser drivers.
+
+Remaining (unchanged): the dense Conv3D of the SS decoder (§6), the texture flow's own
+conditioning on WebGPU (spec 32: the `[1024, 1024²]` NAF map is over `maxBufferSize`), and the
+spec-floor-adapter buffer split of §10.5.
