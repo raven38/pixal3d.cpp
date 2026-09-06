@@ -24,6 +24,10 @@ struct SamplerParams {
     float gi1               = 1.0f;
     float rescale_t         = 1.0f;
     float sigma_min         = 1e-5f;
+    // Checkpoint/resume: run only Euler steps [step_begin, step_end) of the `steps`-step schedule
+    // (the schedule itself is unchanged). step_end < 0 = steps. Defaults reproduce the full run.
+    int   step_begin        = 0;
+    int   step_end          = -1;
 };
 
 // One DiT graph (built once for a fixed token count N), re-run per sampler step.

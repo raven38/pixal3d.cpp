@@ -54,6 +54,16 @@
 //                 fixture dir as cuda_x_step<k>.npy / cuda_x_final.npy, becomes a third reference here.
 //   --ext PREFIX  also score externally produced latents PREFIXx_step<k>.npy / PREFIXx_final.npy
 //                 (e.g. the browser/WASM run's) against the same references and against this run.
+//
+// Checkpoint/resume (single-step) mode -- the fast parity + determinism probe (spec 31 §11.5):
+//   --start-step K [--num-steps N=1] [--input-latent F] [--expected-latent F] [--repeat R=1]
+//     Runs exactly Euler steps K..K+N-1 of the SAME schedule/sampler/graph (SamplerParams::step_begin/
+//     step_end) from a serialized latent: --input-latent (any [N,32] f32 .npy) or, by default, the
+//     fixture's own f32_<prefix><K>.npy. The result is scored against --expected-latent or the fixture's
+//     f32_/bf16_/cuda_/cuda_nofa_<prefix><K+N>.npy (max|d|, mean|d|, rel, cosine). With --repeat R the
+//     identical step is re-run R times from the same immutable input (never the previous output) and the
+//     run-to-run determinism is reported: unique output hashes, first differing index, max/mean diff
+//     vs run 0. --dump DIR writes cpp_<prefix><K+N>.npy. No verdict line: this mode is a probe.
 #include "trellis_model.h"
 #include "flow_runner.h"
 #include "dit.h"
@@ -64,6 +74,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -196,14 +207,21 @@ int main(int argc, char** argv) {
     }
     const string gguf_flow = argv[1], fdir = argv[2];
     int gpu = 0;
-    string stage_name = "shape512", dump_dir, ext_prefix;
+    string stage_name = "shape512", dump_dir, ext_prefix, in_latent, exp_latent;
+    int start_step = -1, num_steps = 1, repeat = 1;
     for (int i = 3; i < argc; ++i) {
         string a = argv[i];
         if (a == "--stage" && i + 1 < argc) stage_name = argv[++i];
         else if (a == "--dump" && i + 1 < argc) dump_dir = argv[++i];
         else if (a == "--ext" && i + 1 < argc) ext_prefix = argv[++i];
+        else if (a == "--start-step" && i + 1 < argc) start_step = atoi(argv[++i]);
+        else if (a == "--num-steps" && i + 1 < argc) num_steps = atoi(argv[++i]);
+        else if (a == "--input-latent" && i + 1 < argc) in_latent = argv[++i];
+        else if (a == "--expected-latent" && i + 1 < argc) exp_latent = argv[++i];
+        else if (a == "--repeat" && i + 1 < argc) repeat = atoi(argv[++i]);
         else gpu = atoi(a.c_str());
     }
+    if (stage_name == "shape1024") stage_name = "shape_hr";   // alias
     enum class Stage { SHAPE512, SHAPE_HR, TEX } stage;
     if (stage_name == "shape512") stage = Stage::SHAPE512;
     else if (stage_name == "shape_hr") stage = Stage::SHAPE_HR;
@@ -337,6 +355,62 @@ int main(int argc, char** argv) {
             printf("no %s in fixture -- using hardcoded %s default sampler params\n",
                    sf.sampler_params.c_str(), is_tex ? "tex" : "shape");
         }
+    }
+
+    if (start_step >= 0) {
+        // ---- checkpoint/resume: steps [K, K+N) from a serialized latent, R identical repeats ----
+        const int K = start_step, Nn = std::max(1, num_steps);
+        if (K + Nn > sp.steps) { fprintf(stderr, "--start-step %d + --num-steps %d exceeds the %d-step schedule\n", K, Nn, sp.steps); return 1; }
+        const string in_path = in_latent.empty() ? fdir + "/f32_" + sf.x_step_prefix + std::to_string(K) + ".npy" : in_latent;
+        npy::Array xin = npy::load(in_path);
+        if (xin.numel() != (int64_t)Cin * N) { fprintf(stderr, "input latent %s has %lld values, want [%lld,%lld]\n", in_path.c_str(), (long long)xin.numel(), (long long)N, (long long)Cin); return 1; }
+        vector<float> x0(xin.data.begin(), xin.data.begin() + (size_t)Cin * N);   // immutable: copied per run
+        sp.step_begin = K; sp.step_end = K + Nn;
+        printf("\n=== checkpoint/resume: steps %d..%d of %d from %s, %d run(s) ===\n", K, K + Nn - 1, sp.steps, in_path.c_str(), repeat);
+        vector<float> first;
+        size_t n_unique = 0; std::vector<uint64_t> hashes;
+        double max_rr = 0, mean_rr_sum = 0; int64_t first_diff = -1; int n_diff_runs = 0;
+        auto fnv = [](const vector<float>& v) { uint64_t h = 1469598103934665603ull; const uint8_t* b = (const uint8_t*)v.data(); for (size_t i = 0; i < v.size() * 4; ++i) { h ^= b[i]; h *= 1099511628211ull; } return h; };
+        double t_sum = 0;
+        const string sk = sf.x_step_prefix + std::to_string(K + Nn) + ".npy";
+        npy::Array rf, rb, rc, rn;
+        const bool has_f32 = load_opt(fdir + "/f32_" + sk, rf);   // per-run distance to f32: tells which run is the wrong one
+        for (int r = 0; r < repeat; ++r) {
+            vector<float> x = x0;                                   // restore the original input every run
+            const auto tr = std::chrono::steady_clock::now();
+            vector<float> y = trellis::sample_flow(fwd, x, cond.data(), neg_cond.data(), proj.data(), neg_proj.data(), sp, nullptr);
+            t_sum += std::chrono::duration<double>(std::chrono::steady_clock::now() - tr).count();
+            const uint64_t h = fnv(y);
+            if (std::find(hashes.begin(), hashes.end(), h) == hashes.end()) { hashes.push_back(h); ++n_unique; }
+            char vs_f32[64] = "";
+            if (has_f32) { Stats st = diff_stats(y, rf); snprintf(vs_f32, sizeof vs_f32, ", vs f32 rel=%.3e", st.rel); }
+            if (!dump_dir.empty() && repeat > 1) npy::save(dump_dir + "/cpp_" + sf.x_step_prefix + std::to_string(K + Nn) + "_run" + std::to_string(r) + ".npy", y.data(), { N, Cin });
+            if (r == 0) { first = y; printf("  run  0: hash %016llx%s\n", (unsigned long long)h, vs_f32); continue; }
+            double mx = 0, sum = 0; int64_t fd = -1;
+            for (size_t i = 0; i < y.size(); ++i) { const double d = std::fabs((double)y[i] - first[i]); if (!(d == 0) && fd < 0) fd = (int64_t)i; if (std::isfinite(d)) { mx = std::max(mx, d); sum += d; } else mx = INFINITY; }
+            if (fd >= 0) { ++n_diff_runs; if (first_diff < 0) first_diff = fd; }
+            max_rr = std::max(max_rr, mx); mean_rr_sum += sum / y.size();
+            printf("  run %2d: hash %016llx%s, vs run 0: max|d|=%.3e mean|d|=%.3e first differing index %lld\n", r, (unsigned long long)h, vs_f32, mx, sum / y.size(), (long long)fd);
+        }
+        printf("  determinism: %zu unique output hash(es) over %d run(s), %d run(s) differ from run 0, first differing index %lld, max run-to-run |d| %.3e, mean %.3e; %.1f s per run\n",
+               n_unique, repeat, n_diff_runs, (long long)first_diff, max_rr, repeat > 1 ? mean_rr_sum / (repeat - 1) : 0.0, t_sum / repeat);
+        delete run; mf.free();
+
+        // parity of the (first) run's output against the references for step K+N
+        auto score = [&](const char* tag, const npy::Array& ref) {
+            Stats st = diff_stats(first, ref);
+            printf("    %-10s max|d|=%.4e mean|d|=%.4e rel=%.4e cos=%.7f\n", tag, st.maxabs, st.meanabs, st.rel, mean_cosine(first, ref, (int)Cin, N));
+        };
+        printf("  output of step %d (run 0) vs references:\n", K + Nn - 1);
+        if (!exp_latent.empty()) { npy::Array e = npy::load(exp_latent); score("expected", e); }
+        if (has_f32) score("f32", rf); else printf("    f32  (missing %s)\n", sk.c_str());
+        if (load_opt(fdir + "/bf16_" + sk, rb)) score("bf16", rb);
+        if (load_opt(fdir + "/cuda_" + sk, rc)) score("cuda", rc);
+        if (load_opt(fdir + "/cuda_nofa_" + sk, rn)) score("cuda_nofa", rn);
+        if (rf.numel() && rb.numel()) { Stats c = diff_stats2(rf, rb); printf("    %-10s max|d|=%.4e mean|d|=%.4e rel=%.4e (f32 vs bf16 reference, one-step spread)\n", "calib", c.maxabs, c.meanabs, c.rel); }
+        if (rf.numel() && rn.numel()) { Stats c = diff_stats2(rf, rn); printf("    %-10s max|d|=%.4e mean|d|=%.4e rel=%.4e (f32 vs CUDA exact, one-step)\n", "cuda-f32", c.maxabs, c.meanabs, c.rel); }
+        if (!dump_dir.empty()) npy::save(dump_dir + "/cpp_" + sk, first.data(), { N, Cin });
+        return 0;
     }
 
     vector<vector<float>> trace;
