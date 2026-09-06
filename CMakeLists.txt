@@ -340,6 +340,12 @@ add_executable(trellis-decode-replay src/decode_replay.cpp)
 target_link_libraries(trellis-decode-replay PRIVATE trellis_core)
 set_target_properties(trellis-decode-replay PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# Debug-only allocation trace of the sparse shape decoder (docs/PIXAL3D_WEBGPU_MEMORY.md):
+# runs shape_decode on a coords/latent pair with TRELLIS_DBG_ALLOC_TRACE set.
+add_executable(trellis-shape-dec-alloc-trace src/shape_dec_alloc_trace.cpp)
+target_link_libraries(trellis-shape-dec-alloc-trace PRIVATE trellis_core)
+set_target_properties(trellis-shape-dec-alloc-trace PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-ss-flow src/test_ss_flow.cpp)
 target_link_libraries(trellis-test-ss-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")

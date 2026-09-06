@@ -44,6 +44,7 @@ static std::vector<float> run1(const Model& m, ggml_context* c, T* out,
     if (getenv("TRELLIS_DBG_ALLOC"))
         fprintf(stderr, "      [stage-alloc] nodes=%d  gallocr buffer = %.2f GB\n",
                 ggml_graph_n_nodes(g), ggml_gallocr_get_buffer_size(a, 0) / 1e9);
+    trellis_graph_alloc_trace(tag, g, ggml_gallocr_get_buffer_size(a, 0));   // TRELLIS_DBG_ALLOC_TRACE only
     for (auto& [t, d] : ins) ggml_backend_tensor_set(t, d, 0, ggml_nbytes(t));
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("shape_dec compute");
     mem_probe("run1 computed (pre-readback)");

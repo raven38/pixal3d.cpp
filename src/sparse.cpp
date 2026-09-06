@@ -165,6 +165,7 @@ struct GraphRun {
         if (getenv("TRELLIS_DBG_ALLOC"))
             fprintf(stderr, "      [c2s-alloc] nodes=%d  gallocr buffer = %.2f GB\n",
                     ggml_graph_n_nodes(g), ggml_gallocr_get_buffer_size(alloc, 0) / 1e9);
+        trellis_graph_alloc_trace(tag, g, ggml_gallocr_get_buffer_size(alloc, 0));   // TRELLIS_DBG_ALLOC_TRACE only
         for (auto& [t, data] : inputs) ggml_backend_tensor_set(t, data, 0, ggml_nbytes(t));
         if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("c2s: compute failed");
         return tensor_to_f32(out);
