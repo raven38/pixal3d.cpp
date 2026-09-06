@@ -366,7 +366,8 @@ the numpy cross-check are given separately and are ~2.5× smaller).
 |---|---|---|---|---|---|---|
 | Chrome 152 / WASM (`web/texture/run_playwright.js`, lock held 05:07:58-05:57:28) | 12 | 244,812 (first 297,415, last 273,049) | 2937.7 s inside forwards, 2944.0 s in the module, 2944.2 s playwright | **1.6072e-3** | 0.9999998 | PASS, `RESULT: OK` |
 | native Dawn, run 1 (lock held 05:57:36-06:39:52, no other GPU tenant known: the sibling session's next job was waiting on the same lock) | 12 | 210,927 | 2531.1 s | 1.7118e-1 (**invalid**: the step-3 forward was corrupted, see below) | 0.998723 | formally PASS (< 0.690), **not accepted** |
-| native Dawn, run 2 (`trellis-test-pixal3d-slat-sample --backend webgpu`) | 12 | *pending* (queued behind the GPU lock at the time of this commit) | | | | |
+| native Dawn, run 2 (lock held 06:54:08-07:34:33) | 12 | 201,876 (steps 3-4: 237,228 / 228,573) | 2422.5 s | 1.1250e-1 (**invalid**: step 3 again, see below) | 0.998309 | formally PASS, **not accepted** |
+| native Dawn, **run 3** (lock held 08:08:27-08:47:15; `trellis-test-pixal3d-slat-sample --backend webgpu --dump`) | 12 | **193,744** (192,618-195,549, uniform) | 2324.9 s | **1.4616e-3** | 1.000000 | **PASS** -- the milestone's native run |
 | CUDA FA, RTX 4090 (prep phase §8.2, reference of record) | 12 | 1,655 | 20 s | 3.93e-3 | 0.999993 | PASS |
 | CUDA exact SDPA (`cuda_nofa_`, what WebGPU computes) | 12 | 3,428 | 41 s | 3.66e-3 | 0.999999 | PASS |
 
@@ -399,14 +400,26 @@ float rounding of the host-side Euler update), then step 3 jumps to rel 3.2e-3 v
 the browser) and the error grows monotonically to 5.8e-2 (test def. 1.71e-1, cos 0.9987) --
 exactly the "step jump" signature of spec 31 §11's fault, one bad forward in 12, with the lock
 held for the whole run and the sibling session's next job (`web/shape1024/run_playwright.js`)
-queued behind the same lock since 05:48. The test's calibrated verdict still says PASS
+queued behind the same lock since 05:48. **Run 2 reproduced it at the same step**: steps 1-2
+bit-level with the browser again, step 3 rel 1.19e-2 (four times run 1's), final 6.4e-2 (L2) /
+1.125e-1 (test def.). In both corrupted runs the affected forwards were also *slower*
+(run 1: steps 2-5 213-240 s; run 2: steps 3-4 237 / 229 s) against 193-200 s for every clean
+forward of run 3 and of the probes -- a timing fingerprint of the fault worth checking in the
+Shape-1024 investigation. Run 3, the same binary and inputs, was clean at every step: its
+trajectory follows the browser's to L2 rel 1.1e-8 (step 1) … 2.0e-4 (step 12), cos 1.0000000
+throughout, and sits at 1.5e-3 from the CUDA exact-SDPA run at the end. The test's calibrated verdict still says PASS
 (0.171 < 0.690) because the threshold is derived from the reference's own bf16 drift; that is
 why the per-step tables and the CUDA/browser distances are reported alongside, and why run 1 is
 not the milestone's native run. The dumps are kept as `tex_webgpu_full_run1_corrupt/` in the
 session scratchpad. This is the first observation of the fault with no other WebGPU process on
 the GPU; it is reported to the Shape-1024 investigation and not pursued here (out of scope).
 
-Browser vs native WebGPU (run 2): *pending run 2*
+Browser vs native WebGPU (run 3), numpy L2 rel per step 1 … 12: 1.1e-8, 5.1e-6, 9.1e-6,
+1.3e-5, 1.8e-5, 2.6e-5, 3.4e-5, 4.7e-5, 6.8e-5, 9.9e-5, 1.5e-4, **2.0e-4**; cos 1.0000000 at every
+step. The two Dawn builds (native prebuilt vs Chrome's) agree with each other 3× more tightly
+than either agrees with f32, i.e. the residual is the f16-weight arithmetic, not the platform.
+Native run 3 vs CUDA exact SDPA: 5.7e-5 → 1.48e-3 (L2); test-definition final rel vs `cuda_`
+(FA) 3.3e-3.
 
 ## 12. Texture conditioning (`tex_1024`: S = 1024, R = 64, NAF T = 1024)
 
@@ -462,7 +475,7 @@ All on the native Dawn build of this branch, through the GPU lock, after the cha
 | Shape-512 stage on WebGPU | `trellis-test-pixal3d-slat-sample pixal3d_shape_flow_512_mv.gguf slat_sample --stage shape512 --backend webgpu` | rel(mine, f32) **2.1009e-1**, cos 0.997361, threshold 0.524 -- PASS (20 forwards, 17.3 s each, 346 s; the spec 31 §10.6 number of record) |
 | texture conditioning | §12 | see there |
 | texture flow (single-step probes) | §10 | 4/4 PASS native WebGPU (GPU alone), 4/4 Metal |
-| texture sampling | §11 | Chrome PASS 1.61e-3; native run 2: *pending* |
+| texture sampling | §11 | Chrome PASS 1.61e-3; native run 3 PASS 1.46e-3 (runs 1-2 discarded: fault) |
 | `trellis-webgpu-ops --only rms_norm` (patch 0003 update) | | 2/2 PASS, rel 1.5e-7 / 1.3e-7 |
 
 (The first Shape-512 attempt aborted at model load: the Mac's `pixal3d_shape_flow_512_mv.gguf`
