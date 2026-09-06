@@ -32,3 +32,7 @@ web/smoke/pixal3d_smoke.js
 web/smoke/pixal3d_smoke.wasm
 build-wasm/
 build-webgpu/
+# WASM SS build artifacts (scripts/build_wasm_ss.sh)
+web/ss/pixal3d_ss.js
+web/ss/pixal3d_ss.wasm
+build-wasm-ss/

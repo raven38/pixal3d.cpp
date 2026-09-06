@@ -12,13 +12,15 @@
 // Back-compat: if cond_global/cond_proj.npy aren't in fixture_dir, falls back to a separate
 // cond fixture dir (5th arg, or $PIXAL3D_COND_DIR, default <fixture_dir>/../cond_ss) with the
 // tools/ref_pixal3d_cond_ss.py names z_global.npy/z_proj.npy (neg = zeros).
-//   trellis-test-pixal3d-ss-sample <pixal3d_ss_flow_mv.gguf> <ss_dec.gguf> <fixture_dir> [gpu] [cond_dir] [dec_gpu] [dump_dir]
+//   trellis-test-pixal3d-ss-sample <pixal3d_ss_flow_mv.gguf> <ss_dec.gguf> <fixture_dir> [gpu] [cond_dir] [dec_gpu] [dump_dir] [latent_npy]
 // dec_gpu (default = gpu): backend for the SS decoder alone -- pass -1 to decode on the CPU when
 // the flow ran on a backend without Conv3D kernels (ggml WebGPU). dump_dir: if given, writes this
 // run's per-step latents (`cpp_x_step<k>.npy`, torch [1,8,16,16,16] layout), `cpp_x_final.npy`,
 // `cpp_occ_logits.npy` and `cpp_coords.npy` so another backend's run can be compared against it;
 // files named `cuda_x_step<k>.npy` / `cuda_x_final.npy` / `cuda_coords.npy` found in fixture_dir
-// are loaded as a third (native CUDA) reference next to the f32/bf16 PyTorch ones.
+// are loaded as a third (native CUDA) reference next to the f32/bf16 PyTorch ones. latent_npy:
+// skip the sampler and decode this final latent (torch [1,8,16,16,16] layout, e.g. the one the
+// browser run saved) -- the flow GGUF is then not loaded.
 #include "trellis_model.h"
 #include "flow_runner.h"
 #include "dit.h"
@@ -177,6 +179,7 @@ int main(int argc, char** argv) {
     else cond_dir = fdir + "/../cond_ss";
     const int dec_gpu = argc > 6 ? atoi(argv[6]) : gpu;
     const string dump_dir = argc > 7 ? argv[7] : "";
+    const string latent_npy = argc > 8 ? argv[8] : "";
     printf("fixture_dir=%s gpu=%d dec_gpu=%d (cond fallback dir=%s)%s%s\n", fdir.c_str(), gpu, dec_gpu, cond_dir.c_str(),
            dump_dir.empty() ? "" : " dump_dir=", dump_dir.c_str());
 
@@ -208,6 +211,15 @@ int main(int argc, char** argv) {
     vector<float> neg_cond = has_neg ? to_channel_major(negg, Lc, Dc) : vector<float>(cond.size(), 0.0f);
     vector<float> neg_proj = has_neg ? to_channel_major(negp, L, Dp) : vector<float>(proj.size(), 0.0f);   // proj_linear(0) = bias
 
+    vector<vector<float>> trace;
+    vector<float> out;
+    if (!latent_npy.empty()) {
+        npy::Array lat = npy::load(latent_npy);   // torch [1,Cin,R,R,R]
+        if (lat.numel() != Cin * L) { fprintf(stderr, "latent %s has %lld elems, want %lld\n", latent_npy.c_str(), (long long)lat.numel(), (long long)(Cin * L)); return 1; }
+        out.resize(Cin * L);
+        for (int64_t c = 0; c < Cin; ++c) for (int64_t sp = 0; sp < L; ++sp) out[c + Cin * sp] = lat.data[c * L + sp];
+        printf("latent loaded from %s (sampler skipped)\n", latent_npy.c_str());
+    } else {
     // ---- SS flow sampler ----
     trellis::Model mf = trellis::Model::load(gguf_flow, gpu);
     printf("loaded %s (%zu tensors) on backend %s, weights %.1f MB\n", mf.arch.c_str(), mf.tensors.size(),
@@ -235,11 +247,11 @@ int main(int argc, char** argv) {
     sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.7f;
     sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 5.0f; sp.sigma_min = 1e-5f;
 
-    vector<vector<float>> trace;
-    vector<float> out = trellis::sample_flow(fwd, sample, cond.data(), neg_cond.data(),
-                                              proj.data(), neg_proj.data(), sp, &trace);
+    out = trellis::sample_flow(fwd, sample, cond.data(), neg_cond.data(),
+                               proj.data(), neg_proj.data(), sp, &trace);
     printf("DiT forwards: %d, %.1f ms each (%.1f s total)\n", n_fwd, n_fwd ? fwd_ms / n_fwd : 0.0, fwd_ms / 1000.0);
     delete run; mf.free();
+    }
 
     // ---- per-step latent parity vs f32 / bf16 PyTorch refs (+ a native CUDA run if dumped) ----
     printf("\nper-step latent parity (ggml [%lld,L] remapped to torch [%lld,16,16,16]):\n",

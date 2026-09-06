@@ -6,9 +6,37 @@ project(trellis_cpp VERSION 0.6.0 LANGUAGES CXX C)
 # ggml + src/test_webgpu_smoke.cpp -- trellis_core/the CLI aren't buildable under Emscripten
 # yet and pulling them in isn't this test's job. web/smoke/CMakeLists.txt is a small standalone
 # project that vendors thirdparty/ggml itself; skip the rest of this file in this mode.
+# Local patches to the vendored ggml (patches/ggml-webgpu/*.patch, see
+# docs/GGML_FORK_DIFF.md "Local patches"). Applied to the submodule working tree at configure
+# time, idempotently: a patch that already applies in reverse is skipped. The submodule pin is
+# unchanged; `git -C thirdparty/ggml checkout .` reverts them.
+option(PIXAL3D_GGML_PATCHES "Apply patches/ggml-webgpu/*.patch to thirdparty/ggml at configure time" ON)
+if(PIXAL3D_GGML_PATCHES AND GGML_WEBGPU)
+  file(GLOB _pixal3d_ggml_patches ${CMAKE_SOURCE_DIR}/patches/ggml-webgpu/*.patch)
+  foreach(_p ${_pixal3d_ggml_patches})
+    execute_process(COMMAND git apply --check --reverse ${_p} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/thirdparty/ggml
+                    RESULT_VARIABLE _rev OUTPUT_QUIET ERROR_QUIET)
+    if(_rev EQUAL 0)
+      message(STATUS "ggml patch already applied: ${_p}")
+    else()
+      execute_process(COMMAND git apply ${_p} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/thirdparty/ggml RESULT_VARIABLE _fwd)
+      if(NOT _fwd EQUAL 0)
+        message(FATAL_ERROR "failed to apply ggml patch ${_p} (set -DPIXAL3D_GGML_PATCHES=OFF to skip)")
+      endif()
+      message(STATUS "ggml patch applied: ${_p}")
+    endif()
+  endforeach()
+endif()
 option(TRELLIS_WASM_SMOKE "Build only the browser WebGPU smoke test (Emscripten only)" OFF)
 if(EMSCRIPTEN AND TRELLIS_WASM_SMOKE)
   add_subdirectory(web/smoke)
+  return()
+endif()
+# Browser Pixal3D SS path (docs/spec/31-webgpu-bringup.md §9): scripts/build_wasm_ss.sh.
+# web/ss/CMakeLists.txt compiles only the SS-path sources of trellis_core on top of ggml.
+option(TRELLIS_WASM_SS "Build only the browser Pixal3D SS path (Emscripten only)" OFF)
+if(EMSCRIPTEN AND TRELLIS_WASM_SS)
+  add_subdirectory(web/ss)
   return()
 endif()
 
@@ -80,27 +108,6 @@ add_compile_definitions(GGML_MAX_NAME=128)
 # both in the build tree and once packaged.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-# Local patches to the vendored ggml (patches/ggml-webgpu/*.patch, see
-# docs/GGML_FORK_DIFF.md "Local patches"). Applied to the submodule working tree at configure
-# time, idempotently: a patch that already applies in reverse is skipped. The submodule pin is
-# unchanged; `git -C thirdparty/ggml checkout .` reverts them.
-option(PIXAL3D_GGML_PATCHES "Apply patches/ggml-webgpu/*.patch to thirdparty/ggml at configure time" ON)
-if(PIXAL3D_GGML_PATCHES AND GGML_WEBGPU)
-  file(GLOB _pixal3d_ggml_patches ${CMAKE_SOURCE_DIR}/patches/ggml-webgpu/*.patch)
-  foreach(_p ${_pixal3d_ggml_patches})
-    execute_process(COMMAND git apply --check --reverse ${_p} WORKING_DIRECTORY ${GGML_DIR}
-                    RESULT_VARIABLE _rev OUTPUT_QUIET ERROR_QUIET)
-    if(_rev EQUAL 0)
-      message(STATUS "ggml patch already applied: ${_p}")
-    else()
-      execute_process(COMMAND git apply ${_p} WORKING_DIRECTORY ${GGML_DIR} RESULT_VARIABLE _fwd)
-      if(NOT _fwd EQUAL 0)
-        message(FATAL_ERROR "failed to apply ggml patch ${_p} (set -DPIXAL3D_GGML_PATCHES=OFF to skip)")
-      endif()
-      message(STATUS "ggml patch applied: ${_p}")
-    endif()
-  endforeach()
-endif()
 add_subdirectory(thirdparty/ggml)
 set(GGML_RPATH "$ORIGIN")
 # ggml-webgpu's subgroup-matrix mul_mat/flash_attn shaders accumulate in f16 and overflow on
@@ -109,6 +116,11 @@ set(GGML_RPATH "$ORIGIN")
 option(PIXAL3D_WEBGPU_SUBGROUP_MATRIX "Let ggml-webgpu use the f16-accumulating subgroup-matrix shaders" OFF)
 if(TARGET ggml-webgpu AND NOT PIXAL3D_WEBGPU_SUBGROUP_MATRIX)
   target_compile_definitions(ggml-webgpu PRIVATE GGML_WEBGPU_SUBGROUP_MATRIX=0)
+endif()
+# One DiT forward is a single graph submission; upstream's 30 s queue-wait ceiling aborts it on
+# slow adapters (patches/ggml-webgpu/0002). 10 minutes.
+if(TARGET ggml-webgpu)
+  target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=600000u)
 endif()
 set(CMAKE_INSTALL_RPATH "$ORIGIN")
 
@@ -440,6 +452,12 @@ set_target_properties(trellis-test-naf PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 add_executable(trellis-test-pixal3d-cond-slat src/test_pixal3d_cond_slat.cpp)
 target_link_libraries(trellis-test-pixal3d-cond-slat PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-cond-slat PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# Native build of the browser SS entry point (src/pixal3d_wasm.cpp) -- same C ABI and stages
+# as web/ss, runnable on any backend for debugging the browser path outside a browser.
+add_executable(pixal3d-ss-run src/pixal3d_wasm.cpp)
+target_link_libraries(pixal3d-ss-run PRIVATE trellis_core)
+set_target_properties(pixal3d-ss-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 add_executable(trellis-test-pixal3d-ss-sample src/test_pixal3d_ss_sample.cpp)
 target_link_libraries(trellis-test-pixal3d-ss-sample PRIVATE trellis_core)
