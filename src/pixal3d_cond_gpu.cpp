@@ -13,6 +13,7 @@
 // allocated with its own gallocr and freed before the next view.
 #include "pixal3d_cond.h"
 #include "dinov3.h"
+#include "naf.h"
 #include "proj_grid.h"
 #include "trellis_model.h"
 #include "graph_dump.h"
@@ -137,6 +138,156 @@ Pixal3dCond pixal3d_cond_ss_gpu(const Model& dinov3, const std::vector<Pixal3dVi
         for (int c = 0; c < D; ++c) out.global[(size_t)t * D + c] = hg[(size_t)t * D + c];
     for (int64_t k = 0; k < N3; ++k)
         for (int c = 0; c < D; ++c) out.proj[(size_t)k * D + c] = hp[(size_t)k * D + c];
+
+    ggml_backend_buffer_free(pbuf);
+    ggml_free(pc);
+
+    st.peak_bytes = st.weight_bytes + st.cond_bytes + st.view_alloc_bytes;
+    st.total_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    if (stats) *stats = st;
+    return out;
+}
+
+Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
+                                   const std::vector<Pixal3dView>& views,
+                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats) {
+    const auto t0 = std::chrono::steady_clock::now();
+    const int S = prm.S, R = prm.R, Tn = prm.naf_T;
+    Pixal3dCond out;
+    out.n_global = NPREFIX;
+    out.d_proj = 2 * D;
+    out.global.assign((size_t)NPREFIX * D, 0.0f);
+    out.proj.assign((size_t)R * R * R * 2 * D, 0.0f);
+
+    const int V = (int)views.size();
+    if (V == 0) return out;
+    const int Hp = S / 16, Wp = Hp, NP = Hp * Wp;
+    const int64_t N3 = (int64_t)R * R * R;
+    if (naf.backend == nullptr || dinov3.backend == nullptr)
+        throw std::runtime_error("pixal3d_cond_slat_gpu: models must be loaded on a backend");
+
+    std::vector<float> c2w_flat((size_t)V * 16);
+    for (int v = 0; v < V; ++v)
+        std::memcpy(&c2w_flat[(size_t)v * 16], views[v].c2w, 16 * sizeof(float));
+    const float* c0 = views[0].c2w;
+    const float distance0 = std::sqrt(c0[3] * c0[3] + c0[7] * c0[7] + c0[11] * c0[11]);
+    std::vector<float> calc;
+    mv_calc_mats(c2w_flat.data(), V, distance0, calc);
+
+    // View-independent host tables: DINOv3 RoPE, NAF RoPE / window / block order, NAF lowering.
+    std::vector<float> rcos, rsin;
+    dinov3_rope_tables(S, rcos, rsin);
+    std::vector<float> ncos, nsin;
+    naf_rope_tables(Tn, tensor_to_f32(naf.get("image_encoder.rope.periods")), ncos, nsin);
+    std::vector<int32_t> win_idx, raster_of_bm, bm_of_raster;
+    naf_window_index(Tn, Hp, Wp, win_idx);
+    naf_block_order(Tn, Hp, Wp, raster_of_bm, bm_of_raster);
+    const NafGgmlOpts nopts = naf_ggml_opts_for(naf);
+
+    // Persistent accumulators (zeroed), channel-major like the graph tensors they receive.
+    ggml_context* pc = ggml_init({ ggml_tensor_overhead() * 4 + 256, nullptr, true });
+    T* acc_glob = ggml_new_tensor_2d(pc, GGML_TYPE_F32, D, NPREFIX);
+    T* acc_lr   = ggml_new_tensor_2d(pc, GGML_TYPE_F32, D, N3);
+    T* acc_hr   = ggml_new_tensor_2d(pc, GGML_TYPE_F32, D, N3);
+    ggml_backend_buffer_t pbuf = ggml_backend_alloc_ctx_tensors(pc, dinov3.backend);
+    if (!pbuf) throw std::runtime_error("pixal3d_cond_slat_gpu: accumulator alloc failed");
+    ggml_backend_buffer_clear(pbuf, 0);
+
+    Pixal3dCondStats st;
+    st.views = V;
+    st.weight_bytes = (dinov3.buffer ? ggml_backend_buffer_get_size(dinov3.buffer) : 0)
+                    + (naf.buffer ? ggml_backend_buffer_get_size(naf.buffer) : 0);
+    st.cond_bytes = ggml_backend_buffer_get_size(pbuf);
+
+    for (int v = 0; v < V; ++v) {
+        const auto tv = std::chrono::steady_clock::now();
+        std::vector<float> normed = pixal3d_imagenet_normalize(views[v].rgb_premult, S);
+
+        Camera cam{};
+        cam.has_c2w = true;
+        cam.mesh_scale = prm.mesh_scale;
+        cam.fov_x = views[v].fov_x;
+        for (int i = 0; i < 16; ++i) cam.c2w[i] = calc[(size_t)v * 16 + i];
+        std::vector<int32_t> idx_lr[4], idx_hr[4];
+        std::vector<float> w_lr[4], w_hr[4];
+        proj_grid_bilinear_taps(Hp, Wp, R, S, cam, idx_lr, w_lr);
+        proj_grid_bilinear_taps(Tn, Tn, R, S, cam, idx_hr, w_hr);
+        for (int t = 0; t < 4; ++t)                       // NAF map rows are in block-major pixel order
+            for (int32_t& i : idx_hr[t]) i = bm_of_raster[i];
+
+        size_t meta = ggml_tensor_overhead() * 8192 + ggml_graph_overhead_custom(16384, false) + (1 << 20);
+        ggml_context* c = ggml_init({ meta, nullptr, true });
+        Dinov3Inputs in{};
+        T* x = dinov3_build(c, dinov3, S, in);                       // [D, Ntok]
+        T* glob = ggml_view_2d(c, x, D, NPREFIX, x->nb[1], 0);      // [D, 5]
+        T* patches = ggml_view_2d(c, x, D, NP, x->nb[1], (size_t)NPREFIX * x->nb[1]);  // [D, Hp*Wp] == lr fmap, pixel-major
+
+        NafGraphInputs nin;
+        T* hr = naf_build(c, naf, S, Tn, Hp, Wp, patches, nin, nopts);   // [D, T*T] block-major pixel-major
+
+        T *gidx_lr[4], *gw_lr[4], *gidx_hr[4], *gw_hr[4];
+        T* z_lr = nullptr; T* z_hr = nullptr;
+        for (int t = 0; t < 4; ++t) {
+            gidx_lr[t] = ggml_new_tensor_1d(c, GGML_TYPE_I32, N3);   ggml_set_input(gidx_lr[t]);
+            gw_lr[t]   = ggml_new_tensor_2d(c, GGML_TYPE_F32, 1, N3); ggml_set_input(gw_lr[t]);
+            gidx_hr[t] = ggml_new_tensor_1d(c, GGML_TYPE_I32, N3);   ggml_set_input(gidx_hr[t]);
+            gw_hr[t]   = ggml_new_tensor_2d(c, GGML_TYPE_F32, 1, N3); ggml_set_input(gw_hr[t]);
+            T* tl = ggml_mul(c, ggml_get_rows(c, patches, gidx_lr[t]), gw_lr[t]);   // [D, R^3]
+            T* th = ggml_mul(c, ggml_get_rows(c, hr, gidx_hr[t]), gw_hr[t]);        // [D, R^3]
+            z_lr = z_lr ? ggml_add(c, z_lr, tl) : tl;
+            z_hr = z_hr ? ggml_add(c, z_hr, th) : th;
+        }
+        const float inv_v = 1.0f / (float)V;
+        T* wg = ggml_cpy(c, ggml_add(c, acc_glob, ggml_scale(c, glob, inv_v)), acc_glob);
+        T* wl = ggml_cpy(c, ggml_add(c, acc_lr, ggml_scale(c, z_lr, inv_v)), acc_lr);
+        T* wh = ggml_cpy(c, ggml_add(c, acc_hr, ggml_scale(c, z_hr, inv_v)), acc_hr);
+
+        ggml_cgraph* g = ggml_new_graph_custom(c, 16384, false);
+        ggml_build_forward_expand(g, wg);
+        ggml_build_forward_expand(g, wl);
+        ggml_build_forward_expand(g, wh);
+        const std::string tag = "pixal3d_cond_slat_gpu_S" + std::to_string(S) + "_R" + std::to_string(R)
+                              + "_T" + std::to_string(Tn) + "_v" + std::to_string(v);
+        trellis_graph_dump(tag.c_str(), g);
+        check_graph_supported(dinov3.backend, g, tag.c_str());
+
+        ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(dinov3.backend));
+        if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("pixal3d_cond_slat_gpu: alloc failed");
+        const size_t ab = ggml_gallocr_get_buffer_size(alloc, 0);
+        if (ab > st.view_alloc_bytes) st.view_alloc_bytes = ab;
+
+        ggml_backend_tensor_set(in.img, normed.data(), 0, normed.size() * 4);
+        ggml_backend_tensor_set(in.cos, rcos.data(), 0, rcos.size() * 4);
+        ggml_backend_tensor_set(in.sin, rsin.data(), 0, rsin.size() * 4);
+        ggml_backend_tensor_set(nin.img, views[v].rgb_premult.data(), 0, views[v].rgb_premult.size() * 4);
+        ggml_backend_tensor_set(nin.rope_cos, ncos.data(), 0, ncos.size() * 4);
+        ggml_backend_tensor_set(nin.rope_sin, nsin.data(), 0, nsin.size() * 4);
+        ggml_backend_tensor_set(nin.win_idx, win_idx.data(), 0, win_idx.size() * sizeof(int32_t));
+        ggml_backend_tensor_set(nin.blk_idx, raster_of_bm.data(), 0, raster_of_bm.size() * sizeof(int32_t));
+        for (int t = 0; t < 4; ++t) {
+            ggml_backend_tensor_set(gidx_lr[t], idx_lr[t].data(), 0, idx_lr[t].size() * sizeof(int32_t));
+            ggml_backend_tensor_set(gw_lr[t], w_lr[t].data(), 0, w_lr[t].size() * sizeof(float));
+            ggml_backend_tensor_set(gidx_hr[t], idx_hr[t].data(), 0, idx_hr[t].size() * sizeof(int32_t));
+            ggml_backend_tensor_set(gw_hr[t], w_hr[t].data(), 0, w_hr[t].size() * sizeof(float));
+        }
+        if (ggml_backend_graph_compute(dinov3.backend, g) != GGML_STATUS_SUCCESS)
+            throw std::runtime_error("pixal3d_cond_slat_gpu: compute failed");
+        ggml_backend_synchronize(dinov3.backend);
+        ggml_gallocr_free(alloc);   // release this view's temporaries before the next view
+        ggml_free(c);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tv).count();
+        if (ms > st.view_ms_max) st.view_ms_max = ms;
+    }
+
+    // One readback: ggml channel-major [D, tok] -> host token-major, proj = [lr || hr] per token.
+    std::vector<float> hg = tensor_to_f32(acc_glob), hl = tensor_to_f32(acc_lr), hh = tensor_to_f32(acc_hr);
+    for (int t = 0; t < NPREFIX; ++t)
+        for (int c = 0; c < D; ++c) out.global[(size_t)t * D + c] = hg[(size_t)t * D + c];
+    for (int64_t k = 0; k < N3; ++k) {
+        float* dst = &out.proj[(size_t)k * 2 * D];
+        std::memcpy(dst, &hl[(size_t)k * D], D * sizeof(float));
+        std::memcpy(dst + D, &hh[(size_t)k * D], D * sizeof(float));
+    }
 
     ggml_backend_buffer_free(pbuf);
     ggml_free(pc);
