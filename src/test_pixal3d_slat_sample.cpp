@@ -59,6 +59,7 @@
 #include "dit.h"
 #include "trellis_args.h"
 #include "npy.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <array>
@@ -303,6 +304,9 @@ int main(int argc, char** argv) {
     if (p.d_proj != (int)Dp) { fprintf(stderr, "d_proj mismatch: checkpoint=%d fixture=%lld\n", p.d_proj, (long long)Dp); return 1; }
 
     trellis::DitRunner* run = trellis::make_sparse_runner(mf, p, coords3, (int)Lc);
+    printf("memory: weights %.1f MB (GGUF %s), dit activation buffer %.1f MB, cond inputs %.1f MB (global %lld x %lld + proj %lld x %lld, re-uploaded per forward)\n",
+           mf.total_bytes() / 1048576.0, ggml_backend_name(mf.backend), run->alloc_bytes() / 1048576.0,
+           (cond.size() + proj.size()) * 4 / 1048576.0, (long long)Dc, (long long)Lc, (long long)Dp, (long long)N);
     trellis::FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* c, const float* pj) {
         if (!is_tex) return run->forward(x, ts, c, pj);
         vector<float> x64((size_t)2 * Cin * N);

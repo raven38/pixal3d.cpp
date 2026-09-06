@@ -324,6 +324,10 @@ std::vector<float> naf_upsample_ggml(const Model& naf, const float* image, int S
 
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(naf.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("naf_upsample_ggml: graph alloc failed");
+    if (log_timing)
+        fprintf(stderr, "[naf_ggml] S=%d T=%d h=%d w=%d nodes=%d generic=%d direct_conv=%d activations=%.1f MB output=%.1f MB\n",
+                S, T, h, w, ggml_graph_n_nodes(g), (int)o.generic_lowering, (int)o.direct_conv,
+                ggml_gallocr_get_buffer_size(alloc, 0) / 1048576.0, ggml_nbytes(hr) / 1048576.0);
     lap("graph alloc");
 
     std::vector<float> periods = tensor_to_f32(naf.get("image_encoder.rope.periods"));

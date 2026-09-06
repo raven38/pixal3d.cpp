@@ -477,3 +477,24 @@ Not exercised / still open after this stage:
   never selects that path.
 - **Queue-wait ceiling**: upstream's fixed 30 s wait aborts a browser DiT forward;
   `patches/ggml-webgpu/0002` makes it a build-time define (600 s here).
+
+## 9. Validated on WebGPU (2026-09-06, `feat/webgpu-shape512-flow`, Shape-512 stage)
+
+Same meaning of "validated" as §8 (executed on the ggml WebGPU backend inside the real graph,
+output matched the fixtures -- `docs/spec/31-webgpu-bringup.md` §10). Backend delta this phase:
+`patches/ggml-webgpu/0003` (2D dispatch for row/element-parallel ops, `cpy` `gid.y` fix; without it
+every op below with more than 65535 rows was silently skipped and every `CONT` over 256 MB was
+partly garbage). No new op type was added to the backend.
+
+| graph (tag) | ops executed on WebGPU (count/graph) | parity result |
+|---|---|---|
+| NAF (`naf_ggml_S512_T512`, 204 nodes; the same graph inside the conditioning graph) | CONV_2D 10 (**direct**, f16 kernel × f32 input, replaces IM2COL+MUL_MAT), CONCAT 22 (20 mirrored border views = the PAD_REFLECT_1D lowering, e1‖e2, RoPE rotate-half), NORM 8 (**GroupNorm lowering**: 8 rows × 4M elements), UNARY:SILU 8, UNARY:NEG 1, MUL 10 / ADD 19 (affine, bias, RoPE), GET_ROWS 3 (`[256,262144]` block reorder of q, `[256,1024]`/`[1024,1024]` window gathers with 82944 indices), SUM_ROWS 1 (k pooling, 262144 rows of 256; 3 at T=128 where the avg-pool lowering runs), MUL_MAT 2 (batched `[64,81,4,1024]ᵀ[64,256,4,1024]`, `[81,256,4,1024]ᵀ[81,256,4,1024]`), SOFT_MAX 1 (1M rows of 81), SCALE 2, CONT 30 (incl. two 1 GB transposes), PERMUTE 5, TRANSPOSE 3, RESHAPE 55, VIEW 22 -- 204 nodes | T=128: out rel 4.0e-4 vs PyTorch (tol 3e-3); T=512: 5.5e-4 (`s512_naf_hr_v0`) |
+| Shape-512 conditioning, device-resident (`pixal3d_cond_slat_gpu_S512_R32_T512_v<i>` = DINOv3 + NAF + 8 GET_ROWS `[1024,32768]` taps + MUL/ADD/SCALE/CPY into three accumulators) | as above | V=4 `z_global` 9.5e-5, `z_proj` lr 2.4e-4 / hr 1.9e-4; V=1 7.2e-5 / 2.7e-4 / 4.1e-4 -- identical digits to the host path |
+| Shape-512 flow DiT, sparse (`dit_N4377_dcond5_proj1`, `--no-fa`) | the §8 SS DiT op set at N=4377 (`proj_linear` on the 2048-wide `[lr‖hr]` condition, score tensor `[4377,4377,12]` f32 = 920 MB in one chunk) | block test N=2000: block-0 probes ≤ 8.2e-4, output rel 5.6e-3 cos 0.999998; sampling: spec 31 §10.6 |
+
+Not exercised / still open after this stage: everything in §8's list (FLASH_ATTN_EXT F16 tile
+path, BF16, IM2COL_3D/CONV_3D) plus the sparse-decoder ops (§5 B8-B11: no missing op type, but
+1.2-1.6 GB tensors and the single-buffer `PAD`+`CPY` pattern). `SET_ROWS` remains 1D-dispatched
+(fine below 65535 workgroups). NAF at S=1024 / T=512 (shape-1024 conditioning) would use the
+`POOL_2D` lowering with k=2 and d = 8 blocks -- the lowering is validated at k=4 (T=128) and the
+block formulation at d = 4 and 16; DINOv3's 1.08 GB score tensor at S=1024 is untiled.

@@ -10,6 +10,9 @@ self.onmessage = async (ev) => {
   try {
     post('worker: navigator.gpu present: ' + (!!self.navigator.gpu));
     const Module = await createPixal3dSS({
+      // the module lives in ../ss/ (one wasm for both stages); Emscripten resolves the .wasm
+      // relative to this worker's URL unless told otherwise
+      locateFile: (p) => new URL('../ss/' + p, self.location.href).href,
       print: (t) => post(t),
       printErr: (t) => post('[stderr] ' + t),
     });
