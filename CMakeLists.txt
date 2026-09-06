@@ -118,9 +118,9 @@ if(TARGET ggml-webgpu AND NOT PIXAL3D_WEBGPU_SUBGROUP_MATRIX)
   target_compile_definitions(ggml-webgpu PRIVATE GGML_WEBGPU_SUBGROUP_MATRIX=0)
 endif()
 # One DiT forward is a single graph submission; upstream's 30 s queue-wait ceiling aborts it on
-# slow adapters (patches/ggml-webgpu/0002). 10 minutes.
+# slow adapters (patches/ggml-webgpu/0002). 2 hours: one N=17489 forward (Shape-1024 / texture, exact SDPA) is minutes in Chrome.
 if(TARGET ggml-webgpu)
-  target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=600000u)
+  target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=7200000u)
 endif()
 set(CMAKE_INSTALL_RPATH "$ORIGIN")
 
