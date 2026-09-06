@@ -1,5 +1,6 @@
 #include "flow_runner.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <stdexcept>
+#include <string>
 #if defined(_WIN32)
 #include <io.h>
 #else
@@ -55,6 +57,7 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);
     if (dbg_nan_) for (auto& [nm, t] : inter_) { ggml_build_forward_expand(g_, t); ggml_set_output(t); }
+    trellis_graph_dump(("dit_N" + std::to_string(N_) + "_dcond" + std::to_string(Lc_) + "_proj" + std::to_string((int)p_.proj_attn)).c_str(), g_);
     alloc_ = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m_.backend));
     if (!ggml_gallocr_alloc_graph(alloc_, g_)) throw std::runtime_error("DitRunner: alloc failed");
     rcos_ = rcos; rsin_ = rsin;   // keep; re-upload each forward (gallocr reuses input buffers across runs)

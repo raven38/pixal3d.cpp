@@ -1,5 +1,6 @@
 #include "dinov3.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
@@ -103,6 +104,7 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 16384, false);
     ggml_build_forward_expand(g, x);
+    trellis_graph_dump(("dinov3_S" + std::to_string(S)).c_str(), g);
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("dinov3: alloc failed");
     ggml_backend_tensor_set(img,  chw.data(), 0, chw.size() * 4);

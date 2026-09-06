@@ -109,6 +109,7 @@ add_library(trellis_core STATIC
   src/proj_grid.cpp
   src/pixal3d_cond.cpp
   src/naf.cpp
+  src/graph_dump.cpp
   src/transforms_json.cpp
 )
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)

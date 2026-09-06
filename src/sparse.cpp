@@ -1,5 +1,6 @@
 #include "sparse.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
@@ -153,11 +154,12 @@ struct GraphRun {
     // `roots` are extra nodes to expand: writes into a preallocated `out` via ggml_cpy are
     // not reachable from `out` itself (nothing produces it), so they must be rooted explicitly.
     std::vector<float> run(ggml_tensor* out, const std::vector<std::pair<ggml_tensor*, const void*>>& inputs,
-                           const std::vector<ggml_tensor*>& roots = {}) {
+                           const std::vector<ggml_tensor*>& roots = {}, const char* tag = "c2s") {
         ggml_set_output(out);
         ggml_cgraph* g = ggml_new_graph_custom(c, kGraphNodes, false);
         for (ggml_tensor* r : roots) ggml_build_forward_expand(g, r);
         ggml_build_forward_expand(g, out);
+        trellis_graph_dump(tag, g);
         alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
         if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("c2s: alloc failed");
         if (getenv("TRELLIS_DBG_ALLOC"))
@@ -173,7 +175,7 @@ struct GraphRun {
 C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<float>& feats_in, int Cin,
                      const std::vector<std::array<int,3>>& coords, int Cout,
-                     const std::vector<uint8_t>* ext_subdiv) {
+                     const std::vector<uint8_t>* ext_subdiv, const char* tag) {
     const int N = (int)coords.size();
     if (N == 0) throw std::runtime_error("c2s: empty input coordinate set in " + prefix);
     if (Cin <= 0 || Cout <= 0 || feats_in.size() != (size_t)Cin * N)
@@ -194,7 +196,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
             T* gf = ggml_new_tensor_2d(c, GGML_TYPE_F32, Cin, N); ggml_set_input(gf);
             T* sd = ggml_add(c, mul_mat_rows(c, m.get(prefix + ".to_subdiv.weight"), gf),
                              m.get(prefix + ".to_subdiv.bias"));
-            return gr1.run(sd, { {gf, feats_in.data()} });   // [8, N] -- small
+            return gr1.run(sd, { {gf, feats_in.data()} }, {}, (std::string(tag) + "_subdiv_N" + std::to_string(N)).c_str());   // [8, N] -- small
         };
         constexpr int kAttempts = 3;
         for (int attempt = 0; attempt < kAttempts; ++attempt) {
@@ -356,7 +358,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
 
     std::vector<float> outv = gr2.run(out, { {gf, feats_in.data()}, {gn, nbr.data()},
                                              {gi, gidx.data()}, {gl, gloc.data()}, {gn2, nnbr.data()} },
-                                      roots);
+                                      roots, (std::string(tag) + "_conv_N" + std::to_string(N) + "_M" + std::to_string(M)).c_str());
     return { std::move(outv), std::move(nc), Cout, std::move(mask_used) };
 }
 

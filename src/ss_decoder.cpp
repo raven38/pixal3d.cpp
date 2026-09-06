@@ -1,5 +1,6 @@
 #include "ss_decoder.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
@@ -58,13 +59,15 @@ static T* resblock(ggml_context* c, const Model& m, const std::string& p, T* x, 
 struct Seg { std::vector<float> data; };
 static Seg run_seg(const Model& m, const std::vector<float>& in_host,
                    std::array<int64_t,4> ne,
-                   const std::function<T*(ggml_context*, T*)>& build) {
+                   const std::function<T*(ggml_context*, T*)>& build,
+                   const char* tag = "ss_dec_seg") {
     size_t meta = ggml_tensor_overhead() * 4096 + ggml_graph_overhead_custom(8192, false) + (1 << 20);
     ggml_context* c = ggml_init({ meta, nullptr, true });
     T* in = ggml_new_tensor_4d(c, GGML_TYPE_F32, ne[0], ne[1], ne[2], ne[3]); ggml_set_input(in);
     T* out = build(c, in); ggml_set_output(out);
     ggml_cgraph* g = ggml_new_graph_custom(c, 8192, false);
     ggml_build_forward_expand(g, out);
+    trellis_graph_dump(tag, g);
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("ss_dec: alloc failed");
     ggml_backend_tensor_set(in, in_host.data(), 0, in_host.size() * 4);
@@ -100,7 +103,7 @@ std::vector<float> ss_decode(const Model& m, const std::vector<float>& z) {
         h = resblock(c, m, "blocks.0", h, 512);
         h = resblock(c, m, "blocks.1", h, 512);
         return conv3d(c, m, "blocks.2.conv", h, 512);     // [16,16,16,1024]
-    });
+    }, "ss_dec_seg1_res16");
     std::vector<float> up1 = pixel_shuffle(s1.data, 16, 16, 16, 128);  // [32,32,32,128]
 
     // Segment 2: blocks.3,4 (res128) + blocks.5.conv -> [32,32,32,32*8]
@@ -108,7 +111,7 @@ std::vector<float> ss_decode(const Model& m, const std::vector<float>& z) {
         T* h = resblock(c, m, "blocks.3", x, 128);
         h = resblock(c, m, "blocks.4", h, 128);
         return conv3d(c, m, "blocks.5.conv", h, 128);     // [32,32,32,256]
-    });
+    }, "ss_dec_seg2_res32");
     std::vector<float> up2 = pixel_shuffle(s2.data, 32, 32, 32, 32);   // [64,64,64,32]
 
     // Segment 3: blocks.6,7 (res32) + out_layer -> [64,64,64,1]
@@ -118,7 +121,7 @@ std::vector<float> ss_decode(const Model& m, const std::vector<float>& z) {
         h = chln(c, m, "out_layer.0", h);
         h = ggml_silu(c, h);
         return conv3d(c, m, "out_layer.2", h, 32);        // [64,64,64,1]
-    });
+    }, "ss_dec_seg3_res64");
     return s3.data;   // torch [1,1,64,64,64] memory
 }
 
