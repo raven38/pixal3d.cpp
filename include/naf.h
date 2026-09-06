@@ -7,7 +7,12 @@
 // CPU-only, plain loops, f32: weights are pulled to host once via tensor_to_f32
 // and the whole forward pass runs as ordinary C++ arithmetic (no ggml graph).
 #pragma once
+#include <cstddef>
+#include <cstdint>
 #include <vector>
+
+struct ggml_context;
+struct ggml_tensor;
 
 namespace trellis {
 struct Model;
@@ -82,16 +87,106 @@ void naf_na2d(const std::vector<float>& q, const std::vector<float>& k, const st
               int T, int dy, int dx, int Cv, float scale, std::vector<float>& out);
 
 // ---------------------------------------------------------------------------
-// GPU dispatch (src/naf_gpu.cpp + src/naf_attn.cu), only compiled/linked into
-// CUDA builds (TRELLIS_USE_CUDA -- see CMakeLists.txt). naf_upsample() in
-// naf.cpp calls these automatically (see its dispatch at the top); not meant to
-// be called directly by other code. On non-CUDA backends (Metal, Vulkan,
-// CPU-only) these symbols don't exist and naf_upsample() never references them,
-// so naf_upsample()'s CPU body (below) is the only code that ever runs there --
-// unchanged from before this GPU port.
+// CUDA dispatch (src/naf_gpu.cpp + src/naf_attn.cu), only compiled/linked into
+// CUDA builds (TRELLIS_USE_CUDA -- see CMakeLists.txt): ggml encoder graph +
+// custom neighborhood-attention CUDA kernel. naf_upsample() in naf.cpp calls
+// these automatically (see its dispatch at the top); not meant to be called
+// directly by other code.
+#if defined(TRELLIS_USE_CUDA)
 bool naf_gpu_available(const Model& naf, int S, int T, int h, int w);
 std::vector<float> naf_upsample_gpu(const Model& naf, const float* image, int S,
                                      const float* lr, int C, int h, int w, int T,
                                      NafDebug* dbg);
+#endif
+
+// ---------------------------------------------------------------------------
+// All-ggml path (src/naf_gpu.cpp, every backend): the whole upsampler --
+// encoder, RoPE, k pooling, the cross-scale neighborhood attention and the
+// [C,T,T] map -- as one ggml graph on the Model's backend, nothing on the host
+// in between. This is the WebGPU/WASM path (docs/spec/30-pixal3d-cond.md
+// section 4; docs/PIXAL3D_WEBGPU_OP_GAP.md D1) and doubles as the Metal/Vulkan
+// one. The attention is not a custom kernel: with an integer upsample factor
+// d = T/h every pixel of a d x d block shares one clamped 9x9 window of the
+// low-res k/v maps (naf_attn.h's equivalence argument), so it is 81 gathered
+// keys/values per block and two batched mul_mats over [blocks x heads]:
+//   logits[81, d^2] = K_win[64, 81]^T q[64, d^2]  ->  softmax  ->
+//   out[C/4, d^2]   = V_win[81, C/4]^T P[81, d^2]
+// The map comes out pixel-major ([C, T*T], rows = pixels) in BLOCK-MAJOR pixel
+// order (naf_block_order); consumers that gather from it (pixal3d_cond_slat_gpu)
+// remap their pixel indices, naf_upsample_ggml un-permutes on the host.
+
+struct NafGgmlOpts {
+    // Lower GroupNorm / reflect-pad / avg-pool to ops the backend has when it lacks
+    // GGML_OP_GROUP_NORM / PAD_REFLECT_1D / POOL_2D (the ggml WebGPU backend):
+    // norm over a [W*H*C/8, 8] reshape, concat of mirrored border rows/cols, and
+    // sum_rows over a [k, ...] reshape. Exact re-expressions, not approximations.
+    bool generic_lowering = false;
+    // ggml_conv_2d_direct (f32 activations, no [K*K*Ci, W*H] im2col buffer) instead
+    // of ggml_conv_2d (im2col in the weight dtype + mul_mat).
+    bool direct_conv = false;
+};
+// Probes the backend's supports_op for the ops above and returns the opts for it.
+NafGgmlOpts naf_ggml_opts_for(const Model& naf);
+
+// Input tensors created by naf_build (all flagged ggml_set_input; the caller
+// uploads them after allocation with the host tables below).
+struct NafGraphInputs {
+    ggml_tensor* img = nullptr;       // [S,S,3,1] f32, [0,1] premultiplied RGB (NOT ImageNet-normalized)
+    ggml_tensor* rope_cos = nullptr;  // [T*T, 64] f32, naf_rope_tables
+    ggml_tensor* rope_sin = nullptr;
+    ggml_tensor* win_idx = nullptr;   // [81 * h*w] i32, naf_window_index
+    ggml_tensor* blk_idx = nullptr;   // [T*T] i32, naf_block_order (raster index per block-major position)
+    // intermediates kept as graph outputs when `debug` is set (layouts as NafDebug: [C,T,T] channel-major,
+    // except k_pooled which is the [256, h*w] pixel-major k_rows)
+    ggml_tensor* enc_cat = nullptr;
+    ggml_tensor* enc_pooled = nullptr;
+    ggml_tensor* q_rope = nullptr;
+    ggml_tensor* k_rows = nullptr;
+};
+
+// Builds the NAF graph in `c` for a view at resolution S (== S', bilinear input
+// downsample not supported: S <= 4T) and target T, with h,w = the low-res grid
+// (T % h == 0, T % w == 0) and v_rows = the [C, h*w] pixel-major low-res
+// feature map (row = y*w + x -- exactly DINOv3's patch-token order, so a view of
+// the DINOv3 output at token offset 5 can be passed straight in). Returns the
+// upsampled map [C, T*T] pixel-major in block-major pixel order.
+ggml_tensor* naf_build(ggml_context* c, const Model& naf, int S, int T, int h, int w,
+                       ggml_tensor* v_rows, NafGraphInputs& in, const NafGgmlOpts& opts,
+                       bool debug = false);
+
+// Host tables for naf_build's inputs.
+// RoPE cos/sin: [T*T*64], index d*T*T + pix (pix = y*T + x), the per-pixel angle
+// tables naf_rope_apply_inplace uses (periods = image_encoder.rope.periods).
+void naf_rope_tables(int T, const std::vector<float>& periods, std::vector<float>& cos, std::vector<float>& sin);
+// Window gather index: [81 * h*w], idx[blk*81 + wy*9 + wx] = low-res row of tap (wy,wx)
+// of block blk = py*w + px (naf_na_window's clamped start, dilation dy = T/h, dx = T/w).
+void naf_window_index(int T, int h, int w, std::vector<int32_t>& idx);
+// Block-major pixel order: raster_of_bm[p'] = raster pixel index (y*T + x) of block-major
+// position p' = blk*(dy*dx) + ry*dx + rx; bm_of_raster is its inverse.
+void naf_block_order(int T, int h, int w, std::vector<int32_t>& raster_of_bm, std::vector<int32_t>& bm_of_raster);
+
+struct NafGgmlStats {
+    size_t weight_bytes = 0;   // NAF weight buffer
+    size_t alloc_bytes = 0;    // gallocr buffer for the graph (activations + temporaries)
+    size_t input_bytes = 0;    // image + rope tables + index inputs
+    size_t output_bytes = 0;   // the [C, T*T] map
+    double total_ms = 0;
+    double compute_ms = 0;
+    int n_nodes = 0;
+};
+
+// True when naf_upsample() should take the ggml graph path for this Model: a GPU
+// backend other than CUDA (which has its own kernel path) and a config naf_build
+// supports. The CPU backend keeps the reference loops unless a caller invokes
+// naf_upsample_ggml directly (trellis-test-naf --ggml).
+bool naf_ggml_available(const Model& naf, int S, int T, int h, int w);
+
+// Same contract as naf_upsample (returns [C,T,T] channel-major, raster order, plus
+// the NafDebug intermediates) through one ggml graph on naf.backend. `opts`
+// nullptr = naf_ggml_opts_for(naf).
+std::vector<float> naf_upsample_ggml(const Model& naf, const float* image, int S,
+                                      const float* lr, int C, int h, int w, int T,
+                                      NafDebug* dbg = nullptr, NafGgmlStats* stats = nullptr,
+                                      const NafGgmlOpts* opts = nullptr);
 
 } // namespace trellis
