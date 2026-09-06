@@ -1,0 +1,53 @@
+diff --git a/src/ggml-webgpu/ggml-webgpu.cpp b/src/ggml-webgpu/ggml-webgpu.cpp
+index 96eb5a26..5f8ab085 100644
+--- a/src/ggml-webgpu/ggml-webgpu.cpp
++++ b/src/ggml-webgpu/ggml-webgpu.cpp
+@@ -459,11 +459,26 @@ static void ggml_backend_webgpu_check_wait_status(wgpu::WaitStatus wait_status,
+ }
+ 
+ // TODO: these next two functions may want tuning across different platforms and workloads,
++// Debug knobs (env): GGML_WEBGPU_MAX_INFLIGHT_BATCHES caps the number of command buffers
++// submitted before waiting for the queue (default: never wait); GGML_WEBGPU_SUBMIT_BATCH_SIZE
++// sets the number of encoded ops per submitted command buffer.
+ static uint32_t ggml_backend_webgpu_get_max_inflight_batches() {
++    if (const char * e = getenv("GGML_WEBGPU_MAX_INFLIGHT_BATCHES")) {
++        const long v = atol(e);
++        if (v > 0) {
++            return (uint32_t) v;
++        }
++    }
+     return UINT32_MAX;
+ }
+ 
+ static uint32_t ggml_backend_webgpu_get_command_submit_batch_size() {
++    if (const char * e = getenv("GGML_WEBGPU_SUBMIT_BATCH_SIZE")) {
++        const long v = atol(e);
++        if (v > 0) {
++            return (uint32_t) v;
++        }
++    }
+     return WEBGPU_DEFAULT_COMMAND_SUBMIT_BATCH_SIZE;
+ }
+ 
+@@ -3929,6 +3944,21 @@ static void create_webgpu_device(ggml_backend_webgpu_reg_context * ctx) {
+     deviceTogglesDesc.enabledToggleCount  = 3;
+     deviceTogglesDesc.disabledToggles     = deviceDisabledToggles;
+     deviceTogglesDesc.disabledToggleCount = 1;
++    // Debug knob (env): GGML_WEBGPU_SAFE_TOGGLES keeps Dawn's checks on, to tell a shader
++    // out-of-bounds / uninitialized read apart from a real backend bug. Values: 1/all (keep every
++    // check on), robustness (keep only bounds checks), wginit (keep only workgroup zero-init),
++    // polyfills (keep only the integer div/mod polyfills).
++    const char * const safeRobustness[] = { "disable_workgroup_init", "disable_polyfills_on_integer_div_and_mod" };
++    const char * const safeWgInit[]     = { "disable_robustness", "disable_polyfills_on_integer_div_and_mod" };
++    const char * const safePolyfills[]  = { "disable_robustness", "disable_workgroup_init" };
++    if (const char * e = getenv("GGML_WEBGPU_SAFE_TOGGLES")) {
++        const std::string v(e);
++        if (v == "robustness") { deviceTogglesDesc.enabledToggles = safeRobustness; deviceTogglesDesc.enabledToggleCount = 2; }
++        else if (v == "wginit") { deviceTogglesDesc.enabledToggles = safeWgInit; deviceTogglesDesc.enabledToggleCount = 2; }
++        else if (v == "polyfills") { deviceTogglesDesc.enabledToggles = safePolyfills; deviceTogglesDesc.enabledToggleCount = 2; }
++        else if (!v.empty() && v != "0") { deviceTogglesDesc.enabledToggleCount = 0; }
++        GGML_LOG_INFO("ggml_webgpu: GGML_WEBGPU_SAFE_TOGGLES=%s: %u perf toggles enabled\n", e, deviceTogglesDesc.enabledToggleCount);
++    }
+ 
+     dev_desc.nextInChain = &deviceTogglesDesc;
+ #endif

@@ -245,10 +245,11 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
                 T* rope_idx = nullptr) {
     const std::string b = "blocks." + std::to_string(i);
     const int dm = p.d_model;
-    // Block 0 keeps the historical "blk0_*" names; block 15 is exposed too as a mid-depth probe.
+    // Block 0 keeps the historical "blk0_*" names; blocks 1 and 15 are exposed too as probes
+    // ("blk1_*", "blk15_*"), for localizing a backend divergence block by block.
     auto dbg = [&](const char* n, T* t) {
-        if (inter && (i == 0 || i == 15)) {
-            std::string nm = i == 0 ? std::string(n) : "blk15_" + std::string(n + 5);
+        if (inter && (i == 0 || i == 1 || i == 15)) {
+            std::string nm = i == 0 ? std::string(n) : "blk" + std::to_string(i) + "_" + std::string(n + 5);
             (*inter)[nm] = t; ggml_set_name(t, nm.c_str());
         }
         return t;
