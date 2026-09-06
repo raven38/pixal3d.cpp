@@ -30,7 +30,7 @@ namespace {
 float detval(size_t i) { return ((i * 2654435761u) & 1023) / 512.0f - 1.0f; }
 
 ggml_context* mkctx(size_t n_tensors) {
-    size_t meta = ggml_tensor_overhead() * n_tensors + ggml_graph_overhead_custom(64, false) + (1 << 16);
+    size_t meta = ggml_tensor_overhead() * n_tensors + ggml_graph_overhead_custom(512, false) + (1 << 16);
     return ggml_init({ meta, nullptr, true });
 }
 
@@ -61,16 +61,18 @@ struct Case {
     std::function<T*(ggml_context*, std::vector<T*>&)> build;
 };
 
+static int g_gpu_repeat = 0;   // --gpu-repeat K: re-run the GPU graph K more times on the same inputs, compare to the first run
+
 bool run_case(const Case& cs, ggml_backend_t gpu, ggml_backend_t cpu) {
     std::vector<float> res[2];
     size_t out_bytes = 0;
     for (int which = 0; which < 2; ++which) {
         ggml_backend_t be = which == 0 ? gpu : cpu;
-        ggml_context* c = mkctx(64);
+        ggml_context* c = mkctx(512);
         std::vector<T*> inputs;
         T* out = cs.build(c, inputs);
         ggml_set_output(out);
-        ggml_cgraph* g = ggml_new_graph_custom(c, 64, false);
+        ggml_cgraph* g = ggml_new_graph_custom(c, 512, false);
         ggml_build_forward_expand(g, out);
         if (which == 0) {
             ggml_backend_dev_t dev = ggml_backend_get_device(be);
@@ -90,20 +92,26 @@ bool run_case(const Case& cs, ggml_backend_t gpu, ggml_backend_t cpu) {
             return false;
         }
         size_t seed = 1;
+        std::vector<std::vector<uint8_t>> host_inputs;   // kept for re-upload (gallocr reuses input memory)
         for (T* in : inputs) {
             const size_t ne = (size_t)ggml_nelements(in);
+            std::vector<uint8_t> raw(ggml_nbytes(in));
             if (in->type == GGML_TYPE_F32) {
-                std::vector<float> h(ne);
+                float* h = (float*)raw.data();
                 // not f16-representable (detval alone is k/512), so f16 input staging shows up
                 for (size_t i = 0; i < ne; ++i) h[i] = detval(seed + i) * (1.0f + 0.37f * detval(seed * 3 + i));
-                ggml_backend_tensor_set(in, h.data(), 0, ggml_nbytes(in));
+            } else if (in->type == GGML_TYPE_F16) {
+                ggml_fp16_t* h = (ggml_fp16_t*)raw.data();
+                for (size_t i = 0; i < ne; ++i) h[i] = ggml_fp32_to_fp16(detval(seed + i) * 0.05f);
             } else if (in->type == GGML_TYPE_I32) {
                 // index inputs: the row count to index is stored in op_params[0] by the builder
                 const int32_t nrows = in->op_params[0];
-                std::vector<int32_t> h(ne);
-                for (size_t i = 0; i < ne; ++i) h[i] = (int32_t)((i * 7919u + seed) % (size_t)nrows);
-                ggml_backend_tensor_set(in, h.data(), 0, ggml_nbytes(in));
+                int32_t* h = (int32_t*)raw.data();
+                if (in->op_params[1] == 1) { for (size_t i = 0; i < ne / 2; ++i) { h[i] = (int32_t)(2 * i); h[ne / 2 + i] = (int32_t)(2 * i + 1); } }
+                else for (size_t i = 0; i < ne; ++i) h[i] = (int32_t)((i * 7919u + seed) % (size_t)nrows);
             }
+            ggml_backend_tensor_set(in, raw.data(), 0, ggml_nbytes(in));
+            host_inputs.push_back(std::move(raw));
             seed += ne;
         }
         if (ggml_backend_graph_compute(be, g) != GGML_STATUS_SUCCESS) {
@@ -115,6 +123,23 @@ bool run_case(const Case& cs, ggml_backend_t gpu, ggml_backend_t cpu) {
         res[which].resize((size_t)ggml_nelements(out));
         ggml_backend_tensor_get(out, res[which].data(), 0, ggml_nbytes(out));
         out_bytes = ggml_nbytes(out);
+        if (which == 0 && g_gpu_repeat > 0) {
+            // determinism: the same graph on the same (still-resident) inputs must be bit-identical
+            std::vector<float> again(res[0].size());
+            int nbad = 0;
+            for (int r = 0; r < g_gpu_repeat; ++r) {
+                for (size_t k = 0; k < inputs.size(); ++k)   // inputs are freed/reused by gallocr after their last use
+                    ggml_backend_tensor_set(inputs[k], host_inputs[k].data(), 0, ggml_nbytes(inputs[k]));
+                if (ggml_backend_graph_compute(be, g) != GGML_STATUS_SUCCESS) { printf("  gpu-repeat %d: compute failed\n", r); break; }
+                ggml_backend_synchronize(be);
+                ggml_backend_tensor_get(out, again.data(), 0, ggml_nbytes(out));
+                size_t ndiff = 0; double mx = 0;
+                for (size_t i = 0; i < again.size(); ++i) { const double d = std::fabs((double)again[i] - res[0][i]); if (!(d == 0)) { ++ndiff; if (std::isfinite(d)) mx = std::max(mx, d); else mx = INFINITY; } }
+                if (ndiff) { ++nbad; printf("  %-28s gpu-repeat %3d: %zu of %zu elements differ from run 0 (max|d| %.3e)\n", cs.name, r + 1, ndiff, again.size(), mx); }
+            }
+            printf("  %-28s gpu-repeat: %d of %d re-runs differed from run 0\n", cs.name, nbad, g_gpu_repeat);
+            if (nbad) { ggml_gallocr_free(alloc); ggml_free(c); return false; }
+        }
         ggml_gallocr_free(alloc);
         ggml_free(c);
     }
@@ -148,8 +173,13 @@ T* in_idx(ggml_context* c, std::vector<T*>& ins, int64_t n, int32_t nrows) {
 } // namespace
 
 int main(int argc, char** argv) {
-    bool small = false;
-    for (int i = 1; i < argc; ++i) if (std::string(argv[i]) == "--small") small = true;
+    bool small = false; int repeat = 1; std::string only;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--small") small = true;
+        else if (std::string(argv[i]) == "--repeat" && i + 1 < argc) repeat = atoi(argv[++i]);
+        else if (std::string(argv[i]) == "--only" && i + 1 < argc) only = argv[++i];   // substring filter on case names
+        else if (std::string(argv[i]) == "--gpu-repeat" && i + 1 < argc) g_gpu_repeat = atoi(argv[++i]);
+    }
 
     ggml_backend_t gpu = nullptr;
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
@@ -215,12 +245,86 @@ int main(int argc, char** argv) {
               return ggml_mul_mat(c, in_f32(c, ins, TAP, 256, HD, 4 * BLK), in_f32(c, ins, TAP, 64, HD, 4 * BLK)); } },
         { "soft_max [81,64,4,16384] (naf h64)", 1e-5, [&](ggml_context* c, std::vector<T*>& ins) {
               return ggml_soft_max_ext(c, in_f32(c, ins, TAP, 64, HD, 4 * BLK), nullptr, 0.125f, 0.0f); } },
+        // The DiT's exact SDPA at the Shape-1024 token count (dit.cpp sdpa, --no-fa): K/V shared by
+        // all query chunks, 14 chunks of <=1279 queries (1 GiB score budget), CONCAT of the chunk
+        // outputs along ne1 -- the first multi-chunk attention Pixal3D runs on WebGPU.
+        { "sdpa chunked N=17489 (dit exact)", 5e-3, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t hd = 128, nh = 12, L = small ? 4377 : 17489;
+              T* q = in_f32(c, ins, hd, nh, L); T* k = in_f32(c, ins, hd, nh, L); T* v = in_f32(c, ins, hd, nh, L);
+              T* q2 = ggml_cont(c, ggml_permute(c, q, 0, 2, 1, 3));
+              T* k2 = ggml_cont(c, ggml_permute(c, k, 0, 2, 1, 3));
+              T* v2 = ggml_cont(c, ggml_permute(c, v, 1, 2, 0, 3));
+              const int64_t per_q = L * nh * 4, nq0 = std::max<int64_t>(1, (1024ll << 20) / per_q);
+              const int64_t nq = nq0 >= L ? L : nq0;
+              T* out = nullptr;
+              for (int64_t q0 = 0; q0 < L; q0 += nq) {
+                  const int64_t n = std::min(nq, L - q0);
+                  T* qc = (n == L) ? q2 : ggml_cont(c, ggml_view_3d(c, q2, hd, n, nh, q2->nb[1], q2->nb[2], (size_t)q0 * q2->nb[1]));
+                  T* kq = ggml_soft_max_ext(c, ggml_mul_mat(c, k2, qc), nullptr, 1.0f / std::sqrt((float)hd), 0.0f);
+                  T* kqv = ggml_cont(c, ggml_permute(c, ggml_mul_mat(c, v2, kq), 0, 2, 1, 3));
+                  T* o = ggml_reshape_2d(c, kqv, hd * nh, n);
+                  out = out ? ggml_concat(c, out, o, 1) : o;
+              }
+              return out; } },
+        // The DiT's other N=17489 pieces (block MLP with the 546 MB hidden, the RoPE even/odd
+        // scatter, LayerNorm + modulation over [1536, N]), for repeated-run flakiness checks.
+        { "dit mlp N=17489 (f16 w, gelu)", 5e-3, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              T* h = in_f32(c, ins, 1536, L);
+              T* w1 = ggml_new_tensor_2d(c, GGML_TYPE_F16, 1536, 8192); ggml_set_input(w1); ins.push_back(w1);
+              T* w2 = ggml_new_tensor_2d(c, GGML_TYPE_F16, 8192, 1536); ggml_set_input(w2); ins.push_back(w2);
+              return ggml_mul_mat(c, w2, ggml_gelu(c, ggml_mul_mat(c, w1, h))); } },
+        { "mul_mat f16[1536,8192] x f32[1536,17489]", 5e-3, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              T* h = in_f32(c, ins, 1536, L);
+              T* w1 = ggml_new_tensor_2d(c, GGML_TYPE_F16, 1536, 8192); ggml_set_input(w1); ins.push_back(w1);
+              return ggml_mul_mat(c, w1, h); } },
+        { "mul_mat f16[8192,1536] x f32[8192,17489]", 5e-3, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              T* h = in_f32(c, ins, 8192, L);
+              T* w2 = ggml_new_tensor_2d(c, GGML_TYPE_F16, 8192, 1536); ggml_set_input(w2); ins.push_back(w2);
+              return ggml_mul_mat(c, w2, h); } },
+        { "mul_mat f32[1536,8192] x f32[1536,17489]", 5e-3, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              T* h = in_f32(c, ins, 1536, L);
+              T* w1 = in_f32(c, ins, 1536, 8192);
+              return ggml_mul_mat(c, w1, h); } },
+        // q/k MultiHeadRMSNorm x gamma at N=17489: ggml-webgpu fuses RMS_NORM+MUL into rms_norm_mul,
+        // whose encoder dispatches one workgroup per row on x only (12 x 17489 = 209868 rows).
+        { "rms_norm x gamma [128,12,17489]", 1e-5, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              T* x = in_f32(c, ins, 128, 12, L);
+              T* gamma = in_f32(c, ins, 128);
+              return ggml_mul(c, ggml_rms_norm(c, x, 1e-12f), gamma); } },
+        { "rms_norm alone [128,12,17489]", 1e-5, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489;
+              return ggml_rms_norm(c, in_f32(c, ins, 128, 12, L), 1e-12f); } },
+        { "dit rope scatter N=17489", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
+              const int64_t L = small ? 4377 : 17489, hd = 128, nh = 12, half = 64;
+              T* x = in_f32(c, ins, hd, nh, L);
+              T* cs = in_f32(c, ins, 1, half, 1, L); T* sn = in_f32(c, ins, 1, half, 1, L);
+              T* idx = in_idx(c, ins, hd, 1);   // filled below as evens|odds
+              idx->op_params[1] = 1;            // marker: rope index fill
+              T* x5 = ggml_reshape_4d(c, x, 2, half, nh, L);
+              T* x0 = ggml_cont(c, ggml_view_4d(c, x5, 1, half, nh, L, x5->nb[1], x5->nb[2], x5->nb[3], 0));
+              T* x1 = ggml_cont(c, ggml_view_4d(c, x5, 1, half, nh, L, x5->nb[1], x5->nb[2], x5->nb[3], x5->nb[0]));
+              T* ev = ggml_sub(c, ggml_mul(c, x0, cs), ggml_mul(c, x1, sn));
+              T* od = ggml_add(c, ggml_mul(c, x1, cs), ggml_mul(c, x0, sn));
+              T* ce = ggml_view_1d(c, idx, half, 0);
+              T* co = ggml_view_1d(c, idx, half, (size_t)half * 4);
+              T* out = ggml_scale(c, ggml_reshape_4d(c, x, 1, hd, nh, L), 0.0f);
+              out = ggml_set_rows(c, out, ev, ce);
+              out = ggml_set_rows(c, out, od, co);
+              return ggml_reshape_3d(c, out, hd, nh, L); } },
         { "cont(permute) 1 GB", 1e-12, [&](ggml_context* c, std::vector<T*>& ins) {
               T* x = in_f32(c, ins, 256, PX, HD, BLK);
               return ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3)); } },
     };
     bool all = true;
-    for (const Case& cs : cases) all &= run_case(cs, gpu, cpu);
+    for (int r = 0; r < repeat; ++r) {
+        if (repeat > 1) printf("--- repeat %d/%d ---\n", r + 1, repeat);
+        for (const Case& cs : cases) if (only.empty() || std::string(cs.name).find(only) != std::string::npos) all &= run_case(cs, gpu, cpu);
+    }
     printf("=== %s ===\n", all ? "ALL PASS" : "SOME FAILED");
     ggml_backend_free(gpu); ggml_backend_free(cpu);
     return all ? 0 : 1;
