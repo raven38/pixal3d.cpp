@@ -25,6 +25,7 @@
 #include "npy.h"
 #include "ggml-backend.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
@@ -380,6 +381,100 @@ int run_shape_impl(const string& dinov3_gguf, const string& naf_gguf, const stri
     return 0;
 }
 
+// Checkpoint/resume probe (spec 31 §11.5, "fast loop"): the same sparse DitRunner + sample_flow as
+// run_shape_impl, restricted to Euler steps [K, K+num_steps) of the fixture's schedule, started
+// from a serialized latent (input_latent, or the fixture's f32_<x_step><K>.npy) and repeated
+// `repeat` times from that same immutable input. The conditioning stage is skipped: the
+// fixture's condition is used (the calibrated-gate configuration of the full run). Reports the
+// run-to-run determinism (unique output hashes, first differing index, max/mean |d| vs run 0) and
+// the parity of run 0's output against expected_latent / the fixture's step-(K+num_steps)
+// references. g_latent = run 0's output. No orchestration lives in JavaScript: the browser only
+// mounts the files and calls this once.
+int run_shape_step_impl(const string& flow_gguf, const string& sample_dir, bool hr, int K, int num_steps,
+                        const string& input_latent, const string& expected_latent, int repeat) {
+    g_latent.clear(); g_steps.clear(); g_n_steps = 0;
+    const auto t_all = std::chrono::steady_clock::now();
+    g_no_fa = true;
+    const char* coords_name = hr ? "hr_coords.npy" : "coords.npy";
+    const char* zg_name = hr ? "hr_cond_global.npy" : "cond_global.npy";
+    const char* zp_name = hr ? "hr_cond_proj.npy" : "cond_proj.npy";
+    const char* x_step = hr ? "shape_x_step" : "x_step";
+    vector<int32_t> co; vector<int64_t> cshape;
+    if (!load_npy_i32(sample_dir + "/" + coords_name, co, cshape) || cshape.size() != 2) { rep("ERROR: %s\n", coords_name); return 2; }
+    const int64_t N = cshape[0], cw = cshape[1];
+    vector<std::array<int, 3>> coords3(N);
+    for (int64_t i = 0; i < N; ++i) coords3[i] = { co[i * cw + cw - 3], co[i * cw + cw - 2], co[i * cw + cw - 1] };
+    npy::Array zg = npy::load(sample_dir + "/" + zg_name);
+    npy::Array zp = npy::load(sample_dir + "/" + zp_name);
+    const int64_t Lc = zg.shape[1], Dc = zg.shape[2], Dp = zp.shape[1];
+    SamplerParams sp;
+    sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.5f;
+    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f; sp.sigma_min = 1e-5f;
+    if (hr && file_exists(sample_dir + "/shape_sampler_params.npy")) {
+        npy::Array spa = npy::load(sample_dir + "/shape_sampler_params.npy");
+        if (spa.numel() >= 6) {
+            sp.steps = (int)std::lround((double)spa.data[0]); sp.guidance_strength = spa.data[1]; sp.guidance_rescale = spa.data[2];
+            sp.gi0 = spa.data[3]; sp.gi1 = spa.data[4]; sp.rescale_t = spa.data[5];
+        }
+    }
+    const int Nn = num_steps < 1 ? 1 : num_steps;
+    if (K < 0 || K + Nn > sp.steps) { rep("ERROR: steps %d..%d outside the %d-step schedule\n", K, K + Nn - 1, sp.steps); return 2; }
+    const string in_path = input_latent.empty() ? sample_dir + "/f32_" + x_step + std::to_string(K) + ".npy" : input_latent;
+    npy::Array xin = npy::load(in_path);   // [N,32] row-major == ggml [32,N]
+    const int64_t Cin = xin.shape.size() > 1 ? xin.shape[1] : 32;
+    if (xin.shape[0] != N || zp.shape[0] != N) { rep("ERROR: token counts disagree (latent %lld, coords %lld, proj %lld)\n", (long long)xin.shape[0], (long long)N, (long long)zp.shape[0]); return 2; }
+    const vector<float> x0(xin.data.begin(), xin.data.begin() + (size_t)Cin * N);   // immutable input
+    vector<float> cond_g(zg.data.begin(), zg.data.begin() + (size_t)Lc * Dc), proj(zp.data.begin(), zp.data.begin() + (size_t)Dp * N);
+    vector<float> neg_cond(cond_g.size(), 0.0f), neg_proj(proj.size(), 0.0f);
+    rep("checkpoint/resume: %s steps %d..%d of %d from %s, repeat %d, N=%lld\n", hr ? "shape1024" : "shape512", K, K + Nn - 1, sp.steps, in_path.c_str(), repeat, (long long)N);
+
+    auto t0 = std::chrono::steady_clock::now();
+    Model mf = Model::load(flow_gguf, 0);
+    DiTParams p; p.in_ch = (int)Cin; p.out_ch = (int)Cin; p.d_cond = (int)Dc;
+    if (!dit_detect_proj_attn(mf, p) || p.d_proj != (int)Dp) { rep("ERROR: not a Pixal3D proj_attn checkpoint (d_proj=%d, fixture %lld)\n", p.d_proj, (long long)Dp); return 2; }
+    DitRunner* run = make_sparse_runner(mf, p, coords3, (int)Lc);
+    rep("shape_flow: %.1f MB weights on %s, dit activation buffer %.1f MB, load+alloc %.0f ms\n",
+        mf.total_bytes() / 1048576.0, ggml_backend_name(mf.backend), run->alloc_bytes() / 1048576.0, ms_since(t0));
+    FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* c, const float* pj) { return run->forward(x, ts, c, pj); };
+    sp.step_begin = K; sp.step_end = K + Nn;
+
+    auto fnv = [](const vector<float>& v) { uint64_t h = 1469598103934665603ull; const uint8_t* b = (const uint8_t*)v.data(); for (size_t i = 0; i < v.size() * 4; ++i) { h ^= b[i]; h *= 1099511628211ull; } return h; };
+    vector<uint64_t> hashes; double max_rr = 0, mean_rr_sum = 0; int64_t first_diff = -1; int n_diff = 0; double t_sum = 0;
+    const string sk = string(x_step) + std::to_string(K + Nn) + ".npy";
+    vector<float> ref_f32;   // per-run distance to f32: tells which run is the wrong one
+    if (file_exists(sample_dir + "/f32_" + sk)) ref_f32 = npy::load(sample_dir + "/f32_" + sk).data;
+    for (int r = 0; r < repeat; ++r) {
+        vector<float> x = x0;                         // restore the original input every run
+        const auto tr = std::chrono::steady_clock::now();
+        vector<float> y = sample_flow(fwd, x, cond_g.data(), neg_cond.data(), proj.data(), neg_proj.data(), sp, nullptr);
+        t_sum += ms_since(tr) / 1000.0;
+        const uint64_t h = fnv(y);
+        bool seen = false; for (uint64_t hh : hashes) seen |= (hh == h);
+        if (!seen) hashes.push_back(h);
+        char vs_f32[64] = "";
+        if (!ref_f32.empty()) snprintf(vs_f32, sizeof vs_f32, ", vs f32 rel=%.3e", cmp(y, ref_f32).rel);
+        if (r == 0) { g_latent = y; rep("  run  0: hash %016llx%s\n", (unsigned long long)h, vs_f32); continue; }
+        double mx = 0, sum = 0; int64_t fd = -1;
+        for (size_t i = 0; i < y.size(); ++i) { const double d = std::fabs((double)y[i] - g_latent[i]); if (!(d == 0) && fd < 0) fd = (int64_t)i; if (std::isfinite(d)) { mx = std::max(mx, d); sum += d; } else mx = INFINITY; }
+        if (fd >= 0) { ++n_diff; if (first_diff < 0) first_diff = fd; }
+        max_rr = std::max(max_rr, mx); mean_rr_sum += sum / y.size();
+        rep("  run %2d: hash %016llx%s, vs run 0: max|d|=%.3e mean|d|=%.3e first differing index %lld\n", r, (unsigned long long)h, vs_f32, mx, sum / y.size(), (long long)fd);
+    }
+    rep("  determinism: %zu unique output hash(es) over %d run(s), %d run(s) differ from run 0, first differing index %lld, max run-to-run |d| %.3e, mean %.3e; %.1f s per run\n",
+        hashes.size(), repeat, n_diff, (long long)first_diff, max_rr, repeat > 1 ? mean_rr_sum / (repeat - 1) : 0.0, t_sum / repeat);
+    delete run; mf.free();
+
+    rep("  output of step %d (run 0) vs references:\n", K + Nn - 1);
+    rep_latent(g_latent);
+    if (!expected_latent.empty()) rep_cmp("expected", cmp(g_latent, npy::load(expected_latent).data));
+    for (const char* pre : { "f32_", "bf16_", "cuda_", "cuda_nofa_" }) {
+        const string f = sample_dir + "/" + pre + sk;
+        if (file_exists(f)) rep_cmp(pre, cmp(g_latent, npy::load(f).data));
+    }
+    rep("total %.1f s\n", ms_since(t_all) / 1000.0);
+    return 0;
+}
+
 } // namespace
 
 extern "C" {
@@ -437,6 +532,25 @@ PIXAL3D_EXPORT const char* pixal3d_shape1024_run(const char* dinov3_gguf, const 
     rep(rc == 0 ? "RESULT: OK\n" : "RESULT: FAIL\n");
     return g_report.c_str();
 }
+// Checkpoint/resume probe: Euler steps [start_step, start_step+num_steps) of the shape512 (hr=0)
+// / shape1024 (hr=1) sampler from a serialized latent (input_latent, "" = the fixture's
+// f32_<x_step><start_step>.npy), repeated `repeat` times from the same immutable input; scored
+// against expected_latent ("" = none) and the fixture's step references. Sampling only (the
+// fixture's condition); sample_dir = slat_sample / hr_sample. Run 0's output via the latent getters.
+PIXAL3D_EXPORT const char* pixal3d_shape_step_run(const char* flow_gguf, const char* sample_dir, int hr, int start_step, int num_steps,
+                                                  const char* input_latent, const char* expected_latent, int repeat) {
+    g_report.clear();
+    int rc;
+    try {
+        rc = run_shape_step_impl(flow_gguf, sample_dir, hr != 0, start_step, num_steps, input_latent ? input_latent : "",
+                                 expected_latent ? expected_latent : "", repeat < 1 ? 1 : repeat);
+    } catch (const std::exception& e) {
+        rep("EXCEPTION: %s\n", e.what());
+        rc = 1;
+    }
+    rep(rc == 0 ? "RESULT: OK\n" : "RESULT: FAIL\n");
+    return g_report.c_str();
+}
 PIXAL3D_EXPORT const float* pixal3d_shape512_latent(void) { return g_latent.data(); }
 PIXAL3D_EXPORT int pixal3d_shape512_latent_size(void) { return (int)g_latent.size(); }
 PIXAL3D_EXPORT const float* pixal3d_shape512_steps(void) { return g_steps.data(); }
@@ -446,6 +560,19 @@ PIXAL3D_EXPORT int pixal3d_shape512_n_steps(void) { return g_n_steps; }
 
 #ifndef __EMSCRIPTEN__
 int main(int argc, char** argv) {
+    if (argc >= 2 && strcmp(argv[1], "--step") == 0) {
+        if (argc < 6) {
+            fprintf(stderr, "usage: %s --step shape512|shape1024 <shape_flow.gguf> <sample_dir> <start_step> [num_steps=1] [repeat=1] [input_latent.npy|-] [expected_latent.npy|-] [out.npy]\n", argv[0]);
+            return 1;
+        }
+        const bool hr = strcmp(argv[2], "shape1024") == 0;
+        const int K = atoi(argv[5]), Nn = argc > 6 ? atoi(argv[6]) : 1, R = argc > 7 ? atoi(argv[7]) : 1;
+        const char* in = (argc > 8 && strcmp(argv[8], "-") != 0) ? argv[8] : "";
+        const char* ex = (argc > 9 && strcmp(argv[9], "-") != 0) ? argv[9] : "";
+        const char* r = pixal3d_shape_step_run(argv[3], argv[4], hr ? 1 : 0, K, Nn, in, ex, R);
+        if (argc > 10 && !g_latent.empty()) npy::save(argv[10], g_latent.data(), {(int64_t)g_latent.size() / 32, 32});
+        return strstr(r, "RESULT: OK") ? 0 : 1;
+    }
     if (argc >= 2 && (strcmp(argv[1], "--shape512") == 0 || strcmp(argv[1], "--shape1024") == 0)) {
         const bool hr = strcmp(argv[1], "--shape1024") == 0;
         if (argc < 7) {
@@ -466,7 +593,8 @@ int main(int argc, char** argv) {
     }
     if (argc < 5) {
         fprintf(stderr, "usage: %s <dinov3.gguf> <pixal3d_ss_flow_mv.gguf> <cond_ss_dir> <ss_sample_dir> [n_views] [latent_out.npy]\n"
-                        "       %s --shape512 <dinov3.gguf> <pixal3d_naf.gguf> <shape_flow_512.gguf> <cond_slat_dir> <slat_sample_dir> [n_views] [own_cond] [dump_prefix]\n", argv[0], argv[0]);
+                        "       %s --shape512 <dinov3.gguf> <pixal3d_naf.gguf> <shape_flow_512.gguf> <cond_slat_dir> <slat_sample_dir> [n_views] [own_cond] [dump_prefix]\n"
+                        "       %s --step shape512|shape1024 <shape_flow.gguf> <sample_dir> <start_step> [num_steps] [repeat] [input_latent] [expected_latent] [out.npy]\n", argv[0], argv[0], argv[0]);
         return 1;
     }
     const int n_views = argc > 5 ? atoi(argv[5]) : 0;
