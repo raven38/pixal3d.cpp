@@ -74,12 +74,13 @@
 
 - [x] SS stage in the browser: DINOv3 -> projection -> MV fusion -> ProjectAttention SS flow -> 12-step sampler, one WASM module on ggml WebGPU (`web/ss/`, spec 31 §9); JS only mounts files and prints
 - [x] Shape-512 stage in the browser: DINOv3 -> NAF -> lr/hr projections -> MV fusion -> sparse ProjectAttention shape flow -> 12-step sampler, same module (`pixal3d_shape512_run`, `web/shape512/`, spec 31 §10.7)
+- [x] Texture-1024 flow in the browser on a validated Shape-1024 latent: fixture condition + concat half -> sparse ProjectAttention texture flow (`in_ch` 64) -> 12-step gs=1.0 sampler, same module (`pixal3d_texture_run`, `web/texture/`; Chrome final rel 1.6e-3 vs PyTorch f32, spec 32 §11). Own-condition NAF at T=1024 and the chain from a live WebGPU Shape-1024 latent are open (spec 32 §15)
 - [ ] image loading (fixture `.npy` views today; PNG + BiRefNet/RMBG cutout not ported)
 - [ ] camera loading (fixture `transform_matrix` today; `transforms.json` parsing not wired)
 - [x] stage weight load/unload (SS stage: DINOv3 freed before the flow weights load, WORKERFS-backed GGUF streaming)
 - [ ] full generation
 - [ ] GLB returned to JS
-- [x] memory profiling (SS stage, buffer-allocation accounting: `docs/PIXAL3D_WEBGPU_MEMORY.md` §6; Shape-512 stage §7)
+- [x] memory profiling (SS stage, buffer-allocation accounting: `docs/PIXAL3D_WEBGPU_MEMORY.md` §6; Shape-512 stage §7; Texture-1024 flow §8)
 - [x] numerical comparison against CUDA (SS stage: spec 31 §9 -- voxel IoU 1.000 vs the CUDA production run; Shape-512 stage: spec 31 §10.6/10.7)
 
 ## M9 — Apps
