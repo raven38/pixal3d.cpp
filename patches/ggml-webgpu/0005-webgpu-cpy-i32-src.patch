@@ -1,0 +1,41 @@
+diff --git a/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp b/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp
+index 6f877f15..478ebf19 100644
+--- a/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp
++++ b/src/ggml-webgpu/ggml-webgpu-shader-lib.hpp
+@@ -2919,6 +2919,10 @@ class ggml_webgpu_shader_lib {
+                 defines.push_back("SRC_F16");
+                 variant += "_f16";
+                 break;
++            case GGML_TYPE_I32:
++                defines.push_back("SRC_I32");
++                variant += "_i32";
++                break;
+             default:
+                 GGML_ABORT("Unsupported src type for cpy shader");
+         }
+diff --git a/src/ggml-webgpu/ggml-webgpu.cpp b/src/ggml-webgpu/ggml-webgpu.cpp
+index adfdf49c..5fd64fe6 100644
+--- a/src/ggml-webgpu/ggml-webgpu.cpp
++++ b/src/ggml-webgpu/ggml-webgpu.cpp
+@@ -4135,7 +4135,7 @@ static bool ggml_backend_webgpu_device_supports_op(ggml_backend_dev_t dev, const
+         case GGML_OP_CONT:
+             supports_op = ((op->type == GGML_TYPE_F32 || op->type == GGML_TYPE_F16) &&
+                            (src0->type == GGML_TYPE_F32 || src0->type == GGML_TYPE_F16)) ||
+-                          (op->type == GGML_TYPE_I32 && src0->type == GGML_TYPE_F32);
++                          (op->type == GGML_TYPE_I32 && (src0->type == GGML_TYPE_F32 || src0->type == GGML_TYPE_I32));
+             break;
+         case GGML_OP_SET:
+             supports_op = src0->type == src1->type && src0->type == op->type &&
+diff --git a/src/ggml-webgpu/wgsl-shaders/cpy.wgsl b/src/ggml-webgpu/wgsl-shaders/cpy.wgsl
+index 4f188a1a..167a55bc 100644
+--- a/src/ggml-webgpu/wgsl-shaders/cpy.wgsl
++++ b/src/ggml-webgpu/wgsl-shaders/cpy.wgsl
+@@ -4,6 +4,8 @@ enable f16;
+ #define SRC_TYPE f32
+ #elif defined(SRC_F16)
+ #define SRC_TYPE f16
++#elif defined(SRC_I32)
++#define SRC_TYPE i32
+ #endif
+ 
+ #ifdef DST_F32
