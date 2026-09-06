@@ -347,3 +347,36 @@ Findings:
   `GPUBuffer` in 4.8 s; the wasm heap holds the fixture arrays (the 257 MB `s512_z_proj.npy`
   reference for the parity print is the largest) and stays under 1 GB. `-sMAXIMUM_MEMORY` is
   4 GiB, unchanged.
+
+## 8. Measured: Shape-1024 stage on the ggml WebGPU backend (2026-09-06, `feat/webgpu-shape1024-flow`)
+
+Same accounting as §6/§7 (buffer allocations; `ggml_gallocr_get_buffer_size` for activations,
+`TRELLIS_DUMP_OPS` for the per-tensor sizes). Apple M1 Pro, native Dawn 18eb229 / Chrome 152.
+Adapter limits (§1): `maxBufferSize` = `maxStorageBufferBindingSize` = 4,294,967,292 B; every
+buffer below is under that, and the gallocr would split across chunks (`GGML_VBUFFER_MAX_CHUNKS`)
+if a graph needed more than one.
+
+| component | weights | conditioning | persistent activations | temporary activations (gallocr) | largest single tensor | peak simultaneously live |
+|---|---|---|---|---|---|---|
+| DINOv3 @1024, one view graph | 578.6 MB | -- | -- | ≈2.2 GB (inside the cond graph) | `[4101,4101,16]` f32 attention scores / softmax, **1026.5 MB** (×24 layers, reused) | |
+| NAF S=1024 → T=512, one view (`naf_upsample_ggml`) | 1.3 MB | inputs: image 12 MB, RoPE tables 134 MB, indices 1.3 MB | -- | **3774.3 MB** | window-gathered values `get_rows` `[1024,331776]` and its `[81,256,4,4096]` transpose, **1296 MB each**; encoder concat `[1024,1024,256]` 1024 MB; attention output `[256,64,4,4096]` and its `[1024,262144]` transpose 1024 MB each | 3.8 GB |
+| **Shape-1024 conditioning, one view graph** (`pixal3d_cond_slat_gpu`, gathered at N tokens) | 579.9 MB | **32 MB** at the 4096 test voxels / 137 MB at N=17489 (vs 2.15 GB dense at R=64) | accumulators only | **3788.5 MB** (DINOv3 2.2 GB and NAF 3.77 GB reuse one buffer; +14 MB tap inputs) | 1296 MB (NAF, above) | **4400.5 MB** (V-independent) |
+| Shape-1024 flow DiT, one forward, exact SDPA, N=17489 | 2646.9 MB (f16 GGUF; CUDA reports the same) | 136.7 MB (`[2048,17489]` proj + global, re-uploaded per forward) | -- | **1861.1 MB** (CUDA FA path: 1848.8 MB) | score chunk `[17489,1279,12]` f32 **1023.9 MB** (13 chunks) + `[17489,862,12]` 690 MB; MLP hidden `[8192,17489]` 546.5 MB | **4645 MB** |
+| Shape-1024 sampling (12 steps, 20 forwards) | as one forward | 136.7 MB × 2 (cond + zero neg) | -- | as one forward (graph reused) | | 4645 MB |
+
+Findings:
+
+- **The stage peak is the flow (4.65 GB = 2.65 GB weights + 1.86 GB graph), the conditioning
+  graph is the largest single graph buffer (3.79 GB)**; they never coexist (DINOv3/NAF are freed
+  before the flow weights load). Both fit this adapter; nothing had to be optimized to complete
+  parity (task §6 order of interventions -- none applied).
+- **Largest allocation responsible, if a smaller adapter is ever the target**: NAF's window
+  gather of the low-res values, `[1024, 81·4096]` f32 (1296 MB) plus its transposed copy for the
+  batched GEMM. It is `V_win = get_rows(v_rows, win_idx)` then `cont(permute(...))`
+  (`src/naf_gpu.cpp`, `naf_build`) -- a duplicate CONT/CPY materialization (intervention 3) that a
+  gather into the transposed layout would remove, and block-chunking the attention (intervention
+  5, exact) would divide by the chunk count. Second: DINOv3's `[4101,4101,16]` score tensor
+  (1026.5 MB, op-gap B5; FlashAttention F16 on WebGPU is the fix). Third: the DiT score chunk,
+  already a tunable (`TRELLIS_ATTN_CHUNK_MB`).
+- **Sequential view processing holds** at S=1024: V=4 and V=1 give the same 4400.5 MB peak.
+- **Browser**: TBD-HR-MEM-BROWSER

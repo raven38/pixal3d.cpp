@@ -1263,3 +1263,97 @@ than native Dawn's here (6.6 vs 7-12 s/view) -- both are unprofiled per op.
   S=1024 (1.08 GB, B5) and the DiT MLP hidden at N=17484 (573 MB) remain untiled.
 - **Spec-floor sizing**: the 2.84 GB conditioning graph, the 920 MB attention chunk and the 2.78 GB
   weight buffer all exceed the 128 MiB / 256 MiB floors (fine on this 4 GiB-limit adapter).
+
+## 11. Shape-1024 conditioning and flow on WebGPU (2026-09-06, `feat/webgpu-shape1024-flow`)
+
+Scope: the 1024-cascade's HR shape stage -- LR→HR coordinate transition, DINOv3 @1024, NAF
+S=1024→T=512, SLAT conditioning at grid 64 gathered at the active voxels, ProjectAttention
+Shape-1024 flow, 12-step sampling -- natively (Dawn) and in Chrome, against the existing fixtures
+(`tools/ref_pixal3d_cond_slat.py` s1024_*, `ref_pixal3d_hr_sample.py`) and the CUDA run of the
+same commit. Branch base `v0.4.0-webgpu-shape512-flow` (= `1d907a5`). Texture flow, the sparse
+decoders and mesh extraction were not touched (§11.9).
+
+### 11.1 What had to change (and what did not)
+
+No backend change and no new kernel. Everything Shape-512 validated carries over with two
+graph-side additions and one test:
+
+| item | change | why |
+|---|---|---|
+| LR→HR transition | none: `shape_upsample` (from_latent + 4 C2S stages on `shape_dec.gguf`) + `round((c+0.5)/512·63)` + lexicographic `unique` in `trellis_run_mv` is the path; **new `trellis-test-pixal3d-hr-coords`** runs it against `hr_sample/{lr_decoded,upsampled,hr}_coords.npy` (§11.2). The WebGPU/WASM stage consumes its result -- the `hr_coords.npy` token list -- since the sparse-conv upsample cascade on WebGPU is sparse-decoder work (deferred) | task §1: one shared C++ mapping, no browser-specific copy |
+| SLAT conditioning at grid 64 | `pixal3d_cond_slat_gpu(…, coords)` accumulates only the flow's N active tokens (`[1024, N]` lr/hr accumulators = 137 MB at N=17489) instead of the dense `[64³, 2048]` grid (2.15 GB); exactly `pixal3d_gather_proj(dense)` of the same taps, same order | task §3/§6: the flow never reads the other 245k voxels |
+| NAF S=1024→T=512 | the Shape-512 lowering unchanged: encoder at 1024², `POOL_2D` k=2 → `sum_rows` lowering (validated at k=4 in the T=128 test, now at k=2), block size d = 512/64 = 8 (64-pixel blocks, 4096 blocks), window index/RoPE tables from the same host functions | §11.3 |
+| DiT | unchanged graph at N=17489: exact SDPA now chunks queries (`kAttnChunkBytes` 1 GiB → 14 chunks of ≤1279 queries, `CONCAT` of the chunk outputs), `SET_ROWS` scatter of 13.4M rows (≤ 65535 workgroups still) | §11.5 |
+| queue-wait ceiling | `WEBGPU_RUNTIME_WAIT_TIMEOUT_MS` 600 s → 7200 s (root CMake, `web/ss/CMakeLists.txt`) | one N=17489 forward is minutes in Chrome |
+| `trellis-webgpu-ops` | + `soft_max [4101,4101,16]` (65616 rows -- DINOv3 @1024, just past the old 65535 ceiling), `get_rows [1024,4096]` × 331776 indices, batched `mul_mat` `[64,81,4,16384]`/`[81,256,4,16384]`, `soft_max [81,64,4,16384]` | task §7: every new dimensional threshold Shape-1024 crosses, pinned |
+| browser | `pixal3d_shape1024_run` in the same module (`src/pixal3d_wasm.cpp`, shared `run_shape_impl` with the Shape-512 entry), `web/shape1024/` | §11.7 |
+
+### 11.2 LR → HR coordinate parity (`trellis-test-pixal3d-hr-coords`, RTX 4090 CUDA and CPU)
+
+Input: the slat_sample fixture's f32 denormalized LR SLAT at its 4377 res-32 voxels (what the
+fixture script fed). Reference: 1,188,442 raw voxels @512³ → 17,489 unique tokens @grid 64.
+
+| check | CUDA | CPU f32 |
+|---|---|---|
+| raw upsampled voxels @512³ (`shape_upsample`) | 1,188,470; set differs by 346 only-mine / 318 only-ref (0.03 %) | 1,188,454; 235 / 223 (0.02 %) |
+| quantized `round((c+0.5)/512·63)` multiset | 17,489 distinct in both | same |
+| HR tokens (unique, lexicographic) | **Nh 17,489 = 17,489; 17,488 shared (99.994 %), one substituted token (41,21,5) vs (41,21,6); order of the shared tokens identical** | identical result |
+| HR feature rows | noise `[17489,32]`, proj cond `[17489,2048]` = Nh | same |
+
+The sparse upsample's subdivision masks are thresholded logits; the reference decoder runs
+fp16 (`use_fp16=True`), ours f32 activations on f16 weights, so a few logits within rounding of
+the threshold flip (0.02-0.03 % of raw voxels) and one of the 17,489 grid-64 tokens moves by one
+cell. The formula itself (round / grid−1 / unique order) is exact -- the same one-token
+substitution appears on both backends. The test's verdict is `Nh equal ∧ |symdiff| ≤ 2 ∧ shared
+order identical`, the measured spread, not a tuned tolerance. The flow stage below runs on the
+fixture's token list (the shared C++ result of this transition), so this substitution does not
+enter the flow-parity numbers.
+
+### 11.3 NAF S=1024 → T=512 on WebGPU (`trellis-test-pixal3d-cond-slat --full`, stage 5a')
+
+Configuration actually exercised (from `Pixal3dSlatCondParams{1024, 64, 512}`): image 1024²,
+DINOv3 patch grid 64×64, NAF target T=512, encoder at 1024² (no input downsample, S ≤ 4T),
+`AvgPool2d` k=2 (1024→512, the `sum_rows` lowering), RoPE at T=512, k pooling 512→64 (d = 8),
+neighborhood blocks of 8×8 pixels (4096 blocks × 81 taps), output `[1024, 262144]` block-major.
+
+| view 0 vs PyTorch f32 (`s1024_naf_hr_v0`, `[1024,512,512]`) | max\|d\| | mean\|d\| | rel | tol |
+|---|---|---|---|---|
+| **WebGPU (Dawn, M1 Pro)** | 9.0e-3 | 1.8e-4 | **3.7e-4** | 3e-3 |
+
+Same class as S=512 (5.5e-4). Wall 62 s per view natively (concurrent with the HR sampling run;
+the 1024² encoder dominates).
+
+### 11.4 Shape-1024 SLAT conditioning on WebGPU (stage 5a/5b/5c)
+
+| tensor vs PyTorch f32 | host path (`pixal3d_cond_slat`, NAF on device, dense R=64 + gather) | device-resident, gathered at the fixture's 4096 voxels |
+|---|---|---|
+| DINOv3 @1024 tokens, 4 views | rel 5.6e-4 / 1.2e-3 / 2.1e-3 / 1.4e-3 (13 s/view) | (same graph) |
+| `z_global` | rel 8.9e-5 (max\|d\| 2.6e-3, mean 2.2e-4) | **8.9e-5** |
+| gathered `z_proj` lr half | rel 4.8e-4 (both halves together: 4.8e-4) | **4.8e-4** (1.2e-2 / 1.9e-4) |
+| gathered `z_proj` hr half (NAF) | | **1.0e-4** (2.5e-3 / 1.4e-4) |
+| device vs host | | z_global bit-exact; lr / hr max\|d\| 3.8e-6 (rel 1.6e-7) |
+
+Memory (device path, one view graph): weights 579.9 MB (DINOv3 + NAF), accumulators **32 MB**
+(gathered, vs 2.15 GB dense), per-view graph buffer **3788.5 MB**, peak **4400.5 MB**; flat in V.
+Wall 269 s for V=4 (78 s slowest view; measured while the HR sampling occupied the GPU). Host path:
+412 s for V=4 (four 1 GB NAF readbacks + the dense 2.15 GB host grid).
+
+### 11.5 Shape-1024 flow and sampling gate
+
+TBD-HR-SAMPLE
+
+### 11.6 Browser / WASM (`web/shape1024/`)
+
+TBD-HR-BROWSER
+
+### 11.7 Performance per component
+
+TBD-HR-PERF
+
+### 11.8 Memory (task §6)
+
+TBD-HR-MEM
+
+### 11.9 Remaining blockers
+
+TBD-HR-BLOCKERS

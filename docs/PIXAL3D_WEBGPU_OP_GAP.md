@@ -498,3 +498,22 @@ path, BF16, IM2COL_3D/CONV_3D) plus the sparse-decoder ops (§5 B8-B11: no missi
 (fine below 65535 workgroups). NAF at S=1024 / T=512 (shape-1024 conditioning) would use the
 `POOL_2D` lowering with k=2 and d = 8 blocks -- the lowering is validated at k=4 (T=128) and the
 block formulation at d = 4 and 16; DINOv3's 1.08 GB score tensor at S=1024 is untiled.
+
+## 10. Validated on WebGPU (2026-09-06, `feat/webgpu-shape1024-flow`, Shape-1024 stage)
+
+Same meaning of "validated" as §8. No backend change this phase (patch set unchanged at 0001-0003);
+the new dimensional thresholds Shape-1024 crosses are pinned in `trellis-webgpu-ops`.
+
+| graph (tag) | ops executed on WebGPU (count/graph) | new thresholds vs Shape-512 | parity result |
+|---|---|---|---|
+| DINOv3 @1024 (`dinov3_S1024`, 1410 nodes) | as `dinov3_S512`; `MUL_MAT`/`SOFT_MAX` over `[4101,4101,16]` f32 (1026.5 MB, 96 instances/graph) | **soft_max rows 65616 > 65535** (patch 0003's first real crossing in DINOv3), score tensor 1.03 GB (op-gap B5, fits this adapter) | tokens vs PyTorch rel 5.6e-4 / 1.2e-3 / 2.1e-3 / 1.4e-3 |
+| NAF S=1024 → T=512 (`naf_ggml_S1024_T512`, 204 nodes) | as §9 plus the `POOL_2D` k=2 lowering (`SUM_ROWS` ×2 over `[2, …]` reshapes + transposes); `GET_ROWS` with 331776 indices from `[1024,4096]` (1296 MB), batched `MUL_MAT` `[64,81,4,4096]ᵀ[64,64,4,4096]` and `[81,256,4,4096]ᵀ[81,64,4,4096]`, `SOFT_MAX` over `[81,64,4,4096]` (1M rows), two 1 GB `CONT`s and one 1.3 GB `CONT` | d = 8 blocks (64 px), 4096 blocks; encoder at 1024² (`CONV_2D` direct on `[1024,1024,128]`, 512 MiB activations, `NORM` rows of 16M elements) | view 0 map vs PyTorch rel 3.7e-4 (tol 3e-3) |
+| Shape-1024 conditioning, device-resident, gathered (`pixal3d_cond_slat_gpu_S1024_R64_T512_v<i>`, 1647 nodes) | DINOv3 + NAF + 8 `GET_ROWS` taps of `[1024, N]` + MUL/ADD/SCALE/CPY into `[1024,N]` accumulators | -- | `z_global` 8.9e-5, gathered lr 4.8e-4 / hr 1.0e-4 vs PyTorch; bit-exact / 1.6e-7 vs the host path |
+| Shape-1024 flow DiT, sparse (`dit_N17489_dcond5_proj1`, 7513 nodes, `--no-fa`) | the §8 DiT op set at N=17489: exact SDPA in 14 query chunks (`MUL_MAT`/`SOFT_MAX` over `[17489,1279,12]` ×13 + `[17489,862,12]`, `CONCAT` 390), MLP hidden `[8192,17489]` 546.5 MB, `SET_ROWS` scatter of 13.4M rows | first multi-chunk exact attention on WebGPU (CONCAT of chunk outputs); `SET_ROWS` at 13.4M rows (still ≤ 65535 workgroups, 1D dispatch) | sampling: spec 31 §11.5 |
+
+`trellis-webgpu-ops` additions (all PASS vs ggml-cpu): `soft_max [4101,4101,16]` rel 3.1e-7,
+`get_rows [1024,4096] × 331776` exact, `mul_mat [64,81,4,16384]` 1.2e-4, `mul_mat [81,256,4,16384]`
+1.9e-4, `soft_max [81,64,4,16384]` 2.6e-7.
+
+Not exercised / still open: everything in §9's list; `SET_ROWS` would cross 65535 workgroups
+at N ≈ 85k tokens (the 1536 cascade's 49k cap stays under it).
