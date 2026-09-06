@@ -20,6 +20,8 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <chrono>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -173,12 +175,14 @@ T* in_idx(ggml_context* c, std::vector<T*>& ins, int64_t n, int32_t nrows) {
 } // namespace
 
 int main(int argc, char** argv) {
-    bool small = false; int repeat = 1; std::string only;
+    bool small = false; int repeat = 1; std::string only; double hold_gb = 0; int hold_s = 600;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--small") small = true;
         else if (std::string(argv[i]) == "--repeat" && i + 1 < argc) repeat = atoi(argv[++i]);
         else if (std::string(argv[i]) == "--only" && i + 1 < argc) only = argv[++i];   // substring filter on case names
         else if (std::string(argv[i]) == "--gpu-repeat" && i + 1 < argc) g_gpu_repeat = atoi(argv[++i]);
+        else if (std::string(argv[i]) == "--hold-gb" && i + 1 < argc) hold_gb = atof(argv[++i]);      // memory-pressure hog mode
+        else if (std::string(argv[i]) == "--hold-seconds" && i + 1 < argc) hold_s = atoi(argv[++i]);
     }
 
     ggml_backend_t gpu = nullptr;
@@ -187,6 +191,30 @@ int main(int argc, char** argv) {
         if (strncmp(ggml_backend_dev_name(d), "WebGPU", 6) == 0) { gpu = ggml_backend_dev_init(d, nullptr); break; }
     }
     if (!gpu) { fprintf(stderr, "no WebGPU device\n"); return 1; }
+    if (hold_gb > 0) {
+        // Memory-pressure hog: hold hold_gb GiB of device memory (one 1 GiB buffer each, touched), then
+        // sleep, so another process's WebGPU run can be observed under GPU memory pressure.
+        const int n = (int)std::ceil(hold_gb);
+        std::vector<ggml_context*> cs; std::vector<ggml_backend_buffer_t> bufs; std::vector<T*> ts;
+        std::vector<float> fill((size_t)1 << 28, 1.0f);
+        for (int i = 0; i < n; ++i) {
+            ggml_context* c = mkctx(4);
+            T* t = ggml_new_tensor_1d(c, GGML_TYPE_F32, (int64_t)1 << 28);
+            ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(c, gpu);
+            if (!buf) { fprintf(stderr, "hog: alloc of GiB #%d failed\n", i); return 1; }
+            ggml_backend_tensor_set(t, fill.data(), 0, ggml_nbytes(t));
+            cs.push_back(c); bufs.push_back(buf); ts.push_back(t);
+        }
+        ggml_backend_synchronize(gpu);
+        printf("hog: holding %d GiB on %s for %d s\n", n, ggml_backend_name(gpu), hold_s);
+        fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::seconds(hold_s));
+        std::vector<float> back(1 << 20);
+        for (T* t : ts) ggml_backend_tensor_get(t, back.data(), 0, back.size() * 4);   // keep it live to the end
+        for (size_t i = 0; i < bufs.size(); ++i) { ggml_backend_buffer_free(bufs[i]); ggml_free(cs[i]); }
+        ggml_backend_free(gpu);
+        return 0;
+    }
     ggml_backend_t cpu = ggml_backend_cpu_init();
     printf("=== trellis-webgpu-ops (%s vs %s)%s ===\n", ggml_backend_name(gpu), ggml_backend_name(cpu), small ? " [--small]" : "");
 
