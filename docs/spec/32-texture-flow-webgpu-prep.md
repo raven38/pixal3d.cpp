@@ -419,7 +419,7 @@ view-sequential `pixal3d_cond_slat_gpu` validated for Shape-512 (spec 31 §10.4)
 | producer / backend | z_global | proj lr (DINOv3 taps at R = 64) | proj hr (NAF T = 1024 taps) | result |
 |---|---|---|---|---|
 | `pixal3d_cond_slat_gpu`, ggml WebGPU, V = 1 (`pixal3d-ss-run --texture … own_cond=1`) | -- | -- | -- | **cannot run**: `check_graph_supported` rejects the view graph before allocation -- 8 unsupported nodes, all `GET_ROWS` with the `[1024, 1048576]` f32 NAF map as source (4,294,967,296 B > `maxBufferSize` 4,294,967,292 B; ggml-webgpu's `supports_op` refuses tensors above the buffer limit). DINOv3 + NAF weights loaded (578.6 + 1.3 MB, 299 ms); the graph is never submitted. *Measured.* |
-| `pixal3d_cond_slat_gpu`, Metal (`build-metal`, same C++ producer, V = 4) | *pending* | *pending* | *pending* | queued behind the GPU lock at the time of this commit |
+| `pixal3d_cond_slat_gpu`, Metal (`build-metal`, same C++ producer, V = 4) | **9.31e-5** (max\|d\| 2.7e-3, cos 0.9999999) | **5.82e-4** (max\|d\| 1.4e-2, cos 1.0000000) | **1.45e-4** (max\|d\| 3.5e-3, cos 1.0000000) | the Shape-1024 digits (8.9e-5 / 4.8e-4 / 1.0e-4 on the sibling branch); 75.5 s for V = 4 (slowest view 20.2 s), weights 579.9 MB + accumulators 2048.0 MB + view graph 11,359 MB = **13,987 MB** peak on Metal. The same process then sampled 12 steps on Metal with this own condition: final rel 1.38e-3 vs f32 (test def.), cos 1.000000, 133 s / forward -- not a gate, the portability data point |
 | (fixture-condition path used by every flow/sampling number in §10/§11) | 0 | 0 | 0 | the gate input |
 
 The WebGPU own-condition path therefore needs the on-demand / block-chunked NAF (spec 30 §4
@@ -459,7 +459,7 @@ All on the native Dawn build of this branch, through the GPU lock, after the cha
 | path | command | result |
 |---|---|---|
 | SS stage on WebGPU (flow on WebGPU, SS decoder on the CPU backend) | `trellis-test-pixal3d-ss-sample pixal3d_ss_flow_mv.gguf ss_dec.gguf ss_sample 0 cond_ss -1` (`TRELLIS_NOFA=1`) | active-voxel IoU(mine, CUDA run) **1.0000**, IoU(mine, f32) 0.9977, IoU(mine, bf16) 0.9932 (calibration IoU(f32, bf16) 0.9945) -- PASS, the spec 31 §9 digits |
-| Shape-512 stage on WebGPU | `trellis-test-pixal3d-slat-sample pixal3d_shape_flow_512_mv.gguf slat_sample --stage shape512 --backend webgpu` | *pending* (re-queued after the GGUF restore) |
+| Shape-512 stage on WebGPU | `trellis-test-pixal3d-slat-sample pixal3d_shape_flow_512_mv.gguf slat_sample --stage shape512 --backend webgpu` | rel(mine, f32) **2.1009e-1**, cos 0.997361, threshold 0.524 -- PASS (20 forwards, 17.3 s each, 346 s; the spec 31 §10.6 number of record) |
 | texture conditioning | §12 | see there |
 | texture flow (single-step probes) | §10 | 4/4 PASS native WebGPU (GPU alone), 4/4 Metal |
 | texture sampling | §11 | Chrome PASS 1.61e-3; native run 2: *pending* |
