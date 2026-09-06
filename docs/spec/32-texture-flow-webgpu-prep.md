@@ -294,3 +294,188 @@ never uploaded), state 2.13 MB, concat half 2.13 MB + `[N,64]` input 4.27 MB per
 device-resident sum **4777.7 MB**; `ggml_backend_dev_memory` free 20340 → 18488 MB across the
 DiT alloc (total 24563.5 MB). This is the §6.2 estimate (≈ 4650 MB) plus the texture-only
 inputs.
+
+---
+
+# Texture-1024 flow on WebGPU: execution and parity (`feat/webgpu-texture-flow`, 2026-09-07)
+
+Branch `feat/webgpu-texture-flow` (from the prep branch's `8972329`). This part of the document
+is the record of the phase that *ran* the texture stage on WebGPU: every number below is
+measured on the Apple M1 Pro (32 GB), native Dawn (the same prebuilt Dawn as spec 31 §7) or
+Chrome 152 with the JSPI/WORKERFS module, on the `hr_sample` fixture (N = 17,489 tokens,
+`f32_tex_concat_cond` = PyTorch's Shape-1024 latent as the concat half, fixture `tex_cond_*`
+condition, `tex_noise` seed 43). **Dependency stated explicitly: this milestone consumes a
+validated Shape-1024 latent from the fixture; it does not depend on, and was not chained to,
+the live Shape-1024 WebGPU sampling of `feat/webgpu-shape1024-flow` (`v0.5.0-webgpu-shape1024-flow`
+unresolved at the time of writing).** `--concat-cond <webgpu shape_x_final>` is the one-flag
+step that chains them once that latent passes its own gate.
+
+## 9. What changed on this branch
+
+| change | why | regression |
+|---|---|---|
+| `patches/ggml-webgpu/0003`: 2D dispatch for the fused `rms_norm_mul` encoder + `rms_norm_mul.wgsl` row index from `(wid.x, wid.y)` (taken from the Shape-1024 branch; the only backend change) | the q/k `MultiHeadRMSNorm × gamma` at N = 17,489 is 12 × 17,489 = 209,868 rows > 65,535 workgroups; without it the fused op is silently truncated | `trellis-webgpu-ops --only rms_norm`: `rms_norm x gamma [128,12,17489]` rel 1.5e-7, `rms_norm alone` 1.3e-7 vs CPU, PASS |
+| `WEBGPU_RUNTIME_WAIT_TIMEOUT_MS` 600 s → 7200 s (root and `web/ss/CMakeLists.txt`) | one texture forward is 245 s in Chrome (§11); the old ceiling would abort a slow adapter | -- |
+| `trellis-test-pixal3d-slat-sample --probe-steps k1,k2,..` | single-step gates (§10): integrate sampler step k once from the f32 reference's `x_step{k-1}`, score against `x_step{k}` of f32 / `cuda_` / `cuda_nofa_`; exits before any full run | the full-run path is untouched (flag absent → identical control flow) |
+| `--backend metal` accepts ggml-metal's device name `MTL0` | the name check rejected every Metal run | -- |
+| `web/texture/run_playwright.js`: `PIXAL3D_WEB_PORT` | port 8199 was held by another session's server | -- |
+| `pixal3d_wasm.cpp`: the texture `device-resident sum` is summed in `double` | under wasm32 the byte total (4790 MB) overflowed 32-bit `size_t` and printed 693.9 MB (= 4789.9 − 4096) in the first browser report | print-only |
+| `trellis-webgpu-ops --only <substr>` + the two `rms_norm` cases | the regression for the patch | -- |
+
+No change to `dit.cpp`, `flow_runner.cpp`, `naf_gpu.cpp`, `pixal3d_cond_gpu.cpp`, the decoders,
+or any Shape-1024 code.
+
+## 10. Single-step probes (the development regression)
+
+`--probe-steps` runs one forward per probed step (the tex sampler has gs = 1.0 everywhere) from
+the PyTorch f32 latent of the previous step, so each number is the error of ONE forward + one
+Euler update, with no trajectory accumulation. Threshold 5e-2 (the full-run floor). Exact SDPA
+(`TRELLIS_NOFA=1`) on both backends.
+
+| step (t → t_prev) | native WebGPU, GPU alone: rel vs f32 / vs `cuda_nofa` | Metal (portability control): rel vs f32 / vs `cuda_nofa` | ms / forward WebGPU / Metal |
+|---|---|---|---|
+| 1 (1.0000 → 0.9706) | **2.62e-5** / 1.60e-4 | 5.92e-5 / 1.16e-4 | 208,045 / 136,016 |
+| 6 (0.8077 → 0.7500) | **1.74e-4** / 5.58e-4 | 1.33e-4 / 5.56e-4 | 383,161 (shared GPU, see below) / 135,928 |
+| 11 (0.3750 → 0.2143) | **1.45e-4** / 3.22e-3 | 1.56e-4 / 3.22e-3 | 198,119 / 135,469 |
+| 12 (0.2143 → 0) | **3.31e-4** / 3.65e-3, three consecutive runs bit-identical | 3.67e-4 / 3.65e-3 | 198,402-204,450 / 132,778 |
+
+cos(mine, f32) = 1.0000000 at every probe on both backends. The `cuda_nofa` column is the
+distance to CUDA's *own trajectory* at that step (its `x_step{k}` starts from its own
+`x_step{k-1}`), so it carries CUDA's accumulated 3.2-3.7e-3 -- the two backends agree with each
+other to that level and both sit an order of magnitude closer to f32 than the reference's bf16
+run (1.0e-2 at step 1, 3.45e-1 at step 12).
+
+**The shared-GPU corruption, measured.** The first probe runs overlapped with another session's
+Shape-1024 sampler on the same M1 Pro (`~/pixal3d.cpp/build-webgpu`, spec 31 §11's
+nondeterministic ggml-webgpu/Dawn-Metal fault). Under that contention the same binary and inputs
+gave: step 12 rel **6.27e-2** (cos 0.9986) and, on the next run, **2.90e-1** (cos 0.934) --
+the two results differ from each other by rel 0.35, every token affected; step 11 **3.89e-2**;
+forwards 358-416 s instead of ~200 s. Steps 1 and 6 in the same runs stayed at 2.6e-5 / 1.7e-4.
+Serialized behind a lock (`mkdir /tmp/pixal3d_gpu.lock` + a `pgrep` guard on the other
+worktrees' binaries; the sibling session honors the same directory) the fault did not
+recur in any of the 7 native, 4 Metal and 12 browser forwards that followed. Contended numbers
+are therefore excluded from every table here; a contended run is not evidence about the graph.
+
+## 11. Full 12-step sampling (one run each, taken after the probes passed)
+
+Verdict criterion unchanged: `rel(mine, f32 x_final) <= max(2·rel(f32, bf16), 5e-2)` =
+max(0.690, 0.05) = 0.690 (the test's `rel` is the mean-absolute ratio; the L2-norm ratios of
+the numpy cross-check are given separately and are ~2.5× smaller).
+
+| run | forwards | ms / forward | wall | final rel vs f32 (test def.) | cos(mine, f32) | verdict |
+|---|---|---|---|---|---|---|
+| Chrome 152 / WASM (`web/texture/run_playwright.js`, lock held 05:07:58-05:57:28) | 12 | 244,812 (first 297,415, last 273,049) | 2937.7 s inside forwards, 2944.0 s in the module, 2944.2 s playwright | **1.6072e-3** | 0.9999998 | PASS, `RESULT: OK` |
+| native Dawn, run 1 (lock held 05:57:36-06:39:52, no other GPU tenant known: the sibling session's next job was waiting on the same lock) | 12 | 210,927 | 2531.1 s | 1.7118e-1 (**invalid**: the step-3 forward was corrupted, see below) | 0.998723 | formally PASS (< 0.690), **not accepted** |
+| native Dawn, run 2 (`trellis-test-pixal3d-slat-sample --backend webgpu`) | 12 | *pending* (queued behind the GPU lock at the time of this commit) | | | | |
+| CUDA FA, RTX 4090 (prep phase §8.2, reference of record) | 12 | 1,655 | 20 s | 3.93e-3 | 0.999993 | PASS |
+| CUDA exact SDPA (`cuda_nofa_`, what WebGPU computes) | 12 | 3,428 | 41 s | 3.66e-3 | 0.999999 | PASS |
+
+Per-step browser latent statistics and distances (numpy L2-norm ratios; `cuda` = FA run A,
+`cuda_nofa` = exact-SDPA run C of the prep phase):
+
+| step | rel vs f32 | rel vs cuda | rel vs cuda_nofa | cos vs cuda_nofa | latent mean / std / max\|x\| |
+|---|---|---|---|---|---|
+| 1 | 1.07e-5 | 5.93e-5 | 5.75e-5 | 1.0000000 | −0.001435 / 0.969469 / 4.6272 |
+| 2 | 1.97e-5 | 1.01e-4 | 9.11e-5 | 1.0000000 | −0.001970 / 0.936994 / 4.4813 |
+| 3 | 3.11e-5 | 1.90e-4 | 1.29e-4 | 1.0000000 | −0.002579 / 0.900838 / 4.3180 |
+| 4 | 4.43e-5 | 2.83e-4 | 1.72e-4 | 1.0000000 | −0.003312 / 0.860429 / 4.1335 |
+| 5 | 6.35e-5 | 3.90e-4 | 2.26e-4 | 1.0000000 | −0.004207 / 0.815147 / 3.9228 |
+| 6 | 8.58e-5 | 5.39e-4 | 2.91e-4 | 1.0000000 | −0.005287 / 0.764457 / 3.6807 |
+| 7 | 1.20e-4 | 7.48e-4 | 3.76e-4 | 1.0000000 | −0.006590 / 0.708060 / 3.4003 |
+| 8 | 1.67e-4 | 1.05e-3 | 4.89e-4 | 1.0000000 | −0.008183 / 0.646489 / 3.0749 |
+| 9 | 2.38e-4 | 1.46e-3 | 6.50e-4 | 0.9999998 | −0.010141 / 0.582546 / 2.8518 |
+| 10 | 3.43e-4 | 2.02e-3 | 8.83e-4 | 0.9999996 | −0.012603 / 0.525081 / 2.9494 |
+| 11 | 4.86e-4 | 2.74e-3 | 1.18e-3 | 0.9999993 | −0.015769 / 0.497399 / 3.4581 |
+| 12 = final | **6.17e-4** | 3.28e-3 | **1.48e-3** | 0.9999989 | −0.019989 / 0.543361 / 4.2620 |
+
+(Test-definition rel of the browser run vs f32 per step: 2.62e-5, 1.02e-4, 1.21e-4, 1.56e-4,
+2.41e-4, 3.14e-4, 4.39e-4, 5.68e-4, 6.43e-4, 2.66e-3, 2.06e-3, 1.61e-3; vs bf16 1.0e-2 → 3.44e-1,
+i.e. the reference's own bf16 run is 200× farther from f32 than the browser is. No non-finite
+value at any step.)
+
+**Native run 1 was corrupted by the nondeterministic fault, without a co-tenant.** Its steps 1
+and 2 agree with the browser run to rel 1.1e-8 and 5.1e-6 (numpy L2; the same bits up to the
+float rounding of the host-side Euler update), then step 3 jumps to rel 3.2e-3 vs f32 (and vs
+the browser) and the error grows monotonically to 5.8e-2 (test def. 1.71e-1, cos 0.9987) --
+exactly the "step jump" signature of spec 31 §11's fault, one bad forward in 12, with the lock
+held for the whole run and the sibling session's next job (`web/shape1024/run_playwright.js`)
+queued behind the same lock since 05:48. The test's calibrated verdict still says PASS
+(0.171 < 0.690) because the threshold is derived from the reference's own bf16 drift; that is
+why the per-step tables and the CUDA/browser distances are reported alongside, and why run 1 is
+not the milestone's native run. The dumps are kept as `tex_webgpu_full_run1_corrupt/` in the
+session scratchpad. This is the first observation of the fault with no other WebGPU process on
+the GPU; it is reported to the Shape-1024 investigation and not pursued here (out of scope).
+
+Browser vs native WebGPU (run 2): *pending run 2*
+
+## 12. Texture conditioning (`tex_1024`: S = 1024, R = 64, NAF T = 1024)
+
+The production producer is `pixal3d_cond_slat(dino, naf, views1024, {1024, 64, 1024, mesh_scale})`
++ `pixal3d_gather_proj` at `hr_coords` (`trellis_cli.cpp` [5/6]); the device producer is the
+view-sequential `pixal3d_cond_slat_gpu` validated for Shape-512 (spec 31 §10.4) with
+`{1024, 64, 1024}`. The PyTorch fixture is `tex_cond_global` `[1,5,1024]` / `tex_cond_proj`
+`[17489, 2048]` = `[lr ‖ hr]` gathered at the tokens.
+
+| producer / backend | z_global | proj lr (DINOv3 taps at R = 64) | proj hr (NAF T = 1024 taps) | result |
+|---|---|---|---|---|
+| `pixal3d_cond_slat_gpu`, ggml WebGPU, V = 1 (`pixal3d-ss-run --texture … own_cond=1`) | -- | -- | -- | **cannot run**: `check_graph_supported` rejects the view graph before allocation -- 8 unsupported nodes, all `GET_ROWS` with the `[1024, 1048576]` f32 NAF map as source (4,294,967,296 B > `maxBufferSize` 4,294,967,292 B; ggml-webgpu's `supports_op` refuses tensors above the buffer limit). DINOv3 + NAF weights loaded (578.6 + 1.3 MB, 299 ms); the graph is never submitted. *Measured.* |
+| `pixal3d_cond_slat_gpu`, Metal (`build-metal`, same C++ producer, V = 4) | *pending* | *pending* | *pending* | queued behind the GPU lock at the time of this commit |
+| (fixture-condition path used by every flow/sampling number in §10/§11) | 0 | 0 | 0 | the gate input |
+
+The WebGPU own-condition path therefore needs the on-demand / block-chunked NAF (spec 30 §4
+note, §7 above) before z_global / lr / hr can be measured on WebGPU at T = 1024; on a
+`maxBufferSize` ≥ 4 GiB + 4 B adapter the same graph would also need the coords-gathered
+accumulators of the Shape-1024 branch (dense `[64³, 2048]` = 2.15 GB) to fit next to the 12 GB
+NAF graph. Conditioning parity on WebGPU is thus established for the *Shape-512 / Shape-1024
+producers* (T = 512) only; for T = 1024 the shared C++ producer is checked on Metal here.
+
+## 13. Memory
+
+Buffer-allocation accounting as in `docs/PIXAL3D_WEBGPU_MEMORY.md` §6/§7 (`memory (...)` lines
+of the test and of the module), plus the process footprint of the native run.
+
+| component | texture flow (this phase, N = 17,489) | Shape-1024 flow (sibling branch, same N) | Shape-512 flow (N = 4,377) |
+|---|---|---|---|
+| weights (f16 GGUF on device) | 2647.0 MB | 2646.9 MB | 2646.9 MB |
+| DiT gallocr buffer, one forward, exact SDPA (activations + temporaries) | **1863.2 MB** (largest tensor inside: one `[17489,1279,12]` f32 score chunk = 1024 MB `kAttnChunkBytes`; `[8192,17489]` MLP hidden 546.5 MB) | 1861 MB | 1067.8 MB |
+| conditioning per forward (`[2048,N]` proj + `[1024,5]` global) | 136.7 MB (+ 136.7 MB zero negative allocated on the host, never uploaded: gs = 1.0) | 136.7 MB | 36.1 MB |
+| sampler state `[N,32]` | 2.13 MB | 2.13 MB | 0.53 MB |
+| shape concat half `[N,32]` + rebuilt `[N,64]` DiT input per forward | 2.13 MB + 4.27 MB (texture only) | -- | -- |
+| **device-resident sum** | **4789.9 MB** (native and browser identical; the browser's first report printed 693.9 MB = the wasm32 overflow, fixed in §9) | 4645 MB | 3751 MB |
+| largest single allocation | the 2647 MB weight buffer; largest graph tensor 1024 MB | same | 2647 MB / 920 MB |
+| native process `phys_footprint` during sampling (`footprint`, 43 s into the run) | **5.29 GB**, peak 5.43 GB (MALLOC_LARGE 467 MB host-side: fixture, references, `[N,64]` input) | -- | -- |
+| host per-step trace (test / module report only) | 12 × 2.13 MB = 25.6 MB | | |
+| Chrome | GPU-process RSS is not meaningful for Metal-backed buffers (98 MB by `ps`); the device-resident sum above is what the module allocates | | |
+
+`ggml_backend_dev_memory` reports 4096 / 4096 MB on WebGPU (not a live query). The texture
+stage is therefore +145 MB over Shape-1024 (the extra `[N,64]` input, the concat half and the
+`input_layer` K = 64) and 1.04 GB over Shape-512, entirely from the N-scaled activations and the
+2048-wide condition; nothing new was allocated for the texture path.
+
+## 14. Regressions
+
+All on the native Dawn build of this branch, through the GPU lock, after the changes of §9.
+
+| path | command | result |
+|---|---|---|
+| SS stage on WebGPU (flow on WebGPU, SS decoder on the CPU backend) | `trellis-test-pixal3d-ss-sample pixal3d_ss_flow_mv.gguf ss_dec.gguf ss_sample 0 cond_ss -1` (`TRELLIS_NOFA=1`) | active-voxel IoU(mine, CUDA run) **1.0000**, IoU(mine, f32) 0.9977, IoU(mine, bf16) 0.9932 (calibration IoU(f32, bf16) 0.9945) -- PASS, the spec 31 §9 digits |
+| Shape-512 stage on WebGPU | `trellis-test-pixal3d-slat-sample pixal3d_shape_flow_512_mv.gguf slat_sample --stage shape512 --backend webgpu` | *pending* (re-queued after the GGUF restore) |
+| texture conditioning | §12 | see there |
+| texture flow (single-step probes) | §10 | 4/4 PASS native WebGPU (GPU alone), 4/4 Metal |
+| texture sampling | §11 | Chrome PASS 1.61e-3; native run 2: *pending* |
+| `trellis-webgpu-ops --only rms_norm` (patch 0003 update) | | 2/2 PASS, rel 1.5e-7 / 1.3e-7 |
+
+(The first Shape-512 attempt aborted at model load: the Mac's `pixal3d_shape_flow_512_mv.gguf`
+mirror had been removed to free the disk earlier in the session; it was re-copied from win and
+the run repeated.)
+
+## 15. Blockers remaining for a live end-to-end run
+
+| blocker | status after this phase | what it takes |
+|---|---|---|
+| live Shape-1024 latent on WebGPU (`v0.5.0-webgpu-shape1024-flow`) | still open on its own branch; this milestone used the fixture's PyTorch latent as the concat half (rel 5.5e-8 from a Shape-1024 sampler's `x_final`, §2) | when that latent passes its gate: `--concat-cond <dir>/cpp_shape_x_final.npy` (native) or the `/concat/` mount (browser); no code change |
+| nondeterministic ggml-webgpu/Dawn-Metal fault at N = 17,489 | reproduced here under GPU sharing (§10) **and once without a co-tenant** (native run 1, §11: 1 corrupted forward in 12, step-3 jump); Chrome 12/12 and the solo probes 7/7 were clean | the Shape-1024 branch's investigation; until then every long run is serialized through `/tmp/pixal3d_gpu.lock`, and a full run is accepted only when its per-step trajectory stays at the probe level (no step jump), never on the calibrated verdict alone |
+| own-condition at T = 1024 on WebGPU | **cannot be submitted**: `GET_ROWS` on the `[1024, 1048576]` NAF map is rejected (4 GiB + 4 B > `maxBufferSize`, §12); dense `[64³, 2048]` accumulators (2.15 GB) also live at this tag | on-demand / block-chunked NAF gathered at the N active tokens (graph-side, `naf_gpu.cpp` / `pixal3d_cond_gpu.cpp`, no new kernel) + the coords-gathered accumulators from the Shape-1024 branch |
+| time | 200 s / forward native, 245 s in Chrome (12 forwards: 42 min / 49 min) vs 1.7-3.4 s on the RTX 4090 | FlashAttention-class attention on WebGPU (BF16/F16 FA tile path, spec 31 §5) or a smaller score budget with more chunks; out of scope here |
+| texture decoder, mesh, GLB | validated separately on their own branches (`v0.7.0-webgpu-shape-decode`, `feat/webgpu-texture-decode`); not chained | browser E2E orchestration (roadmap M8 "full generation") |
+| Mac disk | 2.78 GB per flow GGUF; the disk hit 0 bytes once this session (§9 of the memory note) | keep one flow GGUF mirror at a time or run the CUDA references on win |

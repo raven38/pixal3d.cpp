@@ -498,3 +498,16 @@ path, BF16, IM2COL_3D/CONV_3D) plus the sparse-decoder ops (§5 B8-B11: no missi
 (fine below 65535 workgroups). NAF at S=1024 / T=512 (shape-1024 conditioning) would use the
 `POOL_2D` lowering with k=2 and d = 8 blocks -- the lowering is validated at k=4 (T=128) and the
 block formulation at d = 4 and 16; DINOv3's 1.08 GB score tensor at S=1024 is untiled.
+
+## 10. Validated on WebGPU (2026-09-07, `feat/webgpu-texture-flow`, Texture-1024 flow)
+
+Same meaning of "validated" as §8/§9. Backend delta this phase: `patches/ggml-webgpu/0003` now
+also dispatches the fused `rms_norm_mul` encoder on a 2D grid (the q/k RMSNorm × gamma at
+N = 17,489 is 209,868 rows > 65,535; taken from the Shape-1024 branch). No new op type.
+
+| graph (tag) | ops executed on WebGPU | parity result |
+|---|---|---|
+| Texture flow DiT, sparse (`dit_N17489_dcond5_proj1`, `in_ch` 64, `--no-fa`) | the §9 Shape-512 DiT op set at N = 17,489: `input_layer` `mul_mat([1536,64] f16, [64,N])`, 14 query chunks of exact SDPA (`[17489,1279,12]` scores, CONCAT along ne1), SET_ROWS RoPE scatter of 13.4 M rows, fused RMS_NORM+MUL over 209,868 rows | single-step probes rel 2.6e-5 / 1.7e-4 / 1.5e-4 / 3.3e-4 vs f32 (steps 1/6/11/12), full 12-step run: spec 32 §11 (Chrome 1.61e-3, native see there); `trellis-webgpu-ops --only rms_norm` rel 1.5e-7 |
+
+Not exercised: the own-condition NAF at T = 1024 (buffer over `maxBufferSize`, spec 32 §12),
+everything in §9's open list.
