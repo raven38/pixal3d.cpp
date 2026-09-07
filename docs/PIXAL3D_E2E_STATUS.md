@@ -111,6 +111,22 @@ token 数がばらつくのは、SS decode の閾値が離散判定で、backend
    しているので `std::thread` が生成できない。remesh の並列化を直列に落とした
    （候補ビットセットがスレッドごとに res³/8 バイト要るので、メモリ的にも効く）。
 
+## 7a. Texture Flow の native vs browser per-step parity（同一 fixture）
+
+fixture は native の real-input run が吐いた Shape-1024 fixture（N=12 083）。native は
+`pixal3d-texture-run --texture ... <dump_prefix>`（Metal, `g_no_fa` は texture 経路が常に立てる）、
+browser は `web/texture/run_playwright.js`（Chrome/WebGPU）。同じ条件・同じ noise。
+
+| step | max abs | mean abs | L2 rel | cosine | bit identical |
+|---|---|---|---|---|---|
+| 1 | 3.184e-04 | 4.963e-06 | 6.708e-06 | 1.000000000 | no |
+| 4 | 4.334e-04 | 1.433e-05 | 2.134e-05 | 1.000000000 | no |
+| 8 | 1.572e-03 | 3.910e-05 | 7.608e-05 | 0.999999997 | no |
+| 12 / x_final | 3.258e-03 | 1.394e-04 | 2.546e-04 | 0.999999968 | no |
+
+非有限値は両側とも 0。誤差は step とともに単調に積み上がるだけで、跳ぶ step は無い
+（spec 32 の step-jump 破損の兆候は出ていない）。実時間は browser 496.0 s / native 12 forwards。
+
 ## 7b. 未解決: ブラウザの live geometry が X 軸につぶれる（2026-09-08 発見）
 
 browser の real-input full E2E は**完走して textured GLB を書く**が、出てくる形状は板状につぶれている。
