@@ -16,6 +16,9 @@
 #include "dual_grid.h"
 #include "mesh_glb.h"
 #include "pixal3d_postprocess.h"
+#ifndef __EMSCRIPTEN__
+#include "npy.h"
+#endif
 #include "ggml-backend.h"
 #include <array>
 #include <cmath>
@@ -37,6 +40,7 @@
 #endif
 using std::array;using std::string;using std::vector;using namespace trellis;
 namespace {
+string g_dump_fixture;   // native の --dump-fixture 用（browser では常に空）
 string report;void rlog(const char*f,...){char b[1024];va_list a;va_start(a,f);vsnprintf(b,sizeof b,f,a);va_end(a);report+=b;fputs(b,stdout);fflush(stdout);} 
 static const float MEAN[32]={0.781296f,0.018091f,-0.495192f,-0.558457f,1.060530f,0.093252f,1.518149f,-0.933218f,-0.732996f,2.604095f,-0.118341f,-2.143904f,0.495076f,-2.179512f,-2.130751f,-0.996944f,0.261421f,-2.217463f,1.260067f,-0.150213f,3.790713f,1.481266f,-1.046058f,-1.523667f,-0.059621f,2.220780f,1.621212f,0.877230f,0.567247f,-3.175944f,-3.186688f,1.578665f};
 static const float STD[32]={5.972266f,4.706852f,5.445010f,5.209927f,5.320220f,4.547237f,5.020802f,5.444004f,5.226681f,5.683095f,4.831436f,5.286469f,5.652043f,5.367606f,5.525084f,4.730578f,4.805265f,5.124013f,5.530808f,5.619001f,5.103930f,5.417670f,5.269677f,5.547194f,5.634698f,5.235274f,6.110351f,5.511298f,6.237273f,4.879207f,5.347008f,5.405691f};
@@ -64,6 +68,20 @@ int run(const vector<string>&m,const string&views,const string&out,uint32_t seed
  // ---- live Texture-1024 conditioning（fixture 注入なし）----
  Pixal3dCond ct;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);Pixal3dCondStats cst;ct=pixal3d_cond_slat_gpu(d,n,in.views1024,{1024,64,1024,in.mesh_scale},&cst,&hr);d.free();n.free();
   rlog("live tex cond: tokens=%zu d_proj=%d  graph peak %.1f MB, resident %.1f MB, %.1f s\n",hr.size(),ct.d_proj,cst.view_alloc_bytes/1048576.0,(cst.weight_bytes+cst.cond_bytes)/1048576.0,cst.total_ms/1000.0);}
+#ifndef __EMSCRIPTEN__
+ // Shape-1024 fixture を書き出しておくと、browser の partial E2E
+ // (Shape1024 fixture -> Texture Flow -> decode -> GLB) を実データで回せる。
+ if(!g_dump_fixture.empty()){const int64_t N=(int64_t)hr.size();
+  vector<int32_t> co3((size_t)N*3);for(int64_t i=0;i<N;++i){co3[i*3]=hr[i][0];co3[i*3+1]=hr[i][1];co3[i*3+2]=hr[i][2];}
+  npy::save_i32(g_dump_fixture+"/hr_coords.npy",co3.data(),{N,3});
+  npy::save(g_dump_fixture+"/f32_shape_slat.npy",hd.data(),{N,32});
+  npy::save(g_dump_fixture+"/f32_tex_concat_cond.npy",hn.data(),{N,32});
+  npy::save(g_dump_fixture+"/tex_cond_global.npy",ct.global.data(),{1,5,1024});
+  npy::save(g_dump_fixture+"/tex_cond_proj.npy",ct.proj.data(),{N,(int64_t)ct.d_proj});
+  auto tnz=noise(32*(size_t)N,seed+3);npy::save(g_dump_fixture+"/tex_noise.npy",tnz.data(),{N,32});
+  npy::save(g_dump_fixture+"/tex_norm_mean.npy",TMEAN,{32});npy::save(g_dump_fixture+"/tex_norm_std.npy",TSTD,{32});
+  rlog("dumped Shape-1024 fixture (N=%lld) to %s\n",(long long)N,g_dump_fixture.c_str());}
+#endif
  auto tn=tflow(m[7],hr,ct,hn,noise(32*hr.size(),seed+3));vector<float>td(tn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)td[c+32*i]=tn[c+32*i]*TSTD[c]+TMEAN[c];
  vector<float>raw;{Model d=Model::load(m[8],0);raw=tex_decode(d,td,hr,so.subs);d.free();}if(raw.size()!=so.coords.size()*6)return 7;
  vector<float>pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
@@ -85,6 +103,7 @@ int main(int argc,char**argv){
         " <pixal3d_shape_flow_512_mv.gguf> <shape_dec.gguf> <pixal3d_shape_flow_1024_mv.gguf>"
         " <views_dir> <out.glb> [seed] [pixal3d_tex_flow_1024_mv.gguf] [tex_dec.gguf]\n",argv[0]);return 2;}
     const int seed=argc>10?atoi(argv[10]):1;
+    if(const char* d=getenv("PIXAL3D_DUMP_FIXTURE")) g_dump_fixture=d;   // Shape-1024 fixture の書き出し先
     const char* r = (argc>12)
         ? pixal3d_real_full_run(argv[1],argv[2],argv[3],argv[4],argv[5],argv[6],argv[7],argv[11],argv[12],argv[8],argv[9],seed)
         : pixal3d_real_geometry_run(argv[1],argv[2],argv[3],argv[4],argv[5],argv[6],argv[7],argv[8],argv[9],seed);

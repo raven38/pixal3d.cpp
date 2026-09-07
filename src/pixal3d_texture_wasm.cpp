@@ -260,7 +260,7 @@ int run_shape512_impl(const string& dinov3_gguf, const string& naf_gguf, const s
         naf.tensors.size(), naf.total_bytes() / 1048576.0, ms_since(t0));
     Pixal3dCondStats st;
     Pixal3dSlatCondParams prm{S, R, Tn, mesh_scale.data[0]};
-    Pixal3dCond cond = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st);
+    Pixal3dCond cond = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st, &coords3);
     rep("cond: V=%d weights=%.1f MB cond=%.1f MB view_alloc=%.1f MB peak=%.1f MB total=%.0f ms slowest view=%.0f ms\n",
         st.views, st.weight_bytes / 1048576.0, st.cond_bytes / 1048576.0, st.view_alloc_bytes / 1048576.0,
         st.peak_bytes / 1048576.0, st.total_ms, st.view_ms_max);
@@ -417,8 +417,11 @@ int run_texture_impl(const string& dinov3_gguf, const string& naf_gguf, const st
         }
         images.data.clear(); images.data.shrink_to_fit();
         rep("views: V=%d (fixture V=%d) S=%d R=%d T=%d mesh_scale=%.4f\n", V, Vfix, S, R, Tn, mesh_scale.data[0]);
-        rep("own cond: expected device buffers -- NAF map [1024,%d] f32 = %.0f MB (x2), dense proj accumulators [%d,2048] = %.0f MB; this exceeds a 4 GiB adapter (spec 32 section 7)\n",
-            Tn * Tn, (double)1024 * Tn * Tn * 4 / 1048576.0, R * R * R, (double)R * R * R * 2048 * 4 / 1048576.0);
+        rep("own cond: split-graph + sparse-coord path -- NAF map [1024,%d] (%.0f MB) は一度も materialize せず、\n"
+            "          accumulator も dense [%d,2048] (%.0f MB) ではなく active token %lld 個ぶんだけ確保する\n"
+            "          (docs/PIXAL3D_WEBGPU_MEMORY.md §11)\n",
+            Tn * Tn, (double)1024 * Tn * Tn * 4 / 1048576.0, R * R * R,
+            (double)R * R * R * 2048 * 4 / 1048576.0, (long long)N);
         auto t0 = std::chrono::steady_clock::now();
         Model dinov3 = Model::load(dinov3_gguf, 0);
         Model naf = Model::load(naf_gguf, 0);
@@ -434,8 +437,7 @@ int run_texture_impl(const string& dinov3_gguf, const string& naf_gguf, const st
         naf.free();
         dinov3.free();
         cond_g = cond.global;                                                   // token-major == ggml [1024,5]
-        proj = pixal3d_gather_proj(cond.proj, R, cond.d_proj, coords3);         // [N,2048] at the tokens
-        cond.proj.clear(); cond.proj.shrink_to_fit();
+        proj = std::move(cond.proj);   // sparse 経路なので既に [N,2048]（coords3 の順）
         if (V == Vfix) {
             rep_cmp("z_global vs PyTorch", cmp(cond_g, npy::load(sample_dir + "/tex_cond_global.npy").data));
             rep_cmp("proj_lr @tokens vs PyTorch", cmp(proj_half(proj, (size_t)N, false), proj_half(zp.data, (size_t)N, false)));
