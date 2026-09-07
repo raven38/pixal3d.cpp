@@ -65,7 +65,9 @@ Available: `trellis-test-ss-flow`, `trellis-test-shape-flow`, `trellis-test-ss-s
 `trellis-test-slat-shape`, `trellis-test-dinov3`, `trellis-test-sparse-conv`, `trellis-test-bigop`,
 `trellis-test-c2s`, `trellis-test-sparse-degenerate`, `trellis-test-shape-dec`, `trellis-test-ss-full`,
 plus CUDA-only `trellis-test-fa-mask-overflow` / `trellis-test-fa-bf16-range`. Pixal3D stages:
-`trellis-test-proj-grid`, `trellis-test-pixal3d-{cond-ss,cond-slat,ss-flow,ss-sample,slat-flow,slat-sample,shape-decode,tex-decode}`
+`trellis-test-proj-grid`, `trellis-test-pixal3d-{cond-ss,cond-slat,cond-tex,ss-flow,ss-sample,slat-flow,slat-sample,shape-decode,tex-decode}`,
+plus `trellis-test-pixal3d-real-e2e` (the browser real-input E2E's shared C++ driven natively —
+`PIXAL3D_DUMP_FIXTURE=<dir>` writes the Shape-1024 fixture the browser partial E2E consumes)
 (`[gpu]` arg: -1 = CPU backend, 0 = the build's GPU device; on WebGPU pass `TRELLIS_NOFA=1` to the
 flow tests — the backend has no BF16 FlashAttention — and `dec_gpu=-1` to `ss-sample`, whose SS
 decoder needs Conv3D). `trellis-webgpu-smoke` / `web/smoke` are the backend smoke tests.
