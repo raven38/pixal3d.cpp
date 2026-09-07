@@ -76,6 +76,12 @@ struct Pixal3dSlatCondParams {
     int R;
     int naf_T;
     float mesh_scale;
+    // NAF の neighborhood attention を何 block ずつ建てるか（0 = 自動）。NAF 出力
+    // [1024, T*T] は T=1024 で 4 GiB になり WebGPU の maxBufferSize を超えるため、
+    // 出力を block chunk に割って chunk ごとに projection tap を回収する
+    // (docs/PIXAL3D_WEBGPU_MEMORY.md)。chunk は blocks 単位（1 block = 低解像度画素
+    // 1つに対応する d x d = (T/h)^2 画素）。
+    int naf_block_chunk = 0;
 };
 
 // Computes the Pixal3D SLAT-stage (shape/texture) fused condition from V posed
@@ -99,9 +105,15 @@ Pixal3dCond pixal3d_cond_slat(const Model& dinov3, const Model& naf,
 // released before the next view; the fused condition is read back once at the end and
 // interleaved to the [R^3, 2048] host layout. `naf` must be loaded on the same device as
 // `dinov3` (its weights are read by the DINOv3 backend's graph).
+// `coords` を渡すと dense な R^3 グリッドを一切作らず、その疎な active voxel
+// 集合ぶんだけを蓄積する（返る proj は [coords.size(), 2048]、token 順は coords の順。
+// pixal3d_gather_proj を後から呼んではいけない)。texture 段 (S=1024,R=64,naf_T=1024) は
+// dense だと accumulator だけで 2 GiB、NAF 出力が 4 GiB になるため、この経路が必須。
+// nullptr なら従来どおり dense [R^3, 2048] を返す。
 Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
                                    const std::vector<Pixal3dView>& views,
-                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats = nullptr);
+                                   const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats = nullptr,
+                                   const std::vector<std::array<int, 3>>* coords = nullptr);
 
 // Gathers the dense SLAT proj condition [R^3, C] (token k = x*R*R + y*R + z, as
 // produced by pixal3d_cond_slat) at a sparse set of active voxel coords (x,y,z),

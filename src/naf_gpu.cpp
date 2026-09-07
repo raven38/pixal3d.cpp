@@ -225,6 +225,64 @@ void naf_block_order(int T, int h, int w, std::vector<int32_t>& raster_of_bm, st
                 }
 }
 
+GT* naf_build_encoder_half(ggml_context* c, const Model& naf, GT* img, bool sem,
+                           const NafGgmlOpts& o) {
+    return branch(c, naf, sem ? "image_encoder.sem_encoder" : "image_encoder.encoder", img, o);
+}
+
+GT* naf_build_encoder(ggml_context* c, const Model& naf, GT* img, int S, int T,
+                      const NafGgmlOpts& o) {
+    GT *cat = nullptr, *pooled = nullptr;
+    build_encoder(c, naf, img, S, T, o, cat, pooled);
+    return pooled;
+}
+
+NafStripeQK naf_build_qk_stripe(ggml_context* c, GT* pooled, GT* rope_cos, GT* rope_sin,
+                                GT* blk_idx_stripe, int T, int h, int w, int brow0, int nbrow) {
+    const int dy = T / h, dx = T / w, d2 = dy * dx, nb = nbrow * w;
+    const int64_t sy = (int64_t)nbrow * dy, P = sy * (int64_t)T;
+    // pooled [T,T,256] の行 [brow0*dy, +sy) を取り出す（チャネル方向は stride TT なので cont が要る）。
+    GT* ps = ggml_cont(c, ggml_view_3d(c, pooled, T, sy, 256, pooled->nb[1], pooled->nb[2],
+                                       (size_t)brow0 * dy * pooled->nb[1]));                  // [T, sy, 256]
+    GT* x3 = ggml_reshape_3d(c, ggml_reshape_2d(c, ps, P, 256), P, 64, 4);                    // [pix, d, head]
+    GT* xa = ggml_cont(c, ggml_view_3d(c, x3, P, 32, 4, x3->nb[1], x3->nb[2], 0));
+    GT* xb = ggml_cont(c, ggml_view_3d(c, x3, P, 32, 4, x3->nb[1], x3->nb[2], 32 * x3->nb[1]));
+    GT* rot = ggml_concat(c, ggml_neg(c, xb), xa, 1);
+    GT* q_rope = ggml_add(c, ggml_mul(c, x3, rope_cos), ggml_mul(c, rot, rope_sin));          // [pix, 64, 4]
+    GT* q_rows = ggml_cont(c, ggml_transpose(c, ggml_reshape_2d(c, q_rope, P, 256)));         // [256, pix]
+    NafStripeQK out;
+    out.q_bm = ggml_get_rows(c, q_rows, blk_idx_stripe);                                      // [256, d2*nb]
+    GT* kt = ggml_cont(c, ggml_permute(c, ggml_reshape_3d(c, out.q_bm, 256, d2, nb), 1, 0, 2, 3));
+    GT* kr = ggml_sum_rows(c, ggml_reshape_2d(c, kt, d2, (int64_t)256 * nb));
+    out.k_rows = ggml_scale(c, ggml_reshape_2d(c, kr, 256, nb), 1.0f / (float)d2);            // [256, nb]
+    return out;
+}
+
+GT* naf_build_attn_chunk(ggml_context* c, GT* q_bm_all, GT* k_rows, GT* v_rows, GT* win_idx,
+                         int d2, int nblk_total, int blk0, int nblk_chunk) {
+    const int64_t C = v_rows->ne[0];
+    if (C % 4 != 0) throw std::runtime_error("naf_build_attn_chunk: C must be divisible by the 4 heads");
+    const int nb = nblk_chunk;
+    GT* q_bm = q_bm_all;
+    GT* win = win_idx;
+    if (blk0 != 0 || nb != nblk_total) {
+        q_bm = ggml_view_2d(c, q_bm_all, 256, (int64_t)d2 * nb, q_bm_all->nb[1],
+                            (size_t)d2 * blk0 * q_bm_all->nb[1]);
+        win  = ggml_view_1d(c, win_idx, (int64_t)81 * nb, (size_t)81 * blk0 * ggml_type_size(win_idx->type));
+    }
+    const float scale = 1.0f / std::sqrt(64.0f);
+    GT* q_blk = ggml_cont(c, ggml_permute(c, ggml_reshape_4d(c, q_bm, 64, 4, d2, nb), 0, 2, 1, 3)); // [64, d2, 4, blk]
+    GT* k_win = ggml_get_rows(c, k_rows, win);                                                 // [256, 81*blk]
+    k_win = ggml_cont(c, ggml_permute(c, ggml_reshape_4d(c, k_win, 64, 4, 81, nb), 0, 2, 1, 3));   // [64, 81, 4, blk]
+    GT* logits = ggml_mul_mat(c, k_win, q_blk);                                                // [81, d2, 4, blk]
+    GT* probs = ggml_soft_max_ext(c, logits, nullptr, scale, 0.0f);
+    GT* v_win = ggml_get_rows(c, v_rows, win);                                                 // [C, 81*blk]
+    v_win = ggml_cont(c, ggml_permute(c, ggml_reshape_4d(c, v_win, C / 4, 4, 81, nb), 1, 2, 0, 3)); // [81, C/4, 4, blk]
+    GT* out = ggml_mul_mat(c, v_win, probs);                                                   // [C/4, d2, 4, blk]
+    GT* hr = ggml_cont(c, ggml_permute(c, out, 0, 2, 1, 3));                                   // [C/4, 4, d2, blk]
+    return ggml_reshape_2d(c, hr, C, (int64_t)d2 * nb);                                        // [C, d2*blk]
+}
+
 GT* naf_build(ggml_context* c, const Model& naf, int S, int T, int h, int w,
               GT* v_rows, NafGraphInputs& in, const NafGgmlOpts& o, bool debug) {
     if (S > 4 * T) throw std::runtime_error("naf_build: S > 4T (bilinear input downsample) not supported");
@@ -255,21 +313,13 @@ GT* naf_build(ggml_context* c, const Model& naf, int S, int T, int h, int w,
     // ---- pixel-major, block-major q; k = per-block mean (== adaptive_avg_pool2d to (h,w)) ----
     GT* q_rows = ggml_cont(c, ggml_transpose(c, ggml_reshape_2d(c, q_rope, TT, 256)));       // [256, pix]
     GT* q_bm = ggml_get_rows(c, q_rows, in.blk_idx);                                          // [256, pix'] block-major
-    GT* q_blk = ggml_cont(c, ggml_permute(c, ggml_reshape_4d(c, q_bm, 64, 4, d2, nblk), 0, 2, 1, 3)); // [64, d2, 4, blk]
     GT* kt = ggml_cont(c, ggml_permute(c, ggml_reshape_3d(c, q_bm, 256, d2, nblk), 1, 0, 2, 3));      // [d2, 256, blk]
     GT* k_rows = ggml_sum_rows(c, ggml_reshape_2d(c, kt, d2, (int64_t)256 * nblk));                   // [1, 256*blk]
     k_rows = ggml_scale(c, ggml_reshape_2d(c, k_rows, 256, nblk), 1.0f / (float)d2);                 // [256, blk]
 
     // ---- neighborhood attention over the 81-tap window of each block ----
-    const float scale = 1.0f / std::sqrt(64.0f);
-    GT* k_win = ggml_get_rows(c, k_rows, in.win_idx);                                          // [256, 81*blk]
-    k_win = ggml_cont(c, ggml_permute(c, ggml_reshape_4d(c, k_win, 64, 4, 81, nblk), 0, 2, 1, 3));    // [64, 81, 4, blk]
-    GT* logits = ggml_mul_mat(c, k_win, q_blk);                                                // [81, d2, 4, blk]
-    GT* probs = ggml_soft_max_ext(c, logits, nullptr, scale, 0.0f);
-    GT* v_win = ggml_get_rows(c, v_rows, in.win_idx);                                          // [C, 81*blk]
-    v_win = ggml_cont(c, ggml_permute(c, ggml_reshape_4d(c, v_win, C / 4, 4, 81, nblk), 1, 2, 0, 3)); // [81, C/4, 4, blk]
-    GT* out = ggml_mul_mat(c, v_win, probs);                                                   // [C/4, d2, 4, blk]
-    GT* hr = ggml_cont(c, ggml_permute(c, out, 0, 2, 1, 3));                                   // [C/4, 4, d2, blk]
+    // 全 block を1 chunk として naf_build_attn_chunk に委譲する（分割版と同一の演算列）。
+    GT* hr = naf_build_attn_chunk(c, q_bm, k_rows, v_rows, in.win_idx, d2, nblk, 0, nblk);
     hr = ggml_reshape_2d(c, hr, C, TT);                                                        // [C, pix'] block-major
 
     if (debug) {

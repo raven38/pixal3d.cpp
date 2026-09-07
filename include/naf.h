@@ -165,6 +165,43 @@ void naf_window_index(int T, int h, int w, std::vector<int32_t>& idx);
 // position p' = blk*(dy*dx) + ry*dx + rx; bm_of_raster is its inverse.
 void naf_block_order(int T, int h, int w, std::vector<int32_t>& raster_of_bm, std::vector<int32_t>& bm_of_raster);
 
+// ---------------------------------------------------------------------------
+// 分割ビルド（T=1024 で [1024, T*T] = 4 GiB になる NAF 出力を一度に作らないため）。
+// naf_build と同じ演算列を、(1) encoder、(2) block 行 stripe ごとの RoPE→q/k、
+// (3) block chunk ごとの neighborhood attention、の3段に割る。各段が別グラフに
+// なるので gallocr のバッファも段ごとに分かれ、WebGPU の maxBufferSize
+// (~4 GiB) を超える単一バッファを作らずに済む。
+// 詳細と実測値: docs/PIXAL3D_WEBGPU_MEMORY.md
+// ---------------------------------------------------------------------------
+
+// (1) ImageEncoder のみ。img [S,S,3,1] -> pooled [T,T,256]（naf_build 内と同じ cat→pool）。
+ggml_tensor* naf_build_encoder(ggml_context* c, const Model& naf, ggml_tensor* img,
+                               int S, int T, const NafGgmlOpts& o);
+
+// (1b) encoder の片枝だけ（sem=false: image_encoder.encoder, true: sem_encoder）。
+// 返り値 [S,S,128]。cat = concat(枝0, 枝1, dim=2) なので、S==T のとき（pool が恒等）は
+// 2枝を別グラフで計算して pooled バッファの前半/後半へ直接書けば、concat 用の 1 GiB と
+// 片枝を保持したままもう片枝を計算するぶんのピークを削れる。
+ggml_tensor* naf_build_encoder_half(ggml_context* c, const Model& naf, ggml_tensor* img,
+                                    bool sem, const NafGgmlOpts& o);
+
+// (2) pooled の block 行 stripe [brow0, brow0+nbrow) について RoPE と per-block 平均を建てる。
+// pooled は [T,T,256]（(1) の出力を持つ永続テンソルでよい）。rope_cos/rope_sin はこの stripe
+// 分だけを切り出した [P,64]（P = nbrow*dy*T）、blk_idx_stripe は stripe 内ローカルな
+// block-major -> ローカル raster の索引 [d2*nbrow*w]。
+// 出力 q_bm: [256, d2*nbrow*w] block-major、k_rows: [256, nbrow*w]。
+struct NafStripeQK { ggml_tensor* q_bm = nullptr; ggml_tensor* k_rows = nullptr; };
+NafStripeQK naf_build_qk_stripe(ggml_context* c, ggml_tensor* pooled, ggml_tensor* rope_cos,
+                                ggml_tensor* rope_sin, ggml_tensor* blk_idx_stripe,
+                                int T, int h, int w, int brow0, int nbrow);
+
+// (3) block [blk0, blk0+nblk_chunk) の neighborhood attention。q_bm_all は [256, T*T]
+// block-major、k_rows は [256, h*w]（全 block 必要 -- 窓が隣接 block に伸びるため）、
+// v_rows は [C, h*w]、win_idx は [81*h*w]。返り値は [C, d2*nblk_chunk] block-major。
+ggml_tensor* naf_build_attn_chunk(ggml_context* c, ggml_tensor* q_bm_all, ggml_tensor* k_rows,
+                                  ggml_tensor* v_rows, ggml_tensor* win_idx,
+                                  int d2, int nblk_total, int blk0, int nblk_chunk);
+
 struct NafGgmlStats {
     size_t weight_bytes = 0;   // NAF weight buffer
     size_t alloc_bytes = 0;    // gallocr buffer for the graph (activations + temporaries)
