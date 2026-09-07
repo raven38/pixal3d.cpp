@@ -9,6 +9,11 @@ struct Pixal3dPostprocessOptions {
     int texture_size = 4096;
     int target_faces = 1000000;
     int remesh_band = 1;
+    // narrow-band DC remesh のグリッド解像度。0 = デコード解像度 res をそのまま使う（native の既定）。
+    // res=1024 の remesh は実測で 7.8M 頂点 / 15.6M 面を作り、その後の QEM と合わせて
+    // wasm32 の 4 GiB ヒープに収まらない（ブラウザで std::bad_alloc）。ブラウザ側は
+    // 512 を渡して同じ経路を粗いグリッドで回す。使った値は report に出る。
+    int remesh_res = 0;
     bool use_xatlas = false;
     bool use_webp = false; // browser build defaults PNG; native may enable WebP.
 };
