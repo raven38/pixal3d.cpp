@@ -1,10 +1,7 @@
-# Browser Pixal3D SS + Shape-512 paths (docs/spec/31-webgpu-bringup.md §9/§10): the shared C++ pipeline
-# (DINOv3 -> projection -> MV fusion -> ProjectAttention SS flow -> Euler sampler) compiled to
-# WASM on top of ggml + its WebGPU backend, driven from a Worker (web/ss/worker.js) through
-# the C ABI in src/pixal3d_wasm.cpp. Added by the root CMakeLists.txt only under
-# -DTRELLIS_WASM_SS=ON with emcmake (scripts/build_wasm_ss.sh); like web/smoke it vendors
-# thirdparty/ggml itself and compiles just the SS-path sources -- the rest of trellis_core
-# (mesh postprocess, CUDA/Vulkan kernels, xatlas, ...) isn't needed here.
+# Browser Pixal3D SS + Shape-512 + decoder paths, plus the dedicated Texture Flow WASM target.
+# Both targets execute the shared C++ implementation on ggml WebGPU; JavaScript remains a thin
+# file-loading/invocation layer. Texture is built separately here only to preserve both validated
+# branches while resolving the v0.6-v0.8 merge; partial E2E can later collapse them into one module.
 cmake_minimum_required(VERSION 3.18)
 project(pixal3d_webgpu_ss_wasm LANGUAGES CXX C)
 
@@ -19,13 +16,10 @@ set(REPO ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 set(GGML_DIR ${REPO}/thirdparty/ggml)
 add_compile_definitions(GGML_MAX_NAME=128)
 add_subdirectory(${GGML_DIR} ${CMAKE_CURRENT_BINARY_DIR}/ggml)
-# patches/ggml-webgpu/0002: one DiT forward is one graph submission and takes minutes in a
-# browser; upstream's 30 s queue-wait ceiling aborts it. (0001 is moot under Emscripten.)
-# (one sparse-decoder stage graph at res 1024 is one submission too; 60 min covers it in a browser)
-target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=3600000u)
+# Shape/texture N=17489 forwards can take minutes in Chrome; sparse decoder graphs are also long.
+target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=7200000u)
 
-add_executable(pixal3d-webgpu-ss-wasm
-  ${REPO}/src/pixal3d_wasm.cpp
+set(PIXAL3D_WASM_COMMON
   ${REPO}/src/trellis_model.cpp
   ${REPO}/src/dinov3.cpp
   ${REPO}/src/dit.cpp
@@ -40,33 +34,55 @@ add_executable(pixal3d-webgpu-ss-wasm
   ${REPO}/src/sparse.cpp
   ${REPO}/src/dual_grid.cpp
 )
-target_include_directories(pixal3d-webgpu-ss-wasm PRIVATE ${REPO}/include ${GGML_DIR}/include)
-target_link_libraries(pixal3d-webgpu-ss-wasm PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
-target_compile_options(pixal3d-webgpu-ss-wasm PRIVATE "-fwasm-exceptions")
 
-# WORKERFS mounts the GGUFs/fixtures the page hands over as File objects (read lazily through
-# FileReaderSync, never copied into the wasm heap), so Model::load's fseeko/fread path works
-# unchanged. JSPI lets pixal3d_ss_run suspend across the backend's async WebGPU waits.
-target_link_options(pixal3d-webgpu-ss-wasm PRIVATE
-  "--use-port=emdawnwebgpu"
-  "--profiling-funcs"   # keep function names: a wasm trap then names the frame, not wasm-function[N]
-  "-sJSPI"
-  "-fwasm-exceptions"
-  "-lworkerfs.js"
-  "-sFORCE_FILESYSTEM=1"
-  "-sALLOW_MEMORY_GROWTH=1"
-  "-sINITIAL_MEMORY=268435456"
-  "-sMAXIMUM_MEMORY=4294967296"
-  "-sEXPORTED_FUNCTIONS=[_pixal3d_ss_run,_pixal3d_ss_latent,_pixal3d_ss_latent_size,_pixal3d_ss_steps,_pixal3d_ss_n_steps,_pixal3d_shape512_run,_pixal3d_shape512_latent,_pixal3d_shape512_latent_size,_pixal3d_shape512_steps,_pixal3d_shape512_n_steps,_pixal3d_shape_decode_run,_pixal3d_tex_decode_run,_malloc,_free]"
-  "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPF32]"
-  "-sMODULARIZE=1"
-  "-sEXPORT_NAME=createPixal3dSS"
-  "-sJSPI_EXPORTS=[pixal3d_ss_run,pixal3d_shape512_run,pixal3d_shape_decode_run,pixal3d_tex_decode_run]"
-  "-sENVIRONMENT=worker"
+function(pixal3d_wasm_target target source export_name output_dir output_name exported_functions jspi_exports)
+  add_executable(${target} ${source} ${PIXAL3D_WASM_COMMON})
+  target_include_directories(${target} PRIVATE ${REPO}/include ${GGML_DIR}/include)
+  target_link_libraries(${target} PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+  target_compile_options(${target} PRIVATE "-fwasm-exceptions")
+  target_link_options(${target} PRIVATE
+    "--use-port=emdawnwebgpu"
+    "--profiling-funcs"
+    "-sJSPI"
+    "-fwasm-exceptions"
+    "-lworkerfs.js"
+    "-sFORCE_FILESYSTEM=1"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sINITIAL_MEMORY=268435456"
+    "-sMAXIMUM_MEMORY=4294967296"
+    "-sEXPORTED_FUNCTIONS=${exported_functions}"
+    "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPF32]"
+    "-sMODULARIZE=1"
+    "-sEXPORT_NAME=${export_name}"
+    "-sJSPI_EXPORTS=${jspi_exports}"
+    "-sENVIRONMENT=worker"
+  )
+  set_target_properties(${target} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${output_dir}"
+    OUTPUT_NAME "${output_name}"
+    SUFFIX ".js"
+  )
+endfunction()
+
+# Existing validated SS / Shape-512 / Shape Decode / Texture Decode module.
+pixal3d_wasm_target(
+  pixal3d-webgpu-ss-wasm
+  ${REPO}/src/pixal3d_wasm.cpp
+  createPixal3dSS
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  pixal3d_ss
+  "[_pixal3d_ss_run,_pixal3d_ss_latent,_pixal3d_ss_latent_size,_pixal3d_ss_steps,_pixal3d_ss_n_steps,_pixal3d_shape512_run,_pixal3d_shape512_latent,_pixal3d_shape512_latent_size,_pixal3d_shape512_steps,_pixal3d_shape512_n_steps,_pixal3d_shape_decode_run,_pixal3d_tex_decode_run,_malloc,_free]"
+  "[pixal3d_ss_run,pixal3d_shape512_run,pixal3d_shape_decode_run,pixal3d_tex_decode_run]"
 )
 
-set_target_properties(pixal3d-webgpu-ss-wasm PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-  OUTPUT_NAME "pixal3d_ss"
-  SUFFIX ".js"
+# Texture Flow branch source kept byte-for-byte from v0.6. It is a separate module only at this
+# conflict-resolution boundary, avoiding loss of either branch's validated WASM entry points.
+pixal3d_wasm_target(
+  pixal3d-webgpu-texture-wasm
+  ${REPO}/src/pixal3d_texture_wasm.cpp
+  createPixal3dTexture
+  ${REPO}/web/texture
+  pixal3d_texture
+  "[_pixal3d_texture_run,_pixal3d_texture_latent,_pixal3d_texture_latent_size,_pixal3d_texture_steps,_pixal3d_texture_n_steps,_malloc,_free]"
+  "[pixal3d_texture_run]"
 )
