@@ -91,8 +91,18 @@ int run(const vector<string>&m,const string&views,const string&out,uint32_t seed
 #endif
  auto tn=tflow(m[7],hr,ct,hn,noise(32*hr.size(),seed+3));vector<float>td(tn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)td[c+32*i]=tn[c+32*i]*TSTD[c]+TMEAN[c];
  vector<float>raw;{Model d=Model::load(m[8],0);raw=tex_decode(d,td,hr,so.subs);d.free();}if(raw.size()!=so.coords.size()*6)return 7;
+ rlog("tex decode: %zu voxels x6 (%.1f MB), raw mesh V=%d F=%d\n",so.coords.size(),raw.size()*4/1048576.0,mesh.V(),mesh.F());
  vector<float>pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
- Pixal3dPostprocessOptions opt;opt.texture_size=4096;opt.target_faces=1000000;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;string pr;
+ Pixal3dPostprocessOptions opt;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;opt.texture_size=4096;
+#ifdef __EMSCRIPTEN__
+ // wasm32 のヒープは 4 GiB が上限。res=1024 の narrow-band remesh は実測 7.8M 頂点 /
+ // 15.6M 面を作り、その後の QEM と合わせて収まらない（std::bad_alloc）。粗いグリッドで
+ // 同じ経路を回す。使った値は postprocess の report 行に出る。
+ opt.remesh_res=512;opt.target_faces=500000;
+#else
+ opt.target_faces=1000000;
+#endif
+ string pr;
  if(!pixal3d_write_production_glb(out,mesh,so.coords,pbr,so.res,opt,&pr)){rlog("%s",pr.c_str());return 8;}rlog("%s",pr.c_str());
  FILE*f=fopen(out.c_str(),"rb");long bytes=-1;if(f){fseek(f,0,SEEK_END);bytes=ftell(f);fclose(f);}
  rlog("REAL_INPUT_LIVE_SS=1\nREAL_INPUT_LIVE_SHAPE512=1\nREAL_INPUT_LIVE_SHAPE1024=1\nREAL_INPUT_LIVE_TEXTURE_COND=1\nREAL_INPUT_TEXTURE_COND_BLOCKED=0\nREAL_FULL_E2E_RESULT: OK V=%d F=%d glb_bytes=%ld atlas=%d\n",mesh.V(),mesh.F(),bytes,opt.texture_size);return 0;}

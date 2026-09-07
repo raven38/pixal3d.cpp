@@ -131,8 +131,18 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
     auto txnorm=texture_flow(model[7],hr,ct,shnorm,deterministic_noise(fixture+"/tex_noise.npy",32*hr.size(),seed+3));vector<float>txdn(txnorm.size());for(size_t n=0;n<hr.size();++n)for(int c=0;c<32;++c)txdn[c+32*n]=txnorm[c+32*n]*TEX_STD[c]+TEX_MEAN[c];
     ShapeOut so;{Model d=Model::load(model[5],0);so=shape_decode(d,shdn,hr,1024);d.free();}Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;
     vector<float>raw;{Model d=Model::load(model[8],0);raw=tex_decode(d,txdn,hr,so.subs);d.free();}if(raw.size()!=so.coords.size()*6)return 5;
+    frep("tex decode: %zu voxels x6 (%.1f MB), raw mesh V=%d F=%d\n",so.coords.size(),raw.size()*4/1048576.0,mesh.V(),mesh.F());
     vector<float>pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
-    Pixal3dPostprocessOptions opt;opt.texture_size=4096;opt.target_faces=1000000;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;string pr;
+    Pixal3dPostprocessOptions opt;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;opt.texture_size=4096;
+#ifdef __EMSCRIPTEN__
+ // wasm32 のヒープは 4 GiB が上限。res=1024 の narrow-band remesh は実測 7.8M 頂点 /
+ // 15.6M 面を作り、その後の QEM と合わせて収まらない（std::bad_alloc）。粗いグリッドで
+ // 同じ経路を回す。使った値は postprocess の report 行に出る。
+ opt.remesh_res=512;opt.target_faces=500000;
+#else
+ opt.target_faces=1000000;
+#endif
+    string pr;
     if(!pixal3d_write_production_glb(out,mesh,so.coords,pbr,so.res,opt,&pr)){frep("%s",pr.c_str());return 5;}frep("%s",pr.c_str());
     frep("FULL_E2E_LIVE_SS=1\nFULL_E2E_LIVE_SHAPE512=1\nFULL_E2E_LIVE_SHAPE1024=1\nFULL_E2E_LIVE_TEXTURE_COND=%d\nFULL_E2E_TEXTURE_FLOW=1\nFULL_E2E_GLB=1\n",live_tex_cond?1:0);
     frep("FULL_MODEL_E2E_RESULT: %s V=%d F=%d\n",live_tex_cond?"LIVE_ALL_STAGES":"PARTIAL_LIVE_TEXTURE_COND",mesh.V(),mesh.F());return 0;

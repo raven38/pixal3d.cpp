@@ -25,7 +25,16 @@ int run_partial(const string& tex_flow,const string& shape_dec,const string& tex
     vector<float> tx((size_t)N*32);for(int64_t n=0;n<N;++n)for(int c=0;c<32;++c)tx[c+32*n]=txnorm[c+32*n]*(c<(int)stdv.size()?stdv[c]:TEX_STD[c])+(c<(int)mean.size()?mean[c]:TEX_MEAN[c]);
     ShapeOut so;{Model m=Model::load(shape_dec,0);so=shape_decode(m,sh,coords,res);m.free();}Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 4;vector<float> raw;{Model m=Model::load(tex_dec,0);raw=tex_decode(m,tx,coords,so.subs);m.free();}if(raw.size()!=so.coords.size()*6)return 4;
     vector<float> pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
-    Pixal3dPostprocessOptions opt; opt.texture_size=4096;opt.target_faces=1000000;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;string pr;bool ok=pixal3d_write_production_glb(out,mesh,so.coords,pbr,so.res,opt,&pr);rep("%s",pr.c_str());if(!ok)return 5;
+    Pixal3dPostprocessOptions opt;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;opt.texture_size=4096;
+#ifdef __EMSCRIPTEN__
+ // wasm32 のヒープは 4 GiB が上限。res=1024 の narrow-band remesh は実測 7.8M 頂点 /
+ // 15.6M 面を作り、その後の QEM と合わせて収まらない（std::bad_alloc）。粗いグリッドで
+ // 同じ経路を回す。使った値は postprocess の report 行に出る。
+ opt.remesh_res=512;opt.target_faces=500000;
+#else
+ opt.target_faces=1000000;
+#endif
+    string pr;bool ok=pixal3d_write_production_glb(out,mesh,so.coords,pbr,so.res,opt,&pr);rep("%s",pr.c_str());if(!ok)return 5;
     FILE*f=fopen(out.c_str(),"rb");long bytes=-1;if(f){fseek(f,0,SEEK_END);bytes=ftell(f);fclose(f);}rep("partial-e2e: textured GLB path=%s bytes=%ld atlas=%d\n",out.c_str(),bytes,opt.texture_size);return 0;
 }
 }

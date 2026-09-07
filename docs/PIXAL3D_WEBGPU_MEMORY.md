@@ -593,10 +593,16 @@ masks (12 MB) and the `[6, M]` result (112 MB), read back in the §9.3 256 MiB s
 計測環境: M4 Max (64 GB), Metal (`MTL0`), `trellis-test-pixal3d-cond-tex`, 実入力 4 view
 (`transforms.json` + pre-matted RGBA 1024²), sparse coords N=16 384。
 
-| 経路 | 単一グラフバッファ最大 | 永続 | 4 view 実時間 |
+| 経路 / backend | 単一グラフバッファ最大 | 永続 | 実時間 |
 |---|---|---|---|
-| 単一グラフ・dense R³ (従来) | **11 344 MB** | 2 196 MB | 40.7 s |
-| 分割グラフ・sparse coords (現行) | **3 332 MB** | 2 196 MB | 41.8 s |
+| 単一グラフ・dense R³ (従来) / Metal | **11 344 MB** | 2 196 MB | 40.7 s (4 view, N=16 384) |
+| 分割グラフ・sparse coords / Metal | **3 332 MB** | 2 196 MB | 41.8 s (4 view, N=16 384) |
+| 分割グラフ・sparse coords / **WebGPU (Chrome, M4 Max)** | **1 538 MB** | 2 733 MB | 47.3 s (4 view, N=10 901) |
+
+WebGPU のほうが Metal より単一バッファが小さいのは、`naf_ggml_opts_for` が WebGPU では
+`direct_conv=true` を選び、encoder の畳み込みが `[K*K*Ci, W*H]` の im2col バッファを作らない
+ため（generic lowering で増えるぶんを上回って効く）。WebGPU 行は real-input full E2E
+(`pixal3d_real_full_run`) の実行ログから。
 
 分割の構成（`src/pixal3d_cond_gpu.cpp::cond_slat_gpu_chunked`、view ごとに 4 種のグラフ）:
 
