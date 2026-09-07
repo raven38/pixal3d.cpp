@@ -1475,18 +1475,68 @@ first: `SuspendError: trying to suspend without WebAssembly.promising`, fixed in
 `web/ss/CMakeLists.txt`). Remaining for the milestone: one native full 12-step run and one browser
 full run, both under the lock (§11.6).
 
+**Gate: PASS (native, 2026-09-07 10:53-12:00, GPU held alone through the lock).** `trellis-test-
+pixal3d-slat-sample --stage shape_hr`, exact SDPA, fixture condition, 12 steps / 20 forwards in
+3918 s (196 s per forward at N=17489):
+
+| latent | vs f32 rel | vs bf16 rel | vs CUDA FA rel | f32-vs-bf16 (calib) | threshold `max(2·calib, 0.05)` |
+|---|---|---|---|---|---|
+| x_final | **0.398** | 0.429 | 0.273 | 0.415 | 0.829 |
+| slat (denormalized) | 0.412 | 0.452 | -- | 0.425 | 0.850 |
+
+Per step, the distance to f32 is 6.2e-4 / 1.4e-3 / 1.3e-3 / 1.3e-3 / 2.1e-3 / 4.1e-3 / 6.0e-3 /
+3.0e-2 / 0.172 / 0.190 / 0.255 / 0.398 (steps 1-12) against CUDA exact's 8.4e-4 / 1.5e-3 / 3.2e-3
+/ 3.2e-3 / 4.6e-3 / 8.1e-3 / 2.5e-2 / 6.5e-2 / 0.173 / 0.191 / 0.259 / 0.399: at every step the
+WebGPU run is at or inside the CUDA-exact distance, and the step-8→9 jump (where the guidance
+interval ends and the low-t Euler updates amplify any difference) is the same jump CUDA takes --
+no corruption signature (§11.5: a wrong run jumps an order of magnitude past the references).
+
 ### 11.6 Browser / WASM (`web/shape1024/`)
 
-TBD-HR-BROWSER
+One full run in Chrome (`node shape1024/run_playwright.js ... <cond_slat> <hr_sample> <out>`,
+2026-09-07 12:00-13:16, lock held, the same `pixal3d_ss.wasm` module as SS/Shape-512 via
+`pixal3d_shape1024_run`): **RESULT: OK, gate PASS.**
+
+| stage | browser result |
+|---|---|
+| conditioning, V=4, S=1024, T=512, device-resident, one graph per view | z_global rel 8.9e-5, proj_lr@tokens 6.1e-4, proj_hr@tokens 1.0e-4 vs PyTorch; 292 s (73 s slowest view), peak 1151 MB |
+| sampling (fixture condition), 12 steps / 20 forwards | x_final vs f32 **rel 0.397** (cos 0.9968), vs bf16 0.429; threshold 0.829 |
+| browser vs native, per step | rel 1.0e-7 (step 1) growing to 3.3e-2 (step 12); both trail f32 at the CUDA-exact distance at every step |
+| wall | 4650 s total: 218 s per forward (native 196 s), i.e. the browser costs 11% over native Dawn |
+
+The per-step browser latents are scored offline against the native dumps and the references
+(`browser_x_step<k>.npy` vs `cpp_shape_x_step<k>.npy`); the LR→HR token list is the shared C++
+result (`hr_coords.npy`, §11.2), the browser carries no copy of it.
 
 ### 11.7 Performance per component
 
-TBD-HR-PERF
+| component (Shape-1024, N=17489) | native Dawn/Metal (M1 Pro) | Chrome/WASM |
+|---|---|---|
+| DINOv3@1024 + NAF + projections + MV average, V=4 | 269 s (§11.4) | 292 s |
+| DiT forward (30 blocks, exact SDPA in 14 query chunks) | 196 s | 218 s |
+| 12-step sampling (20 forwards, guidance interval [0.6, 1]) | 3918 s | 4351 s |
+| single-step probe (harness, incl. 2.7 GB model load) | 315-515 s | 222-476 s wall |
+
+The single-step harness turns an 80-minute hypothesis test into a 4-8 minute one (§11.5).
 
 ### 11.8 Memory (task §6)
 
-TBD-HR-MEM
+Flow: weights 2647 MB (BF16 GGUF as uploaded), DiT activation buffer 1861 MB (gallocr-reused;
+6832 MB with every intermediate kept), condition inputs 137 MB re-uploaded per forward -- ~4.7 GB
+device-resident for sampling, the same in the browser. Conditioning peak 1151 MB (view graph 435 MB)
+on top of 580 MB DINOv3+NAF weights; the two stages do not overlap (the conditioning models are
+freed before the flow is loaded). Host: the fixture latents and per-step dumps are 2.2 MB each.
 
 ### 11.9 Remaining blockers
 
-TBD-HR-BLOCKERS
+- **Nondeterministic ggml-webgpu/Dawn-Metal fault (§11.5), not root-caused.** Reproducible in
+  minutes with the single-step harness; every forward is wrong while another process computes on
+  the GPU (any backend), ~1 in 3 wrong with the GPU idle. Until fixed, sampling results are only
+  accepted from runs that held the GPU alone (`/tmp/pixal3d_gpu.lock`), and a job on a shared
+  machine must be treated as suspect. Next bisection step: `GGML_WEBGPU_ONE_PASS_PER_OP=1` and
+  `--repeat` on the step-11 probe under deliberate contention (a second process running the
+  Metal backend), then Dawn's Metal command-buffer / hazard-tracking behaviour.
+- Texture flow, sparse decoders, mesh extraction and the GLB browser E2E are out of this
+  milestone's scope (spec 32 and the decoder branches).
+- Disk: the Mac hit 0 bytes free once during this phase (probe dumps + concurrent sessions);
+  per-step dumps are small, per-block intermediate dumps (120-140 MB) must be deleted after use.
