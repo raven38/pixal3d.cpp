@@ -30,6 +30,9 @@ namespace {
 template <typename Fn>
 static void naf_parallel_for(int n, Fn&& fn) {
     if (n <= 0) return;
+#ifdef __EMSCRIPTEN__
+    fn(0, n);   // pthread 無しでリンクしているので std::thread は生成できない
+#else
     unsigned hw = std::thread::hardware_concurrency();
     if (hw == 0) hw = 4;
     int nthreads = (int)std::min<unsigned>(hw, (unsigned)n);
@@ -44,6 +47,7 @@ static void naf_parallel_for(int n, Fn&& fn) {
         pool.emplace_back([&fn, begin, end]() { fn(begin, end); });
     }
     for (auto& th : pool) th.join();
+#endif
 }
 
 struct ConvW { int Co = 0, Ci = 0, K = 0; std::vector<float> w, b; };
