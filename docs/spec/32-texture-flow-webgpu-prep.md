@@ -407,7 +407,11 @@ bit-level with the browser again, step 3 rel 1.19e-2 (four times run 1's), final
 forward of run 3 and of the probes -- a timing fingerprint of the fault worth checking in the
 Shape-1024 investigation. Run 3, the same binary and inputs, was clean at every step: its
 trajectory follows the browser's to L2 rel 1.1e-8 (step 1) … 2.0e-4 (step 12), cos 1.0000000
-throughout, and sits at 1.5e-3 from the CUDA exact-SDPA run at the end. The test's calibrated verdict still says PASS
+throughout, and sits at 1.5e-3 from the CUDA exact-SDPA run at the end. A follow-up probe of
+steps 1, 2, 3, 4 in ONE process (four consecutive forwards, lock held, 09:00) was clean at every
+step (rel 2.6e-5 / 1.1e-4 / 6.8e-5 / 4.6e-5, 193-195 s each), so the fault is not tied to "the
+third forward of a process" or to t = 937.5; it is intermittent (2 of 3 full runs, 0 of 5 probe
+processes with 1-4 forwards, 0 of 12 Chrome forwards this session). The test's calibrated verdict still says PASS
 (0.171 < 0.690) because the threshold is derived from the reference's own bf16 drift; that is
 why the per-step tables and the CUDA/browser distances are reported alongside, and why run 1 is
 not the milestone's native run. The dumps are kept as `tex_webgpu_full_run1_corrupt/` in the
