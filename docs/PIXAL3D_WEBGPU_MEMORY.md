@@ -582,3 +582,53 @@ layer or op of the texture decoder exceeds its shape-decoder counterpart.
 
 The 4 GB wasm heap ceiling of §9.4 is unchanged: the texture path's extra host state is the
 masks (12 MB) and the `[6, M]` result (112 MB), read back in the §9.3 256 MiB slices.
+
+## 11. Measured + fixed: Texture-1024 conditioning (2026-09-08, `feat/browser-partial-e2e`)
+
+`tex_1024` は唯一 NAF target が 1024 の段（spec 30 §2 の表）。`pixal3d_cond_slat_gpu` の
+単一グラフ版は、この段で **ggml gallocr が 1 本 11 344 MB のバッファ**を要求する。
+§1 の実測 `maxBufferSize` は 4 294 967 292 B なので確保できない。内訳の主犯は NAF 出力
+`[1024, 1024²]` f32 = 4 294 967 296 B —— **上限をちょうど 4 バイト超える**。
+
+計測環境: M4 Max (64 GB), Metal (`MTL0`), `trellis-test-pixal3d-cond-tex`, 実入力 4 view
+(`transforms.json` + pre-matted RGBA 1024²), sparse coords N=16 384。
+
+| 経路 | 単一グラフバッファ最大 | 永続 | 4 view 実時間 |
+|---|---|---|---|
+| 単一グラフ・dense R³ (従来) | **11 344 MB** | 2 196 MB | 40.7 s |
+| 分割グラフ・sparse coords (現行) | **3 332 MB** | 2 196 MB | 41.8 s |
+
+分割の構成（`src/pixal3d_cond_gpu.cpp::cond_slat_gpu_chunked`、view ごとに 4 種のグラフ）:
+
+| グラフ | 内容 | バッファ (S=1024, T=1024) |
+|---|---|---|
+| `..._dino` | DINOv3 → global 累積 + patch map を永続化 + lr projection tap 累積 | 1 120.7 MB |
+| `..._naf_enc0` / `_enc1` | NAF encoder の 2 枝を別グラフで回し pooled の前半/後半へ直接書く | 1 042.0 / 3 332.0 MB |
+| `..._naf_qk` | block 行 stripe ごとに RoPE → q_bm / k_rows | 224.2 MB |
+| `..._naf_attn` | block chunk ごとに neighborhood attention → その chunk の hr tap を累積 | 564.4 MB |
+
+永続バッファは 1 本ずつ別確保（pooled 1 024 MB、q_bm 1 024 MB、k_rows/patch/accumulator は小）。
+NAF 出力を一度も materialize しないので、単一バッファは encoder 枝の 3 332 MB が最大になる。
+
+### 数値の同値性
+
+同一入力・同一 backend で、単一グラフ版（この修正前のコード）の出力と比較:
+
+| 量 | max abs | L2 rel | cosine | bit identical |
+|---|---|---|---|---|
+| `global` | 0 | 0 | 1.0000000000 | **yes** |
+| `proj` lr 半分（DINO 由来） | 0 | 0 | 1.0000000000 | **yes** |
+| `proj` hr 半分（NAF 由来） | 3.815e-06 | 8.531e-09 | 1.0000000000 | no |
+
+hr だけ差が出るのは、4 つの bilinear tap を chunk をまたいで足すため加算順序が変わるから
+（chunk 外の tap は重み 0・索引 0 に潰しているので値そのものは同一）。
+
+`coords` を渡す sparse 経路（dense R³ を作らず active voxel だけ蓄積）は、
+S=512/R=32/T=512・V=2 で dense+`pixal3d_gather_proj` と **全成分ビット一致**を確認済み。
+同条件で `--chunk 64` を強制すると単一バッファは 2 836 MB → 834 MB に下がる。
+
+### PyTorch 参照との比較について
+
+`tools/ref_pixal3d_cond_slat.py` の `tex_cond_global.npy` / `tex_cond_proj.npy` は
+DINOv3+NAF(natten)+spconv が要るため CUDA 必須で、この Mac では生成できない。**本節の
+検証は「検証済みの単一グラフ実装との同値性」であり、PyTorch 参照との突き合わせは未実施**。
