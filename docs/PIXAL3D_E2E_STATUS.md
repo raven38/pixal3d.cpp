@@ -81,6 +81,36 @@ partial / fixture full / real full の 3 経路が同じ tail を使う。
   `tools/ref_pixal3d_cond_slat.py` は DINOv3 + NAF(natten) + spconv が要り CUDA 必須で、
   検証に使った Mac では生成できない。GPU pod で回すまで「PyTorch 基準の rel / cosine」は出せない。
 
+## 7. 実測（2026-09-08, M4 Max / Chrome WebGPU vs Metal）
+
+入力: `transforms.json` + pre-matted RGBA 4 view（1024²）。`mesh_scale` はどの手元データにも
+無いので既定 1.0。view 0 が canonical front view である保証も無い —— **以下は統合とメモリの
+gate であって、形状品質の評価ではない**。
+
+| stage | browser (Chrome/WebGPU) | native (Metal) |
+|---|---|---|
+| SS Flow 12 step | 190.6 s | 144.4 s (FA) / 89.3 s (NOFA) |
+| Shape-512 Flow | 161.7 s | 102.2 s / 63.5 s |
+| Shape-1024 tokens | 10 901 | 11 964 / 12 083 |
+| Shape-1024 Flow | 704.0 s | 600.9 s |
+| **live Texture-1024 cond** | **47.3 s, graph peak 1 538 MB** | 37.9 s, 3 332 MB |
+| Texture Flow 12 step | 487.3 s (39.8 s/forward) | 331.8 s |
+| production postprocess | remesh_res=512 → QEM 484 398 面, atlas 4096 | remesh_res=1024 → 955 372 面 |
+
+token 数がばらつくのは、SS decode の閾値が離散判定で、backend 間（および FA / SDPA 間）の
+わずかな数値差がそのまま active voxel 数を変えるため。
+
+ブラウザで踏んだ 3 つの落とし穴（いずれも「これらのターゲットが一度もブラウザで実行されて
+いなかった」ことの現れ）:
+
+1. `dit_N4096_dcond5_proj1: 184 unsupported node(s)` —— WebGPU backend に BF16 K/V の
+   FLASH_ATTN_EXT が無い。full / real の E2E が `g_no_fa` を立てていなかった。
+2. `std::bad_alloc` —— res=1024 の narrow-band remesh が 7.8M 頂点 / 15.6M 面を作り、
+   wasm32 の 4 GiB ヒープに収まらない。`remesh_res` を足してブラウザは 512 で回す。
+3. `thread constructor failed: Not supported` —— wasm ターゲットは pthread 無しでリンク
+   しているので `std::thread` が生成できない。remesh の並列化を直列に落とした
+   （候補ビットセットがスレッドごとに res³/8 バイト要るので、メモリ的にも効く）。
+
 ## 6. 走らせ方（このリポジトリでの実行手順）
 
 WASM ビルド:
