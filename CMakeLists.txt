@@ -163,6 +163,8 @@ add_library(trellis_core STATIC
   src/naf.cpp
   src/naf_gpu.cpp
   src/transforms_json.cpp
+  src/pixal3d_input.cpp
+  src/pixal3d_postprocess.cpp
   src/graph_dump.cpp
 )
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)
@@ -459,6 +461,14 @@ set_target_properties(trellis-test-naf PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 add_executable(trellis-test-pixal3d-cond-slat src/test_pixal3d_cond_slat.cpp)
 target_link_libraries(trellis-test-pixal3d-cond-slat PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-cond-slat PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-pixal3d-real-e2e src/pixal3d_real_geometry_wasm.cpp)
+target_link_libraries(trellis-test-pixal3d-real-e2e PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-real-e2e PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-pixal3d-cond-tex src/test_pixal3d_cond_tex.cpp)
+target_link_libraries(trellis-test-pixal3d-cond-tex PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-cond-tex PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 # Native build of the browser SS entry point (src/pixal3d_wasm.cpp) -- same C ABI and stages
 # as web/ss, runnable on any backend for debugging the browser path outside a browser.
