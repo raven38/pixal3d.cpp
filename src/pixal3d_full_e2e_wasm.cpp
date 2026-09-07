@@ -4,10 +4,11 @@
 //   fixture views -> SS cond/flow/decode -> Shape512 cond/flow -> upsample/quantize
 //   -> Shape1024 cond/flow -> Texture flow -> shape/texture decode -> GLB.
 //
-// IMPORTANT: WebGPU NAF@1024 conditioning currently exceeds the ~4 GiB maxBufferSize path
-// documented in spec 32. Until block/on-demand NAF lands, Texture conditioning is loaded from
-// the fixture (tex_cond_global.npy / tex_cond_proj.npy). Every earlier neural stage is live.
-// The report emits FULL_E2E_LIVE_TEXTURE_COND=0 so this cannot be mistaken for v0.9.
+// Texture-1024 conditioning は分割グラフ版 pixal3d_cond_slat_gpu（sparse coords）で live に
+// 計算する。NAF@1024 の [1024, 1024^2]（4 GiB）を一度に materialize せず、block chunk ごとに
+// projection tap を回収するので WebGPU の maxBufferSize を踏まない
+// （docs/PIXAL3D_WEBGPU_MEMORY.md）。fixture 注入は残っていない。
+// PIXAL3D_TEX_COND_FIXTURE=1 を渡したときだけ、旧 fixture 経路を debug 用に使う。
 
 #include "pixal3d_cond.h"
 #include "trellis_model.h"
@@ -17,6 +18,7 @@
 #include "shape_decoder.h"
 #include "dual_grid.h"
 #include "mesh_glb.h"
+#include "pixal3d_postprocess.h"
 #include "npy.h"
 #include "ggml-backend.h"
 
@@ -94,14 +96,7 @@ vector<float> texture_flow(const string& gguf,const vector<array<int,3>>& coords
     auto o=sample_flow(f,noise,c.global.data(),ng.data(),c.proj.data(),np.data(),sp);delete r;m.free();return o;
 }
 
-void vertex_colors(const Mesh& mesh,const ShapeOut& so,const vector<float>& pbr,vector<float>& colors){
-    colors.assign((size_t)mesh.V()*3,.5f); if(pbr.size()<so.coords.size()*6)return;
-    // Decoder ordering is shared; the raw dual-grid mesh commonly exposes corresponding early
-    // vertices. This is only the integration GLB path; production PBR bake replaces it in phase 3.
-    const size_t n=std::min((size_t)mesh.V(),so.coords.size()); for(size_t i=0;i<n;++i)for(int c=0;c<3;++c)colors[3*i+c]=std::clamp(.5f*pbr[6*i+c]+.5f,0.f,1.f);
-}
-
-int run_full_fixture(const vector<string>& model,const string& fixture,const string& out,uint32_t seed){
+int run_full_fixture(const vector<string>& model,const string& fixture,const string& out,uint32_t seed,bool tex_cond_fixture){
     // model order: dino, naf, ss_flow, ss_dec, shape512, shape_dec, shape1024, tex_flow, tex_dec
     if(model.size()!=9) return 2; frep("=== fixture-input full model E2E ===\n");
     auto v512=fixture_views(fixture,false),v1024=fixture_views(fixture,true); float mesh_scale=npy::load(fixture+"/mesh_scale.npy").data[0];
@@ -112,21 +107,33 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
     auto z=sample_flow(sf,deterministic_noise(fixture+"/noise.npy",8*4096,seed),css.global.data(),neg.data(),css.proj.data(),negp.data(),ss);delete sr;sm.free();vector<float>zdec(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zdec[(size_t)c*4096+i]=z[c+8*i];
     vector<array<int,3>> coords;{Model d=Model::load(model[3],0);auto logits=ss_decode(d,zdec);d.free();coords=ss_coords(logits,64,32);} if(coords.empty())return 4; frep("SS -> %zu coords\n",coords.size());
     // Shape512 live cond + flow
-    Pixal3dCond c512;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{512,32,512,mesh_scale};c512=pixal3d_cond_slat_gpu(d,n,v512,prm);d.free();n.free();}
-    c512.proj=pixal3d_gather_proj(c512.proj,32,c512.d_proj,coords);auto lrnorm=shape_flow(model[4],coords,c512,deterministic_noise(fixture+"/shape_noise.npy",32*coords.size(),seed+1));vector<float>lrdn(lrnorm.size());for(size_t n=0;n<coords.size();++n)for(int c=0;c<32;++c)lrdn[c+32*n]=lrnorm[c+32*n]*SHAPE_STD[c]+SHAPE_MEAN[c];
+    Pixal3dCond c512;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{512,32,512,mesh_scale};c512=pixal3d_cond_slat_gpu(d,n,v512,prm,nullptr,&coords);d.free();n.free();}auto lrnorm=shape_flow(model[4],coords,c512,deterministic_noise(fixture+"/shape_noise.npy",32*coords.size(),seed+1));vector<float>lrdn(lrnorm.size());for(size_t n=0;n<coords.size();++n)for(int c=0;c<32;++c)lrdn[c+32*n]=lrnorm[c+32*n]*SHAPE_STD[c]+SHAPE_MEAN[c];
     // upsample + Pixal3D quantize to grid64
     vector<array<int,3>> up;{Model d=Model::load(model[5],0);up=shape_upsample(d,lrdn,coords);d.free();}std::set<array<int,3>>qs;for(auto&c:up)qs.insert({(int)std::lround((c[0]+.5f)/512.f*63.f),(int)std::lround((c[1]+.5f)/512.f*63.f),(int)std::lround((c[2]+.5f)/512.f*63.f)});vector<array<int,3>>hr(qs.begin(),qs.end());frep("Shape512 -> Shape1024 tokens=%zu\n",hr.size());
     // Shape1024 live cond + flow (NAF T512, supported path)
-    Pixal3dCond c1024;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{1024,64,512,mesh_scale};c1024=pixal3d_cond_slat_gpu(d,n,v1024,prm);d.free();n.free();}c1024.proj=pixal3d_gather_proj(c1024.proj,64,c1024.d_proj,hr);
+    Pixal3dCond c1024;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{1024,64,512,mesh_scale};c1024=pixal3d_cond_slat_gpu(d,n,v1024,prm,nullptr,&hr);d.free();n.free();}
     auto shnorm=shape_flow(model[6],hr,c1024,deterministic_noise(fixture+"/hr_shape_noise.npy",32*hr.size(),seed+2));vector<float>shdn(shnorm.size());for(size_t n=0;n<hr.size();++n)for(int c=0;c<32;++c)shdn[c+32*n]=shnorm[c+32*n]*SHAPE_STD[c]+SHAPE_MEAN[c];
-    // Texture conditioning fixture fallback (only non-live stage)
-    Pixal3dCond ct;ct.global=npy::load(fixture+"/tex_cond_global.npy").data;ct.n_global=5;ct.d_proj=2048;auto tp=npy::load(fixture+"/tex_cond_proj.npy");
-    if(tp.shape.size()!=2 || tp.shape[0]!=(int64_t)hr.size()) throw std::runtime_error("fixture tex_cond_proj token count does not match live Shape1024 tokens; generate a matching fixture or land live NAF@1024");ct.proj=tp.data;
+    // Texture-1024 conditioning（live）。debug=1 のときだけ旧 fixture 経路。
+    Pixal3dCond ct; bool live_tex_cond=true;
+    if(tex_cond_fixture){
+        live_tex_cond=false;
+        ct.global=npy::load(fixture+"/tex_cond_global.npy").data;ct.n_global=5;ct.d_proj=2048;auto tp=npy::load(fixture+"/tex_cond_proj.npy");
+        if(tp.shape.size()!=2 || tp.shape[0]!=(int64_t)hr.size()) throw std::runtime_error("fixture tex_cond_proj token count does not match live Shape1024 tokens; generate a matching fixture or use the live path");ct.proj=tp.data;
+    } else {
+        Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{1024,64,1024,mesh_scale};Pixal3dCondStats cst;
+        ct=pixal3d_cond_slat_gpu(d,n,v1024,prm,&cst,&hr);d.free();n.free();
+        frep("live tex cond: tokens=%zu d_proj=%d graph peak %.1f MB resident %.1f MB %.1f s\n",hr.size(),ct.d_proj,cst.view_alloc_bytes/1048576.0,(cst.weight_bytes+cst.cond_bytes)/1048576.0,cst.total_ms/1000.0);
+    }
     auto txnorm=texture_flow(model[7],hr,ct,shnorm,deterministic_noise(fixture+"/tex_noise.npy",32*hr.size(),seed+3));vector<float>txdn(txnorm.size());for(size_t n=0;n<hr.size();++n)for(int c=0;c<32;++c)txdn[c+32*n]=txnorm[c+32*n]*TEX_STD[c]+TEX_MEAN[c];
-    ShapeOut so;{Model d=Model::load(model[5],0);so=shape_decode(d,shdn,hr,1024);d.free();}Mesh mesh=dual_grid_to_mesh(so);vector<float>pbr;{Model d=Model::load(model[8],0);pbr=tex_decode(d,txdn,hr,so.subs);d.free();}vector<float>colors;vertex_colors(mesh,so,pbr,colors);if(!write_glb(out.c_str(),mesh.verts.data(),mesh.V(),mesh.faces.data(),mesh.F(),colors.data()))return 5;
-    frep("FULL_E2E_LIVE_SS=1\nFULL_E2E_LIVE_SHAPE512=1\nFULL_E2E_LIVE_SHAPE1024=1\nFULL_E2E_LIVE_TEXTURE_COND=0\nFULL_E2E_TEXTURE_FLOW=1\nFULL_E2E_GLB=1\n");frep("FULL_MODEL_E2E_RESULT: PARTIAL_LIVE_TEXTURE_COND V=%d F=%d\n",mesh.V(),mesh.F());return 0;
+    ShapeOut so;{Model d=Model::load(model[5],0);so=shape_decode(d,shdn,hr,1024);d.free();}Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;
+    vector<float>raw;{Model d=Model::load(model[8],0);raw=tex_decode(d,txdn,hr,so.subs);d.free();}if(raw.size()!=so.coords.size()*6)return 5;
+    vector<float>pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
+    Pixal3dPostprocessOptions opt;opt.texture_size=4096;opt.target_faces=1000000;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;string pr;
+    if(!pixal3d_write_production_glb(out,mesh,so.coords,pbr,so.res,opt,&pr)){frep("%s",pr.c_str());return 5;}frep("%s",pr.c_str());
+    frep("FULL_E2E_LIVE_SS=1\nFULL_E2E_LIVE_SHAPE512=1\nFULL_E2E_LIVE_SHAPE1024=1\nFULL_E2E_LIVE_TEXTURE_COND=%d\nFULL_E2E_TEXTURE_FLOW=1\nFULL_E2E_GLB=1\n",live_tex_cond?1:0);
+    frep("FULL_MODEL_E2E_RESULT: %s V=%d F=%d\n",live_tex_cond?"LIVE_ALL_STAGES":"PARTIAL_LIVE_TEXTURE_COND",mesh.V(),mesh.F());return 0;
 }
 }
 
-extern "C" PIXAL3D_FULL_EXPORT const char* pixal3d_full_fixture_run(const char* dinov3,const char* naf,const char* ss_flow,const char* ss_dec,const char* shape512,const char* shape_dec,const char* shape1024,const char* tex_flow,const char* tex_dec,const char* fixture,const char* out_glb,int seed){
-    g_full_report.clear();try{vector<string>m={dinov3,naf,ss_flow,ss_dec,shape512,shape_dec,shape1024,tex_flow,tex_dec};int rc=run_full_fixture(m,fixture?fixture:"",out_glb?out_glb:"/out/full_fixture.glb",seed?seed:1);frep(rc==0?"FULL_FIXTURE_RESULT: OK_WITH_TEXTURE_COND_FIXTURE\n":"FULL_FIXTURE_RESULT: FAIL rc=%d\n",rc);}catch(const std::exception&e){frep("FULL_FIXTURE_RESULT: EXCEPTION %s\n",e.what());}return g_full_report.c_str();}
+extern "C" PIXAL3D_FULL_EXPORT const char* pixal3d_full_fixture_run(const char* dinov3,const char* naf,const char* ss_flow,const char* ss_dec,const char* shape512,const char* shape_dec,const char* shape1024,const char* tex_flow,const char* tex_dec,const char* fixture,const char* out_glb,int seed,int tex_cond_fixture){
+    g_full_report.clear();try{vector<string>m={dinov3,naf,ss_flow,ss_dec,shape512,shape_dec,shape1024,tex_flow,tex_dec};int rc=run_full_fixture(m,fixture?fixture:"",out_glb?out_glb:"/out/full_fixture.glb",seed?seed:1,tex_cond_fixture!=0);frep(rc==0?(tex_cond_fixture?"FULL_FIXTURE_RESULT: OK_WITH_TEXTURE_COND_FIXTURE\n":"FULL_FIXTURE_RESULT: OK_LIVE_TEXTURE_COND\n"):"FULL_FIXTURE_RESULT: FAIL rc=%d\n",rc);}catch(const std::exception&e){frep("FULL_FIXTURE_RESULT: EXCEPTION %s\n",e.what());}return g_full_report.c_str();}
