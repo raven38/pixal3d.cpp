@@ -80,3 +80,48 @@ partial / fixture full / real full の 3 経路が同じ tail を使う。
 - **PyTorch 参照（`tex_cond_global.npy` / `tex_cond_proj.npy`）との突き合わせは未実施**。
   `tools/ref_pixal3d_cond_slat.py` は DINOv3 + NAF(natten) + spconv が要り CUDA 必須で、
   検証に使った Mac では生成できない。GPU pod で回すまで「PyTorch 基準の rel / cosine」は出せない。
+
+## 6. 走らせ方（このリポジトリでの実行手順）
+
+WASM ビルド:
+
+```sh
+emcmake cmake -S . -B build-wasm-ss -DGGML_WEBGPU=ON -DGGML_METAL=OFF -DGGML_BLAS=OFF \
+  -DGGML_OPENMP=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DCMAKE_BUILD_TYPE=Release -DTRELLIS_WASM_SS=ON
+cmake --build build-wasm-ss --target pixal3d-webgpu-ss-wasm pixal3d-webgpu-texture-wasm \
+  pixal3d-webgpu-partial-e2e-wasm pixal3d-webgpu-full-e2e-wasm pixal3d-webgpu-real-geometry-wasm -j
+```
+
+必要な GGUF は 9 本: `dinov3` / `pixal3d_naf` / `pixal3d_ss_flow_mv` / `ss_dec` /
+`pixal3d_shape_flow_512_mv` / `shape_dec` / `pixal3d_shape_flow_1024_mv` /
+`pixal3d_tex_flow_1024_mv` / `tex_dec`。NAF だけ HF に無く、`valeoai/NAF` の release
+`naf_release.pth` を safetensors 化してから `tools/convert.py pixal3d_naf`。
+
+ブラウザ（リポジトリルートを配信してから）:
+
+```sh
+python3 -m http.server 8200 --directory .   # 別シェル
+cd web
+PIXAL3D_BASE_URL=http://127.0.0.1:8200/web/real_e2e/ \
+  node real_e2e/run_playwright.js <gguf_dir> <views_dir> 1        # real-input full E2E
+PIXAL3D_BASE_URL=http://127.0.0.1:8200/web/partial_e2e/ \
+  node partial_e2e/run_playwright.js <tex_flow.gguf> <shape_dec.gguf> <tex_dec.gguf> <fixture_dir>
+```
+
+native の同一 C++ 経路（ブラウザへ投げる前の dry-run。browser と同じ SDPA 経路を踏むなら
+`TRELLIS_NOFA=1`）:
+
+```sh
+cmake --build build-metal --target trellis-test-pixal3d-real-e2e
+PIXAL3D_DUMP_FIXTURE=<dir> ./build-metal/trellis-test-pixal3d-real-e2e \
+  <dinov3> <naf> <ss_flow> <ss_dec> <shape512> <shape_dec> <shape1024> \
+  <views_dir> <out.glb> 1 <tex_flow> <tex_dec>
+```
+
+conditioning のメモリと数値だけを見るとき:
+
+```sh
+cmake --build build-metal --target trellis-test-pixal3d-cond-tex
+TRELLIS_DBG_COND=1 ./build-metal/trellis-test-pixal3d-cond-tex <dinov3> <naf> <views_dir> 0 \
+  --S 1024 --R 64 --naf-t 1024 --views 4 --stride 4 --save-prefix /tmp/tex1024
+```
