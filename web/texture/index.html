@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pixal3D Texture-1024 on WebGPU (WASM)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5em; }
+  label { display: block; margin: 0.4em 0; }
+  pre { background: #f4f4f4; padding: 1em; overflow: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<h2>Pixal3D Texture-1024 path on WebGPU (pixal3d_ss.wasm, pixal3d_texture_run)</h2>
+<p>Hand the module the texture flow GGUF and the hr_sample fixture (Shape-1024 token list, texture
+condition, noise, references); optionally the Shape-1024 stage's own final latent as the concat
+half. The sparse ProjectAttention texture flow (in_ch 64 / out_ch 32) and the Euler sampler run
+inside the WASM module on the ggml WebGPU backend. JavaScript only mounts the files and prints the
+report. Computing the texture condition in-page (DINOv3 at 1024², NAF at T=1024) needs the
+optional model files and is expected to exceed a 4 GiB adapter for now
+(docs/spec/32-texture-flow-webgpu-prep.md §7).</p>
+<label>Models (pixal3d_tex_flow_1024_mv.gguf; dinov3.gguf + pixal3d_naf.gguf only for "own cond"): <input id="models" type="file" multiple></label>
+<label>hr_sample fixture files (hr_coords, tex_noise, tex_cond_*, tex_norm_*, tex_sampler_params, f32_/bf16_tex_*): <input id="sample" type="file" multiple></label>
+<label>Shape-1024 latent to concatenate (a *_shape_x_final.npy; empty = fixture f32_tex_concat_cond): <input id="concat" type="file"></label>
+<label>cond_slat fixture files (s1024_images, camera, mesh_scale, transform_matrix; "own cond" only): <input id="cond" type="file" multiple></label>
+<label>Views (0 = all): <input id="views" type="number" value="0" min="0" max="4"></label>
+<label><input id="own" type="checkbox"> compute the texture condition in-page instead of using the fixture's</label>
+<button id="run">Run</button>
+<pre id="out"></pre>
+<script src="main.js"></script>
+</body>
+</html>

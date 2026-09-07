@@ -119,8 +119,11 @@ Implement them in the backend rather than as a separate TypeScript compute pipel
 `src/pixal3d_wasm.cpp`: `pixal3d_ss_run` + latent getters, WORKERFS-mounted GGUFs, JSPI);
 occupancy IoU 0.9975 vs f32 / 0.9998 vs CUDA (spec 31 §9.6). The Shape-512 stage (conditioning
 with NAF + sparse flow sampling) runs in the same module (`pixal3d_shape512_run`, `web/shape512/`,
-spec 31 §10.7). The stable `pixal3d_create / generate / destroy` API below is still to be shaped
-around them.
+spec 31 §10.7). The texture stage's plumbing -- `pixal3d_texture_run`, `web/texture/`,
+`trellis-test-pixal3d-slat-sample --stage texture --backend webgpu`, fixture wiring and memory
+accounting -- is prepared but not yet executed on WebGPU (`docs/spec/32-texture-flow-webgpu-prep.md`;
+gated on the Shape-1024 sampling result). The stable `pixal3d_create / generate / destroy` API
+below is still to be shaped around them.
 
 Build the C++ runtime via Emscripten and expose a small stable API.
 
