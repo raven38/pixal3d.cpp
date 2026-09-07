@@ -162,6 +162,9 @@ NafGgmlOpts naf_ggml_opts_for(const Model& naf) {
     GT* k3 = ggml_new_tensor_4d(c, GGML_TYPE_F16, 3, 3, 16, 16);
     GT* cd = ggml_conv_2d_direct(c, k3, x, 1, 1, 0, 0, 1, 1);
     o.generic_lowering = !(dev_supports(naf, gn) && dev_supports(naf, pr) && dev_supports(naf, pl));
+    // 診断専用: WebGPU と同じ lowering を他 backend で再現してメモリを測るためのトグル
+    // (docs/PIXAL3D_WEBGPU_MEMORY.md §11)。値は計算内容を変えない厳密な再表現。
+    if (const char* e = getenv("TRELLIS_DBG_NAF_GENERIC")) o.generic_lowering = (*e != '0');
     // Direct conv only where the im2col path is the worse choice (WebGPU: no [K*K*Ci, W*H] f16
     // buffer, f32 activations into the GEMM); CUDA/CPU keep the validated im2col graph.
     const bool is_webgpu = naf.backend && strncmp(ggml_backend_name(naf.backend), "WebGPU", 6) == 0;
