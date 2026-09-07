@@ -260,7 +260,7 @@ int run_shape512_impl(const string& dinov3_gguf, const string& naf_gguf, const s
         naf.tensors.size(), naf.total_bytes() / 1048576.0, ms_since(t0));
     Pixal3dCondStats st;
     Pixal3dSlatCondParams prm{S, R, Tn, mesh_scale.data[0]};
-    Pixal3dCond cond = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st, &coords3);
+    Pixal3dCond cond = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st);
     rep("cond: V=%d weights=%.1f MB cond=%.1f MB view_alloc=%.1f MB peak=%.1f MB total=%.0f ms slowest view=%.0f ms\n",
         st.views, st.weight_bytes / 1048576.0, st.cond_bytes / 1048576.0, st.view_alloc_bytes / 1048576.0,
         st.peak_bytes / 1048576.0, st.total_ms, st.view_ms_max);
@@ -430,7 +430,7 @@ int run_texture_impl(const string& dinov3_gguf, const string& naf_gguf, const st
             naf.tensors.size(), naf.total_bytes() / 1048576.0, ms_since(t0));
         Pixal3dCondStats st;
         Pixal3dSlatCondParams prm{S, R, Tn, mesh_scale.data[0]};
-        Pixal3dCond cond = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st);
+        Pixal3dCond cond = pixal3d_cond_slat_gpu(dinov3, naf, views, prm, &st, &coords3);
         rep("cond: V=%d weights=%.1f MB cond=%.1f MB view_alloc=%.1f MB peak=%.1f MB total=%.0f ms slowest view=%.0f ms\n",
             st.views, st.weight_bytes / 1048576.0, st.cond_bytes / 1048576.0, st.view_alloc_bytes / 1048576.0,
             st.peak_bytes / 1048576.0, st.total_ms, st.view_ms_max);

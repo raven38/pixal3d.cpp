@@ -20,7 +20,16 @@ const path = require('path');
   await page.setInputFiles('#fixture', fixture);
   if (concat) await page.setInputFiles('#concat', concat);
   await page.click('#run');
+  // ページ内 #log は worker からの postMessage で伸びるので、進捗を定期的に吐く
+  let shown = 0;
+  const tick = setInterval(async () => {
+    try {
+      const t = await page.textContent('#log');
+      if (t && t.length > shown) { process.stdout.write(t.slice(shown)); shown = t.length; }
+    } catch (_) { /* ページ遷移中などは黙って次の tick へ */ }
+  }, 15000);
   await page.waitForFunction(() => document.querySelector('#log').textContent.includes('PARTIAL_E2E_RESULT:'), null, { timeout: 3 * 60 * 60 * 1000 });
+  clearInterval(tick);
   const log = await page.textContent('#log');
   console.log(log);
   const ok = log.includes('PARTIAL_E2E_RESULT: OK');
