@@ -27,15 +27,27 @@ __pycache__/
 !assets/showcase/*/*.glb
 *.tmp
 dumps/
-# WASM smoke build artifacts (scripts/build_wasm_smoke.sh)
+
+# browser tooling
+web/node_modules/
+
+# WASM smoke build artifacts
 web/smoke/pixal3d_smoke.js
 web/smoke/pixal3d_smoke.wasm
-# WASM op-regression build artifacts (web/smoke/CMakeLists.txt target pixal3d-webgpu-ops-wasm)
 web/ops/pixal3d_ops.js
 web/ops/pixal3d_ops.wasm
 build-wasm/
 build-webgpu/
-# WASM SS build artifacts (scripts/build_wasm_ss.sh)
+
+# WASM stage / E2E build artifacts
 web/ss/pixal3d_ss.js
 web/ss/pixal3d_ss.wasm
+web/texture/pixal3d_texture.js
+web/texture/pixal3d_texture.wasm
+web/partial_e2e/pixal3d_partial_e2e.js
+web/partial_e2e/pixal3d_partial_e2e.wasm
+web/full_e2e/pixal3d_full_e2e.js
+web/full_e2e/pixal3d_full_e2e.wasm
+web/real_e2e/pixal3d_real_geometry.js
+web/real_e2e/pixal3d_real_geometry.wasm
 build-wasm-ss/
