@@ -476,6 +476,13 @@ add_executable(pixal3d-ss-run src/pixal3d_wasm.cpp)
 target_link_libraries(pixal3d-ss-run PRIVATE trellis_core)
 set_target_properties(pixal3d-ss-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# Native build of the browser texture entry point (src/pixal3d_texture_wasm.cpp) -- lets the
+# same Texture Flow / Shape-512 stages run outside a browser, and dumps per-step latents
+# (last CLI arg) so browser-vs-native parity can be measured with the same fixture.
+add_executable(pixal3d-texture-run src/pixal3d_texture_wasm.cpp)
+target_link_libraries(pixal3d-texture-run PRIVATE trellis_core)
+set_target_properties(pixal3d-texture-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-pixal3d-ss-sample src/test_pixal3d_ss_sample.cpp)
 target_link_libraries(trellis-test-pixal3d-ss-sample PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-ss-sample PROPERTIES BUILD_RPATH "${GGML_RPATH}")
