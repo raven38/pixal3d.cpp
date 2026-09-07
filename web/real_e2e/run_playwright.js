@@ -11,9 +11,8 @@ const path = require('path');
   const [modelsDir, viewsDir, seed] = process.argv.slice(2);
   if (!modelsDir || !viewsDir) throw new Error('need <models_dir> <views_dir> [seed]');
   const models = fs.readdirSync(modelsDir).filter(x => x.endsWith('.gguf')).map(x => path.join(modelsDir, x));
-  const views = fs.readdirSync(viewsDir)
-    .filter(x => x === 'transforms.json' || /\.(png|webp|jpg|jpeg)$/i.test(x))
-    .map(x => path.join(viewsDir, x));
+  // #views は webkitdirectory なのでディレクトリパスを渡す
+  const views = path.resolve(viewsDir);
   const browser = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu'] });
   const page = await browser.newPage();
   page.on('console', m => console.log('[browser]', m.text()));
@@ -22,8 +21,17 @@ const path = require('path');
   await page.setInputFiles('#views', views);
   if (seed) await page.fill('#seed', String(seed));
   await page.click('#run');
+  // ページ内 #log は worker からの postMessage で伸びるので、進捗を定期的に吐く
+  let shown = 0;
+  const tick = setInterval(async () => {
+    try {
+      const t = await page.textContent('#log');
+      if (t && t.length > shown) { process.stdout.write(t.slice(shown)); shown = t.length; }
+    } catch (_) { /* ページ遷移中などは黙って次の tick へ */ }
+  }, 15000);
   await page.waitForFunction(() => /REAL_(GEOMETRY|FULL)_RESULT:/.test(document.querySelector('#log').textContent),
                              null, { timeout: 6 * 60 * 60 * 1000 });
+  clearInterval(tick);
   const log = await page.textContent('#log');
   console.log(log);
   const ok = /REAL_(GEOMETRY|FULL)_RESULT: OK/.test(log);

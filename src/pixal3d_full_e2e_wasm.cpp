@@ -21,6 +21,7 @@
 #include "pixal3d_postprocess.h"
 #include "npy.h"
 #include "ggml-backend.h"
+#include "trellis_args.h"
 
 #include <algorithm>
 #include <array>
@@ -99,6 +100,9 @@ vector<float> texture_flow(const string& gguf,const vector<array<int,3>>& coords
 int run_full_fixture(const vector<string>& model,const string& fixture,const string& out,uint32_t seed,bool tex_cond_fixture){
     // model order: dino, naf, ss_flow, ss_dec, shape512, shape_dec, shape1024, tex_flow, tex_dec
     if(model.size()!=9) return 2; frep("=== fixture-input full model E2E ===\n");
+#ifdef __EMSCRIPTEN__
+    g_no_fa=true;   // WebGPU backend に BF16 K/V FlashAttention は無い（--no-fa 相当の exact SDPA）
+#endif
     auto v512=fixture_views(fixture,false),v1024=fixture_views(fixture,true); float mesh_scale=npy::load(fixture+"/mesh_scale.npy").data[0];
     // SS
     Pixal3dCond css; {Model d=Model::load(model[0],0);css=pixal3d_cond_ss_gpu(d,v512,512,16,mesh_scale);d.free();}
