@@ -111,6 +111,32 @@ token 数がばらつくのは、SS decode の閾値が離散判定で、backend
    しているので `std::thread` が生成できない。remesh の並列化を直列に落とした
    （候補ビットセットがスレッドごとに res³/8 バイト要るので、メモリ的にも効く）。
 
+## 7b. 未解決: ブラウザの live geometry が X 軸につぶれる（2026-09-08 発見）
+
+browser の real-input full E2E は**完走して textured GLB を書く**が、出てくる形状は板状につぶれている。
+
+| GLB | bbox サイズ (x,y,z) | 出所 |
+|---|---|---|
+| browser full E2E | **[0.101, 0.996, 0.980]** | ブラウザの live shape latent |
+| browser partial E2E | [0.968, 0.972, 0.579] | native の shape latent を fixture で注入 |
+| native full E2E (NOFA) | [0.905, 0.971, 0.578] | native の live shape latent |
+
+X 方向だけ約 1/9 に潰れている。**レンダの見え方ではなく実際の頂点座標**（4 視点レンダも板を映す）。
+
+切り分けられている範囲:
+
+- **shape decode / dual grid / texture flow / texture decode / production postprocess は
+  ブラウザで正しい** —— partial E2E が native 由来の latent から native と同じ形を出している。
+- **live Texture-1024 conditioning も正しい**（本文書 §0 の同値性、および partial との整合）。
+- 疑わしいのは **ブラウザ側の SS → Shape-512 → upsample → Shape-1024 のどこか**。
+  Shape-1024 の token 数も browser 10 901 / native 12 083 と 1 割少なく、潰れた形状と整合する。
+- ブラウザ 2 run で token 数は 10 901 で一致するので、**再現性はある**（乱数の揺らぎではない）。
+
+これは今回のタスクの blocker（Texture-1024 conditioning）とは別の、**新たに見つかった browser 固有の
+不具合**。v0.9 を tag する前に潰す必要がある。次の一手は、ステージごとの latent を browser と
+native で dump して最初に食い違う段を特定すること（`web/ss` の harness が SS / Shape-512 の
+latent を吐けるので、そこから）。
+
 ## 6. 走らせ方（このリポジトリでの実行手順）
 
 WASM ビルド:
