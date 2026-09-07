@@ -1,7 +1,5 @@
-# Browser Pixal3D SS + Shape-512 + decoder paths, plus the dedicated Texture Flow WASM target.
-# Both targets execute the shared C++ implementation on ggml WebGPU; JavaScript remains a thin
-# file-loading/invocation layer. Texture is built separately here only to preserve both validated
-# branches while resolving the v0.6-v0.8 merge; partial E2E can later collapse them into one module.
+# Browser Pixal3D SS + Shape-512 + decoder paths, plus Texture Flow and partial-E2E WASM targets.
+# Every target executes shared C++ on ggml WebGPU; JavaScript only mounts files and invokes C ABI.
 cmake_minimum_required(VERSION 3.18)
 project(pixal3d_webgpu_ss_wasm LANGUAGES CXX C)
 
@@ -75,8 +73,7 @@ pixal3d_wasm_target(
   "[pixal3d_ss_run,pixal3d_shape512_run,pixal3d_shape_decode_run,pixal3d_tex_decode_run]"
 )
 
-# Texture Flow branch source kept byte-for-byte from v0.6. It is a separate module only at this
-# conflict-resolution boundary, avoiding loss of either branch's validated WASM entry points.
+# Texture Flow branch source kept byte-for-byte from v0.6.
 pixal3d_wasm_target(
   pixal3d-webgpu-texture-wasm
   ${REPO}/src/pixal3d_texture_wasm.cpp
@@ -85,4 +82,38 @@ pixal3d_wasm_target(
   pixal3d_texture
   "[_pixal3d_texture_run,_pixal3d_texture_latent,_pixal3d_texture_latent_size,_pixal3d_texture_steps,_pixal3d_texture_n_steps,_malloc,_free]"
   "[pixal3d_texture_run]"
+)
+
+# Fixture-injected partial E2E. The source reuses the Texture Flow TU, then runs the existing
+# shape/texture decoders and writes a GLB in MEMFS. mesh_glb.cpp is CPU-only and wasm-safe.
+add_executable(pixal3d-webgpu-partial-e2e-wasm
+  ${REPO}/src/pixal3d_partial_e2e_wasm.cpp
+  ${PIXAL3D_WASM_COMMON}
+  ${REPO}/src/mesh_glb.cpp
+)
+target_include_directories(pixal3d-webgpu-partial-e2e-wasm PRIVATE
+  ${REPO}/include ${GGML_DIR}/include ${REPO}/thirdparty/stb)
+target_link_libraries(pixal3d-webgpu-partial-e2e-wasm PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+target_compile_options(pixal3d-webgpu-partial-e2e-wasm PRIVATE "-fwasm-exceptions")
+target_link_options(pixal3d-webgpu-partial-e2e-wasm PRIVATE
+  "--use-port=emdawnwebgpu"
+  "--profiling-funcs"
+  "-sJSPI"
+  "-fwasm-exceptions"
+  "-lworkerfs.js"
+  "-sFORCE_FILESYSTEM=1"
+  "-sALLOW_MEMORY_GROWTH=1"
+  "-sINITIAL_MEMORY=268435456"
+  "-sMAXIMUM_MEMORY=4294967296"
+  "-sEXPORTED_FUNCTIONS=[_pixal3d_partial_e2e_run,_malloc,_free]"
+  "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPU8]"
+  "-sMODULARIZE=1"
+  "-sEXPORT_NAME=createPixal3dPartialE2E"
+  "-sJSPI_EXPORTS=[pixal3d_partial_e2e_run]"
+  "-sENVIRONMENT=worker"
+)
+set_target_properties(pixal3d-webgpu-partial-e2e-wasm PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${REPO}/web/partial_e2e"
+  OUTPUT_NAME "pixal3d_partial_e2e"
+  SUFFIX ".js"
 )
