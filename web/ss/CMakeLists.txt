@@ -53,3 +53,10 @@ target_link_libraries(pixal3d-webgpu-full-e2e-wasm PRIVATE ggml ggml-base ggml-c
 target_compile_options(pixal3d-webgpu-full-e2e-wasm PRIVATE "-fwasm-exceptions")
 target_link_options(pixal3d-webgpu-full-e2e-wasm PRIVATE "--use-port=emdawnwebgpu" "--profiling-funcs" "-sJSPI" "-fwasm-exceptions" "-lworkerfs.js" "-sFORCE_FILESYSTEM=1" "-sALLOW_MEMORY_GROWTH=1" "-sINITIAL_MEMORY=268435456" "-sMAXIMUM_MEMORY=4294967296" "-sEXPORTED_FUNCTIONS=[_pixal3d_full_fixture_run,_malloc,_free]" "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPU8]" "-sMODULARIZE=1" "-sEXPORT_NAME=createPixal3dFullE2E" "-sJSPI_EXPORTS=[pixal3d_full_fixture_run]" "-sENVIRONMENT=worker")
 set_target_properties(pixal3d-webgpu-full-e2e-wasm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${REPO}/web/full_e2e" OUTPUT_NAME "pixal3d_full_e2e" SUFFIX ".js")
+
+add_executable(pixal3d-webgpu-real-geometry-wasm ${REPO}/src/pixal3d_real_geometry_wasm.cpp ${PIXAL3D_WASM_COMMON} ${REPO}/src/ss_decoder.cpp ${REPO}/src/mesh_glb.cpp ${PIXAL3D_INPUT})
+target_include_directories(pixal3d-webgpu-real-geometry-wasm PRIVATE ${REPO}/include ${GGML_DIR}/include ${REPO}/thirdparty/stb)
+target_link_libraries(pixal3d-webgpu-real-geometry-wasm PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+target_compile_options(pixal3d-webgpu-real-geometry-wasm PRIVATE "-fwasm-exceptions")
+target_link_options(pixal3d-webgpu-real-geometry-wasm PRIVATE "--use-port=emdawnwebgpu" "--profiling-funcs" "-sJSPI" "-fwasm-exceptions" "-lworkerfs.js" "-sFORCE_FILESYSTEM=1" "-sALLOW_MEMORY_GROWTH=1" "-sINITIAL_MEMORY=268435456" "-sMAXIMUM_MEMORY=4294967296" "-sEXPORTED_FUNCTIONS=[_pixal3d_real_geometry_run,_malloc,_free]" "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPU8]" "-sMODULARIZE=1" "-sEXPORT_NAME=createPixal3dRealGeometry" "-sJSPI_EXPORTS=[pixal3d_real_geometry_run]" "-sENVIRONMENT=worker")
+set_target_properties(pixal3d-webgpu-real-geometry-wasm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${REPO}/web/real_e2e" OUTPUT_NAME "pixal3d_real_geometry" SUFFIX ".js")
