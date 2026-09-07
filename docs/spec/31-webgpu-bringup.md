@@ -1338,9 +1338,142 @@ Memory (device path, one view graph): weights 579.9 MB (DINOv3 + NAF), accumulat
 Wall 269 s for V=4 (78 s slowest view; measured while the HR sampling occupied the GPU). Host path:
 412 s for V=4 (four 1 GB NAF readbacks + the dense 2.15 GB host grid).
 
-### 11.5 Shape-1024 flow and sampling gate
+### 11.5 Shape-1024 flow and sampling gate (`trellis-test-pixal3d-slat-sample --stage shape_hr`, N=17489)
 
-TBD-HR-SAMPLE
+**First native run: FAIL, and a nondeterministic WebGPU backend fault behind it.** The first
+12-step run (concurrent with the S=1024 conditioning test on the same GPU) ended at `rel 1.216 /
+cos 0.9679` vs PyTorch f32 (threshold `max(2·0.4147, 0.05) = 0.829`; CUDA FA 0.395, CUDA exact
+0.399). Step 1 was right (rel 6.2e-4, closer to f32 than CUDA's 8.4e-4); the step-2 velocity was
+wrong almost everywhere (16444 of 17489 tokens, all channels, uniform over the query chunks), and
+the error grew from there. Localization with `trellis-test-pixal3d-slat-probe` (one forward at the
+step-2 latent, every intermediate dumped, WebGPU vs CUDA exact, token subsample):
+
+| observation | runs |
+|---|---|
+| WebGPU probe, same binary, same inputs, same layout: `after_block1 rel 12, cos −0.51` (garbage from block 1) | 1 |
+| same: right through block 1 (`blk1_*` ≤ 7e-3), garbage from a later block (`after_block29 rel 0.7`) | 1 |
+| same: `output rel 2.7e-2` (slightly off late in the stack) | 1 |
+| same: bit-identical to each other and `output rel 2.6e-3, cos 0.999999` vs CUDA exact -- correct | 22 (default toggles ×10, in-flight batches = 1 ×1, one op per command buffer ×2, robustness kept on ×4, workgroup zero-init kept on ×4, every Dawn perf toggle off ×4, under a concurrent GEMM hog ×4, under 14 GiB of device memory held by another process ×3) |
+| ggml **Metal** backend, the same graph and inputs | 3/3 bit-identical, `output rel 2.8e-3` vs CUDA exact |
+| every DiT piece at N=17489 in isolation, re-run 40× on identical inputs (chunked SDPA, MLP GEMMs, RoPE scatter, fused RMSNorm) | bit-identical; one garbage MLP result in 5 fresh-process runs, none in 50 more |
+
+So: the shared graph is right (Metal, CUDA); the ggml WebGPU backend on native Dawn/Metal
+produced wrong intermediates in 5 of the first 10 identical forwards and in none of the 22 since,
+with no Dawn validation error (the uncaptured-error callback aborts the process and never fired)
+and no dependence on the batch/in-flight/toggle knobs added for the bisection (`patches/
+ggml-webgpu/0004`). All five failures fell in a ~50-minute window in which other WebGPU processes
+(the conditioning test, browser runs, op tests) shared the GPU; deliberately reproducing
+contention and memory pressure afterwards did not bring it back. It is **not root-caused**; it is
+recorded here as an open backend risk with the reproduction tooling (`trellis-test-pixal3d-slat-probe`,
+`trellis-webgpu-ops --gpu-repeat/--hold-gb`) and treated as follows: the sampling gate below is
+re-run with nothing else on the GPU, and any run whose per-step CUDA-exact distance jumps by an
+order of magnitude at one step (the failure signature: step 2 `rel 6e-2` vs `1.5e-3`) is a
+corrupted run, not a precision result.
+
+One real latent bug was found on the way and fixed in patch 0003: the fused `RMS_NORM+MUL`
+encoder (`rms_norm_mul`) still dispatched one workgroup per row on x, which fails validation at
+12 × 17489 = 209868 rows (`trellis-webgpu-ops` "rms_norm x gamma [128,12,17489]"). The DiT does not
+take that fusion today (its gamma cast sits between the two nodes), so it is not this failure.
+
+#### Checkpoint/resume harness (the fast loop)
+
+The full 12-step Shape-1024 run costs ~80 min on this machine (24 forwards at N=17489, ~3.2 min
+each), so every hypothesis about the fault above cost more than an hour. The harness below replays
+**any single Euler step** from a serialized latent through the *same* `sample_flow` and the same
+sparse `DitRunner` graph -- there is no second sampler: `SamplerParams::step_begin/step_end`
+restrict which steps of the unchanged `steps`-step schedule (`ts[]`) are executed, and the defaults
+(`0`, `-1`) reproduce the full run byte-for-byte.
+
+Golden checkpoints are the per-step latents the fixture already carries (no regeneration):
+`hr_sample/{f32,bf16,cuda,cuda_nofa}_shape_x_step<k>.npy`, k = 0 (the noise) .. 12, all `[N,32]`
+f32 row-major, i.e. the sampler's own `[32,N]` bytes. They stay external (`~/pixal3d_assets/ref/`).
+
+```
+# native (any backend; TRELLIS_NOFA=1 on WebGPU): steps K..K+N-1 from the step-K latent
+trellis-test-pixal3d-slat-sample <flow.gguf> <hr_sample_dir> 0 --stage shape1024 \
+    --start-step 5 [--num-steps 1] [--input-latent step05.npy] [--expected-latent step06.npy] \
+    [--repeat 20] [--dump DIR]          # writes DIR/cpp_shape_x_step6.npy
+pixal3d-ss-run --step shape1024 <flow.gguf> <hr_sample_dir> 5 [num_steps] [repeat] [in|-] [exp|-] [out.npy]
+# browser (Chrome, real WebGPU): the same C entry point pixal3d_shape_step_run(), one call
+node shape1024/run_playwright.js <dinov3> <naf> <flow> <cond_slat> <hr_sample> <out> --step 5 [--num-steps 1] [--repeat 20]
+```
+
+`--stage shape512` uses `slat_sample/{f32,bf16}_x_step<k>.npy` the same way; texture is the same
+CLI once `tex_sample` carries per-step latents (it does not today). Every invocation reports, for
+the output of the last executed step: `max|d|`, `mean|d|`, `rel = max|d| / max|ref|` and the
+per-token cosine against `--expected-latent` and against each fixture reference present
+(f32, bf16, CUDA FA, CUDA exact), plus the one-step spread `f32 vs bf16` and `f32 vs CUDA exact`
+that calibrate what one step may legitimately move. No PASS/FAIL verdict is printed and no threshold
+is changed: the gate stays the full-run calibrated gate of §10/§11.5.
+
+**Determinism probe** (`--repeat R`): the identical step is executed R times from the same
+immutable input -- the host copy of the step-K latent is restored before every run, the previous
+output is never fed forward -- and the report gives the number of unique output hashes (FNV-1a
+over the f32 bytes), how many runs differ from run 0, the first differing flat index
+(`token = idx / 32`, `channel = idx % 32`), and the max / mean run-to-run |d|. A deterministic
+backend prints `1 unique output hash(es)`; the §11.5 fault shows up as a run whose hash differs
+and whose `max|d|` is O(1) rather than 0. This is the primary tool for the open nondeterminism
+issue: it isolates one forward pair (cond + uncond) at a fixed timestep, with nothing else
+changing between runs.
+
+**Validation strategy from here** (replaces "run the whole thing and look at step 12"):
+
+1. nondeterminism first: `--start-step 5 --repeat 20` on native WebGPU, alone on the GPU, until
+   the fault is reproduced (then bisected with `trellis-test-pixal3d-slat-probe` on that latent)
+   or 20/20 runs are bit-identical;
+2. one-step parity early / middle / late (`--start-step 0`, `5`, `11`), each run several times
+   with the same input -- the per-step distance to f32 must sit inside the f32-vs-bf16 /
+   f32-vs-CUDA one-step spread;
+3. one native full 12-step run (`--stage shape_hr`, the calibrated gate);
+4. one browser full run only for the final milestone; the browser step probe
+   (`run_playwright.js --step`) is the Chrome regression check before that.
+
+Results of 1-2 on this machine (native Dawn/Metal, exact SDPA, `--repeat`):
+
+| probe (step, runs) | GPU | determinism | run-0 output vs f32 (rel / cos) | f32-vs-bf16 / f32-vs-CUDA-exact one-step spread |
+|---|---|---|---|---|
+| 5→6, ×2 | alone | 1 hash, 0 differing | 1.59e-3 / 1.0000000 | 6.4e-2 / 8.1e-3 |
+| 0→1, ×2 | alone | 2 hashes; run 0 wrong (rel 4.2e-2, cos 0.99982, error uniform over every token, channel and query chunk), run 1 right | -- | 3.7e-3 / 8.4e-4 |
+| 11→12, ×2 | alone | 2 hashes; run 0 right (rel 7.2e-4), run 1 wrong (max run-to-run |d| 0.69) | 7.2e-4 / 1.0000000 | 4.1e-1 / 4.0e-1 |
+| 0→1, ×8, every DiT intermediate kept alive (`TRELLIS_DBG_NAN=1`: no gallocr buffer reuse, 6.8 GB activations) | runs 0-2 shared with another session's Metal texture-flow sampling; runs 3-7 alone | runs 0-2 wrong and mutually different (rel 0.14-0.18, velocity 3× too long and pointing away from the reference, cos −0.7); runs 3-7 one hash, bit-identical, rel 6.2e-4 | -- | -- |
+| `slat-probe` same forward ×8 (step-0 latent, t=1000) | alone | 8/8 bit-identical, all 51 intermediates | -- | -- |
+
+Where the WebGPU output is right it is closer to PyTorch f32 than CUDA exact is (step 5: 1.6e-3
+vs 8.1e-3; step 11: 7.2e-4 vs 4.0e-1 -- the step-11 spread is the CFG-free last step where bf16
+and CUDA both drift). What the table says about the fault:
+
+- it reproduces in minutes now: ~1 wrong run in 3 with the GPU otherwise idle, and every run
+  wrong while another process (WebGPU *or* Metal) computes on the GPU -- the two regimes also
+  differ in kind (uniform 4e-2 drift vs 3×-scaled, sign-flipped velocities);
+- it is not the graph-allocator's buffer reuse (it happens with every intermediate kept alive),
+  not a silent wait timeout (every timed-out wait aborts), not the batching / in-flight / Dawn
+  toggle knobs (§11.5 above), and there is no Dawn error, device loss, or macOS unified-log GPU
+  timeout/fault entry (`log show --last 3h`, IOGPU/AGX/timeout/hang) around the wrong runs;
+- the same forward run in a process that keeps all intermediates was 30/30 bit-identical alone.
+
+Operational rule until it is root-caused: **every WebGPU/Metal job on this Mac goes through the
+shared lock** (`/tmp/pixal3d_gpu.lock`, the `gpu_run.sh` wrapper used by both sessions), and a
+sampling result is only accepted from a run that held the GPU alone.
+
+Acceptance probes run under that rule (2026-09-07 06:46-09:31, the GPU held by one job at a time
+through the lock; browser = Chrome 140 / emdawnwebgpu / JSPI, native = Dawn 18eb229 on Metal, both
+exact SDPA; every step from the fixture's f32 step-K latent, fixture condition):
+
+| step | where | runs | determinism | vs f32 rel / cos | vs CUDA exact rel | one-step spread f32 vs CUDA exact / bf16 | wall |
+|---|---|---|---|---|---|---|---|
+| 0→1 | browser | 1 | -- | 6.2e-4 / 1.0000000 | 8.7e-4 | 8.4e-4 / 3.7e-3 | 476 s |
+| 5→6 | browser | 1 | -- | 2.2e-3 / 1.0000000 | 8.3e-3 | 8.1e-3 / 6.4e-2 | 441 s |
+| 10→11 | browser | 1 | -- | 7.2e-4 / 1.0000000 | 2.6e-1 | (bf16 3.4e-1) | 223 s |
+| 11→12 | browser | 1 | -- | 7.2e-4 / 1.0000000 | 3.9e-1 | 4.0e-1 / 4.1e-1 | 222 s |
+| 11→12 | native | 5 | 1 hash, 5/5 bit-identical | 7.2e-4 / 1.0000000 | 3.9e-1 | 4.0e-1 / 4.1e-1 | 5 × 315 s |
+
+Every probe sits inside the one-step spread of the references (at steps 10-12 the CFG-free
+low-t updates let bf16 and CUDA drift by 0.3-0.4 from f32; the WebGPU output stays at 7e-4), and
+the 5 native repeats are bit-identical, so the planned extension to 20 repeats was not needed.
+The browser runs use the same `pixal3d_shape_step_run` entry (its JSPI export was missing at
+first: `SuspendError: trying to suspend without WebAssembly.promising`, fixed in
+`web/ss/CMakeLists.txt`). Remaining for the milestone: one native full 12-step run and one browser
+full run, both under the lock (§11.6).
 
 ### 11.6 Browser / WASM (`web/shape1024/`)
 

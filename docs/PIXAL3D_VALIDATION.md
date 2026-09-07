@@ -71,6 +71,16 @@ Each fixture should record inputs, expected outputs, shape, dtype, source commit
 
 Do not depend on two RNG implementations matching bit-for-bit. Generate deterministic noise once, serialize it, and feed identical tensors to all implementations.
 
+Sampling parity is checked per step, not only at the end: the SLAT sampling tests replay any single
+Euler step from a serialized step-k latent through the production sampler (`SamplerParams::step_begin/
+step_end`) and score it against the reference's step-(k+1) latent -- `trellis-test-pixal3d-slat-sample
+--start-step k [--num-steps n] [--input-latent] [--expected-latent] [--repeat R]`, the same entry point
+in the browser via `pixal3d_shape_step_run` / `web/shape1024/run_playwright.js --step k`. `--repeat R`
+re-runs the identical step from the same immutable input and reports unique output hashes, the first
+differing index and the max/mean run-to-run difference: the primary probe for backend nondeterminism
+(`docs/spec/31-webgpu-bringup.md` §11.5). The per-step reference latents are the existing
+`{f32,bf16,cuda,cuda_nofa}_*_x_step<k>.npy` dumps; they are not regenerated for this and stay external.
+
 ## Suggested CLI
 
 ```text
