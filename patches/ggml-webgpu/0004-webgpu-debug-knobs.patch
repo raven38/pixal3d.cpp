@@ -1,8 +1,8 @@
 diff --git a/src/ggml-webgpu/ggml-webgpu.cpp b/src/ggml-webgpu/ggml-webgpu.cpp
-index 96eb5a26..5f8ab085 100644
+index 9a32cd18..a29fdf78 100644
 --- a/src/ggml-webgpu/ggml-webgpu.cpp
 +++ b/src/ggml-webgpu/ggml-webgpu.cpp
-@@ -459,11 +459,26 @@ static void ggml_backend_webgpu_check_wait_status(wgpu::WaitStatus wait_status,
+@@ -473,11 +473,26 @@ static void ggml_backend_webgpu_check_wait_status(wgpu::WaitStatus wait_status,
  }
  
  // TODO: these next two functions may want tuning across different platforms and workloads,
@@ -29,7 +29,7 @@ index 96eb5a26..5f8ab085 100644
      return WEBGPU_DEFAULT_COMMAND_SUBMIT_BATCH_SIZE;
  }
  
-@@ -3929,6 +3944,21 @@ static void create_webgpu_device(ggml_backend_webgpu_reg_context * ctx) {
+@@ -3943,6 +3958,21 @@ static void create_webgpu_device(ggml_backend_webgpu_reg_context * ctx) {
      deviceTogglesDesc.enabledToggleCount  = 3;
      deviceTogglesDesc.disabledToggles     = deviceDisabledToggles;
      deviceTogglesDesc.disabledToggleCount = 1;
@@ -51,3 +51,18 @@ index 96eb5a26..5f8ab085 100644
  
      dev_desc.nextInChain = &deviceTogglesDesc;
  #endif
+@@ -3978,6 +4008,14 @@ static webgpu_context initialize_webgpu_context(ggml_backend_dev_t dev) {
+     webgpu_context                       webgpu_ctx = std::make_shared<webgpu_context_struct>();
+     webgpu_ctx->global_ctx                          = dev_ctx->webgpu_global_ctx;
+     webgpu_ctx->shader_lib = std::make_unique<ggml_webgpu_shader_lib>(dev_ctx->webgpu_global_ctx->device);
++    // Debug knob (env): GGML_WEBGPU_ONE_PASS_PER_OP encodes every dispatch in its own compute
++    // pass instead of batching a whole command buffer's dispatches into one pass.
++    if (const char * e = getenv("GGML_WEBGPU_ONE_PASS_PER_OP")) {
++        if (*e && *e != '0') {
++            webgpu_ctx->batch_compute_passes = false;
++            GGML_LOG_INFO("ggml_webgpu: GGML_WEBGPU_ONE_PASS_PER_OP: one compute pass per dispatch\n");
++        }
++    }
+     webgpu_ctx->param_arena.init(
+         webgpu_ctx->global_ctx->device, WEBGPU_PARAMS_BUF_SIZE_BYTES,
+         webgpu_ctx->global_ctx->command_submit_batch_size + WEBGPU_NUM_PARAM_SLOT_SAFETY_MARGIN,
