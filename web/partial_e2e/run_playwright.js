@@ -5,11 +5,18 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
+// 失敗経路でも必ず Chromium を落とす。落とし損ねると node が待ち続け、
+// Chromium が GPU を掴んだまま何時間も残ってマシンを重くする（実測 5 時間）。
+let browser = null;
+const shutdown = async () => { try { if (browser) await browser.close(); } catch (_) {} browser = null; };
+for (const sig of ['SIGINT', 'SIGTERM'])
+  process.on(sig, async () => { await shutdown(); process.exit(130); });
+
 (async () => {
   const [flow, shape, tex, fixtureDir, concat] = process.argv.slice(2);
   if (!flow || !shape || !tex || !fixtureDir) throw new Error('need flow shape_dec tex_dec fixture_dir [concat]');
   const fixture = fs.readdirSync(fixtureDir).filter(x => x.endsWith('.npy')).map(x => path.join(fixtureDir, x));
-  const browser = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu'] });
+  browser = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu'] });
   const page = await browser.newPage();
   const readBlob = async (u) => {
     // 大きい GLB（geometry only は 100 MB 超）は Array.from で RangeError になるので、
@@ -46,7 +53,8 @@ const path = require('path');
       if (t && t.length > shown) { process.stdout.write(t.slice(shown)); shown = t.length; }
     } catch (_) { /* ページ遷移中などは黙って次の tick へ */ }
   }, 15000);
-  await page.waitForFunction(() => document.querySelector('#log').textContent.includes('PARTIAL_E2E_RESULT:'), null, { timeout: 3 * 60 * 60 * 1000 });
+  await page.waitForFunction(() => { const t = document.querySelector('#log').textContent;
+    return t.includes('PARTIAL_E2E_RESULT:') || /ERROR:|EXCEPTION|Aborted\(\)|RuntimeError/.test(t); }, null, { timeout: 90 * 60 * 1000 });
   clearInterval(tick);
   const log = await page.textContent('#log');
   console.log(log);
@@ -57,6 +65,6 @@ const path = require('path');
     fs.writeFileSync('partial_e2e.glb', buf);
     console.log('wrote partial_e2e.glb', buf.length, 'bytes');
   }
-  await browser.close();
+  await shutdown();
   process.exit(ok ? 0 : 1);
-})().catch(e => { console.error(e); process.exit(1); });
+})().catch(async e => { console.error(e); await shutdown(); process.exit(1); });
