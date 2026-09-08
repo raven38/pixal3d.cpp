@@ -1,5 +1,6 @@
 // Fixture-injected browser E2E:
 // Shape-1024 fixture -> Texture Flow -> Shape Decode -> Texture Decode -> production postprocess -> GLB.
+#define PIXAL3D_NO_NATIVE_MAIN   // includee の native main を抑止（下に自前の main がある）
 #include "pixal3d_texture_wasm.cpp"
 #include "shape_decoder.h"
 #include "dual_grid.h"
@@ -9,6 +10,7 @@
 #include "ggml-backend.h"
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 using std::array; using std::string; using std::vector; using namespace trellis;
@@ -39,3 +41,25 @@ int run_partial(const string& tex_flow,const string& shape_dec,const string& tex
 }
 }
 extern "C" PIXAL3D_EXPORT const char* pixal3d_partial_e2e_run(const char* tex_flow,const char* shape_dec,const char* tex_dec,const char* fixture,const char* concat,const char* out,int resolution){g_report.clear();int rc=1;try{rc=run_partial(tex_flow,shape_dec,tex_dec,fixture?fixture:"",concat?concat:"",out?out:"/out/partial_e2e.glb",resolution);}catch(const std::exception&e){rep("partial-e2e EXCEPTION: %s\n",e.what());rc=1;}rep(rc==0?"PARTIAL_E2E_RESULT: OK\n":"PARTIAL_E2E_RESULT: FAIL rc=%d\n",rc);return g_report.c_str();}
+
+
+#ifndef __EMSCRIPTEN__
+// native ドライバ。ブラウザを起動せずに partial 経路（Texture Flow -> shape decode ->
+// tex decode -> production postprocess -> textured GLB）を同じ C++ で通すためのもの。
+// 重みの量子化や分割の A/B を native で完結させられる。
+//   pixal3d-partial-run <tex_flow.gguf> <shape_dec.gguf> <tex_dec.gguf> <fixture_dir>
+//                       <out.glb> [concat_cond.npy] [resolution]
+int main(int argc, char** argv) {
+    if (argc < 6) {
+        fprintf(stderr, "usage: %s <tex_flow.gguf> <shape_dec.gguf> <tex_dec.gguf> "
+                        "<fixture_dir> <out.glb> [concat_cond.npy] [resolution]\n", argv[0]);
+        return 2;
+    }
+    const char* concat = argc > 6 ? argv[6] : "";
+    const int res = argc > 7 ? atoi(argv[7]) : 0;
+    const char* r = pixal3d_partial_e2e_run(argv[1], argv[2], argv[3], argv[4], concat, argv[5], res);
+    const bool ok = strstr(r, "PARTIAL_E2E_RESULT: OK") != nullptr;
+    printf("\n%s\n", ok ? "PARTIAL_E2E: PASS" : "PARTIAL_E2E: FAIL");
+    return ok ? 0 : 1;
+}
+#endif
