@@ -31,9 +31,21 @@ def quantize_file(src, dst, qname):
 
     nq = nk = 0
     q_bytes = keep_bytes = 0
+    # 行列積の重みだけを量子化する。norm のゲイン・バイアス類は 2D でも量子化しない:
+    # (1) 行列積を通らず elementwise に掛かる値なので、丸めがそのまま出力の誤差になる
+    # (2) ggml WebGPU backend は q8_0 -> f32 の CPY を実装しておらず、
+    #     `dit_N.._proj1: 120 unsupported node(s)` で実行前に弾かれる
+    #     （実測 2026-09-09: blocks.*.self_attn.{q,k}_rms_norm.gamma [128,12] が該当）
+    # (3) 量子化しても数 KB しか減らない
+    SKIP_SUBSTR = (".gamma", ".beta", "_norm.", "norm.weight", "norm.bias",
+                   ".scale", ".shift", ".modulation", "_token", "pos_embed")
+
+    def is_weight_matrix(name):
+        return not any(k in name for k in SKIP_SUBSTR)
+
     for t in r.tensors:
         d = t.data
-        if t.tensor_type == GT.F16 and d.ndim == 2 and d.shape[-1] % bs == 0:
+        if t.tensor_type == GT.F16 and d.ndim == 2 and d.shape[-1] % bs == 0 and is_weight_matrix(t.name):
             q = gguf.quants.quantize(d.astype(np.float32), qtype)
             w.add_tensor(t.name, q, raw_dtype=qtype)
             nq += 1; q_bytes += q.nbytes
