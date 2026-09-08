@@ -15,6 +15,24 @@ const path = require('path');
   const views = path.resolve(viewsDir);
   const browser = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu'] });
   const page = await browser.newPage();
+  const readBlob = async (u) => {
+    // 大きい GLB（geometry only は 100 MB 超）は Array.from で RangeError になるので、
+    // 8 MB ずつ base64 にして取り出す。
+    const CH = 8 * 1024 * 1024;
+    const size = await page.evaluate(async (url) => (await (await fetch(url)).blob()).size, u);
+    const parts = [];
+    for (let off = 0; off < size; off += CH) {
+      const b64 = await page.evaluate(async ([url, o, n]) => {
+        const buf = await (await fetch(url)).arrayBuffer();
+        const view = new Uint8Array(buf, o, Math.min(n, buf.byteLength - o));
+        let s = '';
+        for (let i = 0; i < view.length; i += 0x8000) s += String.fromCharCode.apply(null, view.subarray(i, i + 0x8000));
+        return btoa(s);
+      }, [u, off, CH]);
+      parts.push(Buffer.from(b64, 'base64'));
+    }
+    return Buffer.concat(parts);
+  };
   page.on('console', m => console.log('[browser]', m.text()));
   await page.goto(process.env.PIXAL3D_BASE_URL || 'http://127.0.0.1:8199/web/real_e2e/');
   await page.setInputFiles('#models', models);
@@ -38,9 +56,9 @@ const path = require('path');
   if (ok) {
     const href = await page.getAttribute('#download', 'href');
     const name = await page.getAttribute('#download', 'download');
-    const bytes = await page.evaluate(async u => Array.from(new Uint8Array(await (await fetch(u)).arrayBuffer())), href);
-    fs.writeFileSync(name || 'real_e2e.glb', Buffer.from(bytes));
-    console.log('wrote', name, bytes.length, 'bytes');
+    const buf = await readBlob(href);
+    fs.writeFileSync(name || 'real_e2e.glb', buf);
+    console.log('wrote', name, buf.length, 'bytes');
   }
   await browser.close();
   process.exit(ok ? 0 : 1);
