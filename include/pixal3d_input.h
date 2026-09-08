@@ -8,6 +8,9 @@ struct Pixal3dInputViews {
     std::vector<Pixal3dView> views512;
     std::vector<Pixal3dView> views1024;
     float mesh_scale = 1.0f;
+    // transforms.json に mesh_scale が書かれていたか（include/transforms_json.h 参照）。
+    // false のまま走らせると静かに壊れるので、呼び出し側は必ず警告すること。
+    bool has_mesh_scale = false;
 };
 // Load <dir>/transforms.json and pre-matted RGBA frame files, producing the exact host-side
 // Pixal3dView representation used by the MV pipeline. Works with native files and WORKERFS.

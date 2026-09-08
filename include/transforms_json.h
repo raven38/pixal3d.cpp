@@ -22,6 +22,11 @@ struct TransformsFile {
     float camera_angle_x = 0.0f;   // top-level fallback FOV, radians
     bool  has_camera_angle_x = false;
     float mesh_scale = 1.0f;
+    // mesh_scale がファイルに書かれていたか。無いときの既定 1.0 は、ビューのレンダ時の
+    // スケールと食い違っていると ProjGrid が被写体を間違ったスケールでサンプリングし、
+    // **エラーも警告も出さずに**壊れた形状を返す（2026-09-08 実測: シルエット IoU
+    // 0.909 -> 0.107、頭部が欠けた塊になる）。呼び出し側はこれを見て警告すること。
+    bool  has_mesh_scale = false;
 };
 
 // Parses `path` into `out`. Returns false (with an stderr message describing what's wrong)
