@@ -32,11 +32,15 @@ int run_partial(const string& tex_flow,const string& shape_dec,const string& tex
  // wasm32 のヒープは 4 GiB が上限。res=1024 の narrow-band remesh は実測 7.8M 頂点 /
  // 15.6M 面を作り、その後の QEM と合わせて収まらない（std::bad_alloc）。粗いグリッドで
  // 同じ経路を回す。使った値は postprocess の report 行に出る。
- opt.remesh_res=512;opt.target_faces=500000;
+ // 2026-09-09: 実測で wasm の live ピークは native の最大 RSS の約 1/3（remesh 512 で
+ // native 5.39 GB 対 wasm 1.87 GB）。ポインタ幅が半分なのと vector の容量確保の差による。
+ // 1024 が 4 GiB に収まるかを測るため既定を native と揃える。収まらなければ戻す。
+ opt.remesh_res=1024;opt.target_faces=1000000;
 #else
  opt.target_faces=1000000;
 #endif
-    // 予算の A/B を native から取るための上書き（既定はこの上で決まる）。
+    // 予算の A/B のための上書き（既定はこの上で決まる）。ブラウザからは worker が
+    // Module.ENV に入れた値がここに届く。
     if(const char*e=getenv("PIXAL3D_REMESH_RES"))opt.remesh_res=atoi(e);
     if(const char*e=getenv("PIXAL3D_TARGET_FACES"))opt.target_faces=atoi(e);
     string pr;bool ok=pixal3d_write_production_glb(out,mesh,so.coords,pbr,so.res,opt,&pr);rep("%s",pr.c_str());if(!ok)return 5;
