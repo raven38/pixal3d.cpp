@@ -101,10 +101,29 @@ function toMultiviewForm(
   return fd;
 }
 
+async function validateMultiviewTransforms(transforms: Blob): Promise<void> {
+  let meta: unknown;
+  try {
+    meta = JSON.parse(await transforms.text());
+  } catch {
+    throw new Error("transforms.json is not valid JSON");
+  }
+  if (meta == null || typeof meta !== "object") {
+    throw new Error("transforms.json root must be an object");
+  }
+  const meshScale = (meta as { mesh_scale?: unknown }).mesh_scale;
+  if (typeof meshScale !== "number" || !Number.isFinite(meshScale) || meshScale <= 0) {
+    throw new Error(
+      "transforms.json must include a finite positive top-level mesh_scale; Pixal3D multiview generation refuses to assume 1.0 because an incorrect scale can silently corrupt geometry",
+    );
+  }
+}
+
 /**
  * Pixal3D multiview generation. `transforms` is transforms.json and each view name must
  * match the corresponding `frames[].file_path` entry. Views must already contain a real
- * alpha matte, matching `trellis-cli --views DIR` semantics.
+ * alpha matte, matching `trellis-cli --views DIR` semantics. `mesh_scale` is required and
+ * validated client-side before the request; the C++ parser enforces the same invariant.
  */
 export async function generateMultiview(
   transforms: Blob,
@@ -112,6 +131,7 @@ export async function generateMultiview(
   params: MultiviewParams,
   signal?: AbortSignal,
 ): Promise<GenerateResult> {
+  await validateMultiviewTransforms(transforms);
   const res = await fetch(`${await base()}/generate-mv`, {
     method: "POST",
     body: toMultiviewForm(transforms, views, params),
