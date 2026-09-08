@@ -87,15 +87,24 @@ partial / fixture full / real full の 3 経路が同じ tail を使う。
 無いので既定 1.0。view 0 が canonical front view である保証も無い —— **以下は統合とメモリの
 gate であって、形状品質の評価ではない**。
 
+以下は §7b の SS decoder 修正**後**の true full E2E（browser: `web/real_e2e/`、seed 1、
+native: `trellis-test-pixal3d-real-e2e`、同じ 4 view）。
+
 | stage | browser (Chrome/WebGPU) | native (Metal) |
 |---|---|---|
-| SS Flow 12 step | 190.6 s | 144.4 s (FA) / 89.3 s (NOFA) |
-| Shape-512 Flow | 161.7 s | 102.2 s / 63.5 s |
-| Shape-1024 tokens | 10 901 | 11 964 / 12 083 |
-| Shape-1024 Flow | 704.0 s | 600.9 s |
-| **live Texture-1024 cond** | **47.3 s, graph peak 1 538 MB** | 37.9 s, 3 332 MB |
-| Texture Flow 12 step | 487.3 s (39.8 s/forward) | 331.8 s |
-| production postprocess | remesh_res=512 → QEM 484 398 面, atlas 4096 | remesh_res=1024 → 955 372 面 |
+| SS Flow 12 step | 115.3 s (22 forwards) | 144.4 s (FA) / 89.3 s (NOFA) |
+| Shape-512 Flow | 64.2 s | 102.2 s / 63.5 s |
+| Shape-1024 tokens | 11 907 | 11 964 / 12 083 |
+| Shape-1024 Flow | 755.7 s | 600.9 s |
+| **live Texture-1024 cond** | **41.4 s, graph peak 1 538 MB, resident 2 741 MB** | 37.9 s, 3 332 MB, 2 741 MB |
+| Texture Flow 12 step | 489.3 s (12 forwards) | 331.8 s |
+| production postprocess | remesh_res=512 → remesh 3 319 396 面 → QEM 490 292 面, atlas 4096 | remesh_res=1024 → remesh 15 422 816 面 → QEM 955 372 面 |
+| textured GLB | V=399 782 F=490 292 29 035 652 B | V=831 007 F=955 372 47 992 476 B |
+| **textured GLB bbox** | **(0.9560, 0.9781, 0.5833)** | (0.9571, 0.9815, 0.5965) |
+
+postprocess の予算がブラウザだけ違う（remesh_res 512 / target_faces 500 000 対 1024 / 1 000 000）
+のは wasm32 の 4 GiB ヒープ制約によるもので、face 数とメッシュの粗さの差はここから来ている。
+神経回路の段（conditioning / flow / decode）は両者とも同じ設定で走っている。
 
 token 数がばらつくのは、SS decode の閾値が離散判定で、backend 間（および FA / SDPA 間）の
 わずかな数値差がそのまま active voxel 数を変えるため。
@@ -143,6 +152,7 @@ mean/std/min/max/非有限数）を入れて browser と native を並べた。
 | `ss_coords@64` | x[0..31] y[0..31] z[5..24] centroid(15.2,18.4,15.3) | **x[2..4]** y[0..31] z[0..31] | x[0..31] y[0..31] z[5..24] centroid(15.2,18.4,15.3) |
 | `hr_coords@64` | N=12 083 x[1..63] z[11..48] | N=10 901 **x[4..10]** | N=11 907 x[1..62] z[11..48] |
 | raw mesh bbox | (0.9652, 0.9692, 0.5763) | — | **(0.9537, 0.9750, 0.5799)** |
+| 最終 textured GLB bbox | (0.9571, 0.9815, 0.5965) | **(0.1006, 0.9961, 0.9801)** | **(0.9560, 0.9781, 0.5833)** |
 
 **根本原因**: ggml WebGPU backend は `GGML_OP_IM2COL_3D` も `GGML_OP_CONV_3D` も実装して
 いない（`docs/PIXAL3D_WEBGPU_OP_GAP.md`: "every Conv3d in this file is unsupported
@@ -157,6 +167,18 @@ Shape-1024 / decode が全部その上に積み上がっていた。
 1. wasm ビルドでは **SS decoder だけ CPU backend に載せる**（`Model::load(path, -1)`。
    `trellis-test-pixal3d-ss-sample` の `dec_gpu=-1` と同じ扱い）。他の段は WebGPU のまま。
 2. `ss_decode` に `check_graph_supported` を追加し、同種の「黙って壊れる」を実行前のエラーにする。
+
+**native への回帰が無いことの確認**: guard を足した `src/ss_decoder.cpp` でリビルドした
+`build-metal/trellis-test-pixal3d-real-e2e` は Metal で `REAL_GEOMETRY_RESULT: OK`
+（V=4 098 362 F=8 244 512、`ss_logits nonfinite=0`）。Metal backend は Conv3D を持つので
+guard は素通りする。CUDA は手元に無いので未確認（`ggml-cuda` は IM2COL_3D を実装しているので
+通るはずだが実測していない）。`ss_decode` を呼ぶ翻訳単位は
+`src/pixal3d_real_geometry_wasm.cpp` と `src/pixal3d_full_e2e_wasm.cpp` の 2 つだけで、
+どちらも `SS_DEC_BACKEND` 対応済み（`grep -ln ss_decode src/*.cpp` で確認）。
+
+**修正後の true full E2E**: browser が textured GLB を bbox (0.9560, 0.9781, 0.5833) で出力
+（native (0.9571, 0.9815, 0.5965)）。4 視点レンダも native と同じシルエット・同じ色・
+同じ破綻の仕方（頭部が欠ける = 入力ビュー由来で backend 由来ではない）になった。
 
 **教訓**: `check_graph_supported` を通っているグラフ（DiT / conditioning / NAF）は未対応 op を
 実行前に弾くが、通っていないグラフは黙って壊れる。新しいグラフを足したら必ず通すこと。
