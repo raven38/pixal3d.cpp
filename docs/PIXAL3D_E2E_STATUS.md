@@ -73,6 +73,43 @@ fixture は `PIXAL3D_DUMP_FIXTURE=<dir>` を付けた native の
 共通実装 `include/pixal3d_postprocess.h` / `src/pixal3d_postprocess.cpp`。
 partial / fixture full / real full の 3 経路が同じ tail を使う。
 
+**現状（2026-09-08）: 正しさの blocker ではないが、予算の食い違いが残っている。**
+browser も weld → hole fill → narrow-band DC remesh → cleanup → QEM → UV atlas →
+voxel PBR bake → textured GLB の全段を通り `textured_glb=OK` を出す。違うのは予算だけ:
+
+| | remesh_res | target_faces | 実測 remesh | 最終 F |
+|---|---|---|---|---|
+| native | 1024 | 1 000 000 | 15 422 816 面 | 955 372 |
+| browser | 512 | 500 000 | 3 319 396 面 | 490 292 |
+
+**予算差の影響（同一入力・同一 seed の 2 つの GLB の相互シルエット IoU）**:
+
+| 解像度 | IoU |
+|---|---|
+| 256 px | 0.9223 |
+| 512 px | 0.8863 |
+| 1024 px | **0.7192** |
+
+粗い形は一致する（入力に対する IoU も browser 0.3696 / native 0.3674 とほぼ同じで、
+予算差はシルエットを動かさない）が、**細部は 1024 px で見ると明確に違う**。
+backend 差も混じっているが conditioning の parity が cos 0.99999 なので、
+差の主因は remesh グリッド（512 対 1024）と面数（490k 対 955k）である。
+
+**原因は wasm32 の構造的な上限**: `web/ss/CMakeLists.txt` の
+`-sMAXIMUM_MEMORY=4294967296` は wasm32 の 4 GiB そのもの（MEMORY64 は使っていない）。
+res=1024 の narrow-band remesh の出力は被写体で大きく変わる:
+
+| 入力 | remesh @1024 |
+|---|---|
+| views4（`mesh_scale` 欠落, 壊れた形） | 7 676 815 V / 15 422 816 F ← ブラウザで `std::bad_alloc` |
+| 公式サンプル（cyclops） | 9 158 222 V / 18 318 052 F |
+| views4 + `mesh_scale=0.206`（正しい形） | **2 934 931 V / 5 890 304 F** |
+
+**注意**: browser を 512/500k に落とす判断は、**壊れた入力で測った 15.4M 面**を根拠にして
+いる（§4a）。正しい入力なら同じ被写体で 5.89M 面 = 2.6 分の 1 で、4 GiB に収まる可能性がある。
+**未検証**。検証するには postprocess 予算を C ABI から渡せるようにして、
+正しい入力で browser 側を 1024/1M で回す必要がある（約 40 分）。
+
 ## 4a. 正しい入力での検証（2026-09-08）
 
 これまでの real-input E2E は `~/Downloads/yoimiya_blender_1024` 由来の 4 view（以降 views4）で
