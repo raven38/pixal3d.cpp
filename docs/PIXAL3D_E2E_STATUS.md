@@ -54,6 +54,28 @@ Texture conditioning は live に切り替え済み（`FULL_E2E_LIVE_TEXTURE_CON
 
 このターゲットは `s1024_images.npy` / `images_512.npy` / `camera_angle_x.npy` /
 `transform_matrix.npy` / `mesh_scale.npy` と各段の noise を持つ fixture bundle を要求する。
+bundle は `tools/make_fixture_bundle.py <views_dir> <out_dir>` で作れる（前処理は
+`inference_mv.py` の `to_cond_tensor` と同じ PIL LANCZOS + アルファ乗算）。pod で PyTorch が
+吐いた同名テンソル（views4）と **全項目 bit 一致**するので、bundle 作成に GPU は要らない。
+noise は書かず `deterministic_noise()` の mt19937 に任せる（native と揃うため）。
+
+なお C++ の real-input 経路（`src/pixal3d_input.cpp` の `resize_premult`）は
+`stbir_resize_uint8` を使っていて **PIL LANCZOS とは実装が違う**。fixture 経路を通すと
+前処理が PyTorch 側に揃うので、両経路の差はこの resize 実装差を含む。
+
+### 実行結果（2026-09-08）
+
+**公式サンプル（cyclops）の bundle: SS / Shape-512 / Shape-1024 / Texture の 4 flow を
+すべて完走した後、decode・postprocess の段で `std::bad_alloc`**
+（`FULL_FIXTURE_RESULT: EXCEPTION std::bad_alloc`）。所要は SS 194.9 s / Shape-512 165.7 s /
+Shape-1024 1476.3 s（17 660 token, native は 17 690）/ live tex cond 54.2 s
+（graph peak 1 538 MB）/ Texture Flow 988.2 s。
+
+同じ入力の native は decode で 4 730 295 voxel / raw mesh V=4 725 397 F=9 510 803 を作る。
+ブラウザは `remesh_res=512` に落としてもこの規模の入力メッシュに対して
+TriBvh（950 万三角形）と QEM を 4 GiB のヒープ内で持てない。**flow 段ではなく tail が原因**で、
+fixture 経路そのものの問題ではない。§4 の「後回しでよい」判断はこの結果で見直しが要る:
+**予算差は品質の問題にとどまらず、被写体が大きいと browser では完走しない**。
 
 ## 3. Partial E2E（最小の integration gate）
 
@@ -110,9 +132,11 @@ res=1024 の narrow-band remesh の出力は被写体で大きく変わる:
 **未検証**。検証するには postprocess 予算を C ABI から渡せるようにして、
 正しい入力で browser 側を 1024/1M で回す必要がある（約 40 分）。
 
-**優先度の判断（2026-09-08）: 後回しでよい。** 正しさの blocker ではなく（browser も
-同じ共通 C++ の tail を全段通って textured GLB を出す）、差は上表のとおり定量化済みで
-未知のリスクではない。公式サンプルは正しい入力でも remesh 18.3M 面になるので、
+**優先度の判断（2026-09-08、§2 の結果を受けて改訂）: 後回しにできるのは小さい被写体だけ。**
+当初は「正しさの blocker ではない」と判断したが、公式サンプル（cyclops、decode で
+950 万三角形）の fixture-input full E2E は `remesh_res=512` でも `std::bad_alloc` で落ちた
+（§2）。**被写体が大きいと browser では tail が完走しない**ので、これは品質だけの問題ではない。
+差の定量化（下表）は有効で、公式サンプルは正しい入力でも remesh 18.3M 面になるので、
 検証しても結論は「被写体次第」になる公算が高く、その場合の本当の対処は
 「1024 に上げる」ではなく「入力サイズに応じた自動フォールバック」という別作業になる。
 **後回しをやめる条件**: browser の出力が native と同等の細かさであることを主張したく
