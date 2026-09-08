@@ -77,9 +77,50 @@ partial / fixture full / real full の 3 経路が同じ tail を使う。
 
 - 分割グラフ版の conditioning は、**同一 backend の単一グラフ版**（PyTorch 参照で検証済みの経路）
   との同値性で確認している。
-- **PyTorch 参照（`tex_cond_global.npy` / `tex_cond_proj.npy`）との突き合わせは未実施**。
-  `tools/ref_pixal3d_cond_slat.py` は DINOv3 + NAF(natten) + spconv が要り CUDA 必須で、
-  検証に使った Mac では生成できない。GPU pod で回すまで「PyTorch 基準の rel / cosine」は出せない。
+- **PyTorch 参照との突き合わせは実施済み（2026-09-08）**。結果は §5a。
+
+## 5a. Texture-1024 conditioning の PyTorch 参照突き合わせ（2026-09-08）
+
+参照: `tools/ref_pixal3d_cond_tex.py`（新規）を A100 80GB の pod で実行。
+`DinoV3ProjMultiViewFeatureExtractor(**IMAGE_COND_CONFIGS["tex_1024"])`（image_size 1024,
+grid_resolution 64, use_naf_upsample, **naf_target_size 1024**, multiview_fusion average）を
+f32 で回し、dense な `z_proj [1, 64^3, 2048]`（2.1 GB）は保存せず、C++ が実際に使った
+active voxel（`hr_coords.npy`, N=12 083）で gather した `[N, 2048]` だけを保存する。
+
+C++ 側: `PIXAL3D_DUMP_FIXTURE` を付けた `trellis-test-pixal3d-real-e2e`（Metal, **分割グラフ**の
+`cond_slat_gpu_chunked` 経路）。入力 view・coords・`mesh_scale` は両者同一。
+
+| tensor | max abs | mean abs | L2 rel | cosine | bit identical |
+|---|---|---|---|---|---|
+| `global` [1,5,1024] | 3.631e-02 | 3.144e-03 | 5.011e-03 | 0.9999874425 | no |
+| `proj` lr `[:1024]` | 5.689e-02 | 3.944e-03 | 5.402e-03 | 0.9999854080 | no |
+| `proj` hr `[1024:]` | 4.753e-02 | 2.910e-03 | 3.996e-03 | 0.9999922445 | no |
+| `proj` 全体 | 5.689e-02 | 3.427e-03 | 4.757e-03 | 0.9999887460 | no |
+
+非有限値は両側とも 0。
+
+**読み方（重要）**: `z_global` は DINOv3 の最終 LN 後の先頭 5 トークン（cls + register 4本）を
+view で平均しただけで、**NAF も ProjGrid も chunk 分割も通っていない**。その `global` が既に
+L2 rel 5.011e-03 出ているので、この差は DINOv3 バックボーンの段で入っている。NAF@1024 +
+ProjGrid HR + block-chunk 累積を通した `proj hr` はむしろ `global` より小さい
+（3.996e-03 / cos 0.9999922）。つまり **texture 段に固有の実装（naf_target_size=1024 の
+neighborhood attention、sparse coords、4分割グラフ）は測れるほどの誤差を足していない**。
+
+差の出どころは C++ の DINOv3 GGUF が **f16**（`dinov3.gguf` 606 MB ≒ ViT-L 300M params × 2 B、
+`tools/convert.py` は 2D 以上を f16・1D を f32 に落とす）なのに対し参照が f32 であること。
+ViT-L の 24 ブロックを通した f16 の相対誤差としては妥当な桁。**この仮説は未検証**
+（f32 GGUF を作って A/B していない）。
+
+**受け入れ基準に対する判定**: 着手前に凍結した基準は「既存の `trellis-test-pixal3d-cond-slat`
+と同じ tol、max abs ≤ 2e-2」。**max abs はこれを超えている**（global 3.6e-2 / proj 5.7e-2）。
+tol は動かさない。cosine と L2 相対で見れば実用上一致だが、基準としては未達である。
+
+**環境の注記**: 参照 pod は natten **0.17.5**（shi-labs.com の証明書切れで pip の
+wheel index が引けず、手元で取得して sha256 照合した wheel を PVC 経由で入れた）、
+transformers は Pixal3D の requirements が pin する **4.57.3**（image の 5.8.0 は
+`DINOv3ViTModel.layer` が無く `extract_features` が動かない）。`ref_pixal3d_cond_slat.py` の
+メタは natten 0.21.0 で取られており、**natten の版は一致していない**（NAF は新旧どちらの
+API にも対応しているが、版差の影響は測っていない）。
 
 ## 7. 実測（2026-09-08, M4 Max / Chrome WebGPU vs Metal）
 
