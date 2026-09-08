@@ -73,6 +73,57 @@ fixture は `PIXAL3D_DUMP_FIXTURE=<dir>` を付けた native の
 共通実装 `include/pixal3d_postprocess.h` / `src/pixal3d_postprocess.cpp`。
 partial / fixture full / real full の 3 経路が同じ tail を使う。
 
+## 4a. 正しい入力での検証（2026-09-08）
+
+これまでの real-input E2E は `~/Downloads/yoimiya_blender_1024` 由来の 4 view（以降 views4）で
+回しており、「`mesh_scale` がどの手元データにも無い」「view 0 が canonical front view である
+保証が無い」ため**形状品質を語れない**と書いてきた。Pixal3D 公式の multiview サンプル
+（`assets/mv_images/example`: azim 0/90/180/270、view00 が front、`mesh_scale: 1.0` を明示、
+FOV 0.349 rad、距離 3.119）で同じ native Metal の full E2E を回して切り分けた。
+
+判定は着手前に凍結した基準:
+(1) 4 視点で頭部欠損が無く、単眼・鼻輪・歯・耳・台座が出る、
+(2) **入力カメラでの シルエット IoU ≥ 0.85**（`tools/silhouette_iou.py`、新規）。
+
+### 結果: 公式サンプルは合格
+
+| view | IoU | 生成の被覆率 | 入力の被覆率 |
+|---|---|---|---|
+| azim000 | 0.9805 | 0.453 | 0.455 |
+| azim090 | 0.9772 | 0.615 | 0.622 |
+| azim180 | 0.9796 | 0.528 | 0.533 |
+| azim270 | 0.9768 | 0.615 | 0.622 |
+
+**mean silhouette IoU 0.9785**。投影サイズ比 mine/ref = 0.997（= 入力と整合する
+`mesh_scale` の推定値 0.997、宣言値 1.0）。テクスチャ付きレンダでも単眼・鼻輪・歯・唇・耳・
+台座がすべて再現され、背面が滑らかなところまで入力と一致する。
+`REAL_FULL_E2E_RESULT: OK V=4730295 F=9485720 glb_bytes=45113764 atlas=4096`、
+bbox (0.7566, 0.8451, 0.9869)。
+
+### views4 が不合格だった理由は入力側にある
+
+同じ `tools/silhouette_iou.py` を views4 の結果に当てると:
+
+| | 公式サンプル | views4 |
+|---|---|---|
+| `mesh_scale` の宣言 | 1.0（明示） | **無し（既定 1.0）** |
+| mean silhouette IoU | **0.9785** | **0.1071** |
+| 投影サイズ比 mine/ref | 0.997 | **0.206**（view ごと 0.203〜0.208） |
+| 整合する `mesh_scale` の推定 | 0.997 | **0.206** |
+| Shape-1024 tokens | 17 690 | 12 083 |
+
+views4 は 4 view すべてで一貫して線形 4.85 倍ぶんスケールが食い違っている。既定の
+`mesh_scale = 1.0` で走らせると、ProjGrid は被写体が画面の約 20%（面積で約 4%）しか占めない
+前提で DINOv3/NAF 特徴をサンプリングすることになる。頭部が欠けるといった破綻はここから来る。
+**軸の対応は導出せず符号付き軸置換 48 通りの総当たりで決めており**（公式サンプルでは
+perm=(0,2,1) sign=(1,1,1) が 0.9647、次点の別対応が 0.8568 と明確に分離）、
+views4 ではどの置換を選んでも 0.13 を超えなかったので、置換の選び方で結論は変わらない。
+
+**結論**: 正しい入力（canonical front view + 正しい `mesh_scale`）を与えれば、
+共通 C++ パイプラインは入力と IoU 0.98 で一致する形状とテクスチャを出す。
+これまでの real-input E2E で見えていた形状の破綻は入力メタデータの不備であって、
+pipeline / backend の問題ではない。
+
 ## 5. 検証の位置づけ（重要）
 
 - 分割グラフ版の conditioning は、**同一 backend の単一グラフ版**（PyTorch 参照で検証済みの経路）
