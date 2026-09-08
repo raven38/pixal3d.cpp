@@ -36,6 +36,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
+#include <emscripten/heap.h>
 #define PIXAL3D_FULL_EXPORT EMSCRIPTEN_KEEPALIVE
 #else
 #define PIXAL3D_FULL_EXPORT
@@ -49,6 +50,14 @@ string g_full_report;
 void frep(const char* fmt, ...) {
     char b[2048]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
     g_full_report += b; fputs(b, stdout); fflush(stdout);
+}
+// wasm32 の 4 GiB ヒープでどこまで積んだかを段ごとに残す。native では何も出さない。
+void fheap(const char* tag) {
+#ifdef __EMSCRIPTEN__
+    frep("[heap] %-18s %.0f MB\n", tag, emscripten_get_heap_size() / 1048576.0);
+#else
+    (void)tag;
+#endif
 }
 bool fexists(const string& p) { FILE* f=fopen(p.c_str(),"rb"); if(!f) return false; fclose(f); return true; }
 
@@ -141,9 +150,12 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
         frep("live tex cond: tokens=%zu d_proj=%d graph peak %.1f MB resident %.1f MB %.1f s\n",hr.size(),ct.d_proj,cst.view_alloc_bytes/1048576.0,(cst.weight_bytes+cst.cond_bytes)/1048576.0,cst.total_ms/1000.0);
     }
     auto txnorm=texture_flow(model[7],hr,ct,shnorm,deterministic_noise(fixture+"/tex_noise.npy",32*hr.size(),seed+3));vector<float>txdn(txnorm.size());for(size_t n=0;n<hr.size();++n)for(int c=0;c<32;++c)txdn[c+32*n]=txnorm[c+32*n]*TEX_STD[c]+TEX_MEAN[c];
-    ShapeOut so;{Model d=Model::load(model[5],0);so=shape_decode(d,shdn,hr,1024);d.free();}Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;
+    ShapeOut so;{Model d=Model::load(model[5],0);so=shape_decode(d,shdn,hr,1024);d.free();}
+    frep("shape_decode done: %zu voxels res=%d\n",so.coords.size(),so.res);fheap("shape_decode");
+    Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;
+    frep("mesh V=%d F=%d\n",mesh.V(),mesh.F());fheap("dual_grid_to_mesh");
     vector<float>raw;{Model d=Model::load(model[8],0);raw=tex_decode(d,txdn,hr,so.subs);d.free();}if(raw.size()!=so.coords.size()*6)return 5;
-    frep("tex decode: %zu voxels x6 (%.1f MB), raw mesh V=%d F=%d\n",so.coords.size(),raw.size()*4/1048576.0,mesh.V(),mesh.F());
+    frep("tex_decode done: %zu voxels x6 (%.1f MB)\n",so.coords.size(),raw.size()*4/1048576.0);fheap("tex_decode");
     vector<float>pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
     Pixal3dPostprocessOptions opt;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;opt.texture_size=4096;
 #ifdef __EMSCRIPTEN__
