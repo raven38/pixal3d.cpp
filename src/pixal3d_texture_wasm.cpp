@@ -607,7 +607,9 @@ PIXAL3D_EXPORT int pixal3d_texture_n_steps(void) { return g_n_steps; }
 
 } // extern "C"
 
-#ifndef __EMSCRIPTEN__
+// このファイルは pixal3d_partial_e2e_wasm.cpp から #include されており、そちらにも
+// native main がある。includer 側は PIXAL3D_NO_NATIVE_MAIN を定義してこちらを抑止する。
+#if !defined(__EMSCRIPTEN__) && !defined(PIXAL3D_NO_NATIVE_MAIN)
 int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "--texture") == 0) {
         // --texture <tex_flow.gguf> <hr_sample_dir> [concat_cond.npy|-] [own_cond] [dinov3.gguf] [naf.gguf] [cond_slat_dir] [n_views] [dump_prefix]

@@ -481,6 +481,11 @@ set_target_properties(pixal3d-ss-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 # (last CLI arg) so browser-vs-native parity can be measured with the same fixture.
 add_executable(pixal3d-texture-run src/pixal3d_texture_wasm.cpp)
 target_link_libraries(pixal3d-texture-run PRIVATE trellis_core)
+# partial 経路（Texture Flow -> decode -> postprocess -> GLB）を native で回すドライバ。
+# 重みの量子化や分割の A/B をブラウザ抜きで完結させるために使う。
+add_executable(pixal3d-partial-run src/pixal3d_partial_e2e_wasm.cpp)
+target_link_libraries(pixal3d-partial-run PRIVATE trellis_core)
+set_target_properties(pixal3d-partial-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 set_target_properties(pixal3d-texture-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 add_executable(trellis-test-pixal3d-ss-sample src/test_pixal3d_ss_sample.cpp)
