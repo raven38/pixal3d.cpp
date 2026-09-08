@@ -18,7 +18,12 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
 // Creates the three input tensors in `c` (flagged ggml_set_input; the caller uploads them after
 // allocation: img = the [S,S,3,1] image, cos/sin = the [64,1,Ntok] RoPE tables from
 // dinov3_rope_tables) and returns the final-LN output [1024, Ntok] (channel-major).
-struct Dinov3Inputs { ggml_tensor* img; ggml_tensor* cos; ggml_tensor* sin; int ntok; };
+struct Dinov3Inputs {
+    ggml_tensor* img; ggml_tensor* cos; ggml_tensor* sin; int ntok;
+    // TRELLIS_DBG_DINOV3_LAYERS=<dir> のときだけ使う。各ブロック出力の先頭 5 トークン
+    // （cls + register 4 本）を層順に受け取り、PyTorch との層別突き合わせに使う。
+    std::vector<ggml_tensor*>* layers = nullptr;
+};
 ggml_tensor* dinov3_build(ggml_context* c, const Model& m, int S, Dinov3Inputs& in);
 
 // Host RoPE tables for dinov3_build: [Ntok*64] each (prefix tokens identity, patches 2D

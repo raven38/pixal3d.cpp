@@ -60,6 +60,20 @@ MANIFEST = {
 }
 
 
+
+# 学習済みの「トークンそのもの」は f16 に落とさない。cls_token / reg_token /
+# pos_embed 類は行列積の重みではなく残差ストリームに直接足される値なので、丸め誤差が
+# そのままトークンの誤差になる。実測（2026-09-09, DINOv3 ViT-L）: f16 に落とすと
+# 埋め込みが PyTorch 参照に対して L2 相対 2.128e-04 ずれ、それが 24 ブロックを素通りして
+# 最終トークンの 6.2e-04 になり、conditioning の z_global の残差の主因になっていた。
+# f32 に戻しても cls 1024 + reg 4096 要素で 10 KB しか増えない。
+EMBED_TOKEN_SUFFIXES = ("cls_token", "reg_token", "mask_token", "pos_embed",
+                        "position_embeddings", "storage_tokens")
+
+def keep_f32(name):
+    return name.endswith(EMBED_TOKEN_SUFFIXES) or ".cls_token" in name or ".reg_token" in name
+
+
 def read_safetensors(path):
     """Yield (name, numpy_f32_or_f16_array) preserving natural (torch) shape."""
     with open(path, "rb") as fh:
@@ -128,6 +142,8 @@ def convert_birefnet(w, src):
             data = np.ascontiguousarray(arr.astype(np.int32)); n_f32 += 1
         elif name.endswith("relative_position_bias_table"):
             data = np.ascontiguousarray(arr.astype(np.float32)); n_f32 += 1   # keep precision for the bias gather
+        elif keep_f32(name):
+            data = np.ascontiguousarray(arr.astype(np.float32)); n_f32 += 1   # 埋め込みトークンは丸めない
         elif arr.ndim >= 2 and f16ok:
             data = np.ascontiguousarray(arr.astype(np.float16)); n_f16 += 1
         else:
@@ -169,7 +185,7 @@ def convert(component):
                 # dense Conv3d weight [OC,IC,KD,KH,KW] -> [OC*IC,KD,KH,KW] (ggml_conv_3d)
                 oc, ic = arr.shape[0], arr.shape[1]
                 arr = arr.reshape(oc * ic, arr.shape[2], arr.shape[3], arr.shape[4])
-        if arr.ndim >= 2 and not force_f32:
+        if arr.ndim >= 2 and not force_f32 and not keep_f32(name):
             data = np.ascontiguousarray(arr.astype(np.float16)); n_f16 += 1
         else:
             data = np.ascontiguousarray(arr.astype(np.float32)); n_f32 += 1
