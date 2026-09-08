@@ -9,6 +9,7 @@
 #include <sstream>
 #ifdef __EMSCRIPTEN__
 #include <emscripten/heap.h>
+#include <malloc.h>
 #endif
 
 namespace trellis {
@@ -23,7 +24,10 @@ static void plog(std::ostringstream& os, const char* fmt, ...) {
     char b[512]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
     std::string line = b;
 #ifdef __EMSCRIPTEN__
-    char h[64]; snprintf(h, sizeof h, " [heap %.0f MB]", emscripten_get_heap_size() / 1048576.0);
+    struct mallinfo mi = mallinfo();
+    char h[96]; snprintf(h, sizeof h, " [grown %.0f live %.0f free %.0f MB]",
+                         emscripten_get_heap_size() / 1048576.0,
+                         (double)(unsigned)mi.uordblks / 1048576.0, (double)(unsigned)mi.fordblks / 1048576.0);
     line += h;
 #endif
     line += "\n";

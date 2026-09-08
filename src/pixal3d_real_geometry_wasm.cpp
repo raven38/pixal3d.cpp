@@ -36,6 +36,7 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
 #include <emscripten/heap.h>
+#include <malloc.h>
 #define PXEXP EMSCRIPTEN_KEEPALIVE
 #else
 #define PXEXP
@@ -44,10 +45,13 @@ using std::array;using std::string;using std::vector;using namespace trellis;
 namespace {
 string g_dump_fixture;   // native の --dump-fixture 用（browser では常に空）
 string report;void rlog(const char*f,...){char b[1024];va_list a;va_start(a,f);vsnprintf(b,sizeof b,f,a);va_end(a);report+=b;fputs(b,stdout);fflush(stdout);} 
-// wasm32 の 4 GiB ヒープでどこまで積んだかを段ごとに残す。native では何も出さない。
+// wasm32 の 4 GiB ヒープの内訳を段ごとに残す（内訳の読み方は full_e2e 側の fheap を見よ）。
 void rheap(const char*tag){
 #ifdef __EMSCRIPTEN__
- rlog("[heap] %-18s %.0f MB\n",tag,emscripten_get_heap_size()/1048576.0);
+ struct mallinfo mi=mallinfo();
+ rlog("[heap] %-18s grown %.0f MB  live %.0f MB  free %.0f MB\n",tag,
+      emscripten_get_heap_size()/1048576.0,
+      (double)(unsigned)mi.uordblks/1048576.0,(double)(unsigned)mi.fordblks/1048576.0);
 #else
  (void)tag;
 #endif
@@ -114,7 +118,15 @@ int run(const vector<string>&m,const string&views,const string&out,uint32_t seed
  Pixal3dInputViews in;string err;if(!pixal3d_load_input_views(views,in,err)){rlog("input error: %s\n",err.c_str());return 2;}rlog("real input: V=%zu mesh_scale=%.4f\n",in.views512.size(),in.mesh_scale);
  Pixal3dCond cs;{Model d=Model::load(m[0],0);cs=pixal3d_cond_ss_gpu(d,in.views512,512,16,in.mesh_scale);d.free();}log_vec("ss_cond_glob",cs.global);log_vec("ss_cond_proj",cs.proj);vector<float>ng(cs.global.size(),0),np(cs.proj.size(),0);Model sm=Model::load(m[2],0);DiTParams dp;dp.in_ch=8;dp.out_ch=8;dp.d_cond=1024;if(!dit_detect_proj_attn(sm,dp))return 3;auto*dr=make_dense_runner(sm,dp,16,cs.n_global);FlowFwdProj ff=[&](const vector<float>&x,float t,const float*a,const float*b){return dr->forward(x,t,a,b);};SamplerParams s;s.steps=12;s.guidance_strength=7.5f;s.guidance_rescale=.7f;s.gi0=.6f;s.gi1=1;s.rescale_t=5;auto z=sample_flow(ff,noise(8*4096,seed),cs.global.data(),ng.data(),cs.proj.data(),np.data(),s);delete dr;sm.free();log_vec("ss_latent",z);vector<float>zd(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zd[(size_t)c*4096+i]=z[c+8*i];vector<array<int,3>>co;{Model d=Model::load(m[3],SS_DEC_BACKEND);auto l=ss_decode(d,zd);d.free();log_vec("ss_logits",l);co=ss_coords(l,64,32);}if(co.empty())return 4;log_coords("ss_coords@64",co);
  Pixal3dCond c5;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);c5=pixal3d_cond_slat_gpu(d,n,in.views512,{512,32,512,in.mesh_scale},nullptr,&co);d.free();n.free();}log_vec("s512_cond_glob",c5.global);log_vec("s512_cond_proj",c5.proj);auto ln=sflow(m[4],co,c5,noise(32*co.size(),seed+1));log_vec("s512_latent",ln);vector<float>ld(ln.size());for(size_t i=0;i<co.size();++i)for(int c=0;c<32;++c)ld[c+32*i]=ln[c+32*i]*STD[c]+MEAN[c];vector<array<int,3>>up;{Model d=Model::load(m[5],0);up=shape_upsample(d,ld,co);d.free();}log_coords("upsample@512",up);std::set<array<int,3>>q;for(auto&c:up)q.insert({(int)std::lround((c[0]+.5f)/512.f*63),(int)std::lround((c[1]+.5f)/512.f*63),(int)std::lround((c[2]+.5f)/512.f*63)});vector<array<int,3>>hr(q.begin(),q.end());rlog("live Shape1024 tokens=%zu\n",hr.size());log_coords("hr_coords@64",hr);
- Pixal3dCond ch;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);ch=pixal3d_cond_slat_gpu(d,n,in.views1024,{1024,64,512,in.mesh_scale},nullptr,&hr);d.free();n.free();}log_vec("s1024_cond_glob",ch.global);log_vec("s1024_cond_proj",ch.proj);auto hn=sflow(m[6],hr,ch,noise(32*hr.size(),seed+2));log_vec("s1024_latent",hn);vector<float>hd(hn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)hd[c+32*i]=hn[c+32*i]*STD[c]+MEAN[c];ShapeOut so;{Model d=Model::load(m[5],0);so=shape_decode(d,hd,hr,1024);d.free();}rlog("shape_decode done: %zu voxels res=%d\n",so.coords.size(),so.res);rheap("shape_decode");log_coords("decoded_vox",so.coords);Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;rlog("mesh V=%d F=%d\n",mesh.V(),mesh.F());rheap("dual_grid_to_mesh");log_verts("raw_mesh",mesh.verts);
+ // hr が確定したら SS / Shape512 側は一切読まない。q は node-based container で vector より重い。
+ std::set<array<int,3>>().swap(q);up.clear();up.shrink_to_fit();
+ cs=Pixal3dCond{};c5=Pixal3dCond{};ng.clear();ng.shrink_to_fit();np.clear();np.shrink_to_fit();
+ z.clear();z.shrink_to_fit();zd.clear();zd.shrink_to_fit();ln.clear();ln.shrink_to_fit();ld.clear();ld.shrink_to_fit();
+ in.views512.clear();in.views512.shrink_to_fit();rheap("after Shape512");
+ Pixal3dCond ch;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);ch=pixal3d_cond_slat_gpu(d,n,in.views1024,{1024,64,512,in.mesh_scale},nullptr,&hr);d.free();n.free();}log_vec("s1024_cond_glob",ch.global);log_vec("s1024_cond_proj",ch.proj);auto hn=sflow(m[6],hr,ch,noise(32*hr.size(),seed+2));log_vec("s1024_latent",hn);vector<float>hd(hn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)hd[c+32*i]=hn[c+32*i]*STD[c]+MEAN[c];ch=Pixal3dCond{};rheap("after Shape1024");
+ ShapeOut so;{Model d=Model::load(m[5],0);so=shape_decode(d,hd,hr,1024);d.free();}rlog("shape_decode done: %zu voxels res=%d\n",so.coords.size(),so.res);rheap("shape_decode");log_coords("decoded_vox",so.coords);Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;
+ // feats7 は [7,M]（M=4.76M で約 133 MB）。メッシュを作ったら tex decoder には要らない。
+ so.feats7.clear();so.feats7.shrink_to_fit();rlog("mesh V=%d F=%d\n",mesh.V(),mesh.F());rheap("dual_grid_to_mesh");log_verts("raw_mesh",mesh.verts);
  if(!with_tex){if(!write_glb(out.c_str(),mesh.verts.data(),mesh.V(),mesh.faces.data(),mesh.F()))return 6;rlog("REAL_INPUT_LIVE_SS=1\nREAL_INPUT_LIVE_SHAPE512=1\nREAL_INPUT_LIVE_SHAPE1024=1\nREAL_INPUT_TEXTURE_COND_BLOCKED=1\nREAL_GEOMETRY_E2E_RESULT: OK V=%d F=%d\n",mesh.V(),mesh.F());return 0;}
  // ---- live Texture-1024 conditioning（fixture 注入なし）----
  Pixal3dCond ct;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);Pixal3dCondStats cst;ct=pixal3d_cond_slat_gpu(d,n,in.views1024,{1024,64,1024,in.mesh_scale},&cst,&hr);d.free();n.free();
@@ -133,7 +145,12 @@ int run(const vector<string>&m,const string&views,const string&out,uint32_t seed
   npy::save(g_dump_fixture+"/tex_norm_mean.npy",TMEAN,{32});npy::save(g_dump_fixture+"/tex_norm_std.npy",TSTD,{32});
   rlog("dumped Shape-1024 fixture (N=%lld) to %s\n",(long long)N,g_dump_fixture.c_str());}
 #endif
- auto tn=tflow(m[7],hr,ct,hn,noise(32*hr.size(),seed+3));vector<float>td(tn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)td[c+32*i]=tn[c+32*i]*TSTD[c]+TMEAN[c];
+ // Texture Flow の入力は hn（shape_norm）。ここまでに使い終わったものを落としてから入る。
+ // hd / hn は上の native fixture dump で読むので、解放はその後ろに置く。
+ hd.clear();hd.shrink_to_fit();rheap("before TextureFlow");
+ auto tn=tflow(m[7],hr,ct,hn,noise(32*hr.size(),seed+3));
+ // ct.proj は N*2048*4。Texture Flow を抜けたら conditioning も 1024 の view も不要。
+ ct=Pixal3dCond{};hn.clear();hn.shrink_to_fit();in.views1024.clear();in.views1024.shrink_to_fit();rheap("after TextureFlow");vector<float>td(tn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)td[c+32*i]=tn[c+32*i]*TSTD[c]+TMEAN[c];
  vector<float>raw;{Model d=Model::load(m[8],0);raw=tex_decode(d,td,hr,so.subs);d.free();}if(raw.size()!=so.coords.size()*6)return 7;rlog("tex_decode done: %zu voxels x6 (%.1f MB)\n",so.coords.size(),raw.size()*4/1048576.0);rheap("tex_decode");
  rlog("tex decode: %zu voxels x6 (%.1f MB), raw mesh V=%d F=%d\n",so.coords.size(),raw.size()*4/1048576.0,mesh.V(),mesh.F());
  vector<float>pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
