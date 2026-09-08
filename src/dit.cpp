@@ -17,7 +17,23 @@ static bool g_cast_f32 = false;   // set per build_dit_dense call
 
 // Budget for one query chunk's [Lk, nq, nh] score tile in the exact (non-FA) SDPA path.
 // Bounds the peak regardless of Lq, which is what made FA necessary in the first place.
+// sdpa のクエリ分割 1 チャンクあたりのスコア行列の予算。分割数を変えても結果は同じ
+// （softmax はクエリ行ごとに閉じている）なので、これは純粋にメモリと速度の調整値。
+//
+// ブラウザだけ既定を下げる理由: WebGPU のデバイス予算は実測 4095 MB しかなく、
+// テクスチャ flow（N=17690, n_heads=12）の常駐は
+//   重み 2647 MB + 活性化 + conditioning 276 MB
+// なので、活性化を 1172 MB 以下に収めないと予算を超える。超えるとユニファイドメモリ上で
+// Metal がメモリを往復させ続け、1 forward が 40 秒から 139〜176 秒に伸びてマシン全体が
+// 巻き添えで固まる（2026-09-08 実測）。
+// 実測（native Metal, N=17690）: 1024 MB -> 活性化 1888 MB / 256 MB -> 1127 MB /
+// 128 MB -> 1032 MB（ここで attention 以外が支配的になり頭打ち）。128 MB なら
+// 合計 3956 MB で予算内に収まる。native は速度優先で 1024 MB のまま。
+#ifdef __EMSCRIPTEN__
+static constexpr int64_t kAttnChunkBytes = 128ll * 1024 * 1024;
+#else
 static constexpr int64_t kAttnChunkBytes = 1024ll * 1024 * 1024;
+#endif
 bool g_no_fa = false;             // --no-fa; set by trellis_run
 
 static T* lin(ggml_context* c, const Model& m, const std::string& p, T* x) {
@@ -174,7 +190,15 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     // attentions per block is built as ONE graph, so an unbounded chunk count exhausts the
     // ggml context (ggml_new_object: not enough space). Hitting this cap costs memory, not
     // correctness -- query chunking is bit-exact either way (no reduction crosses queries).
-    constexpr int64_t kMaxAttnChunks = 32;
+    // 上限は「1 グラフに入るテンソル数」から来る制約で、正しさとは無関係（クエリ分割は
+    // どちらでもビット完全）。ブラウザでは活性化バッファが WebGPU の予算に収まるかどうかが
+    // 死活問題なので、flow_runner.cpp のメタデータ枠を広げたうえでここも上げてある。
+    // 実測（tex flow, N=17690, n_heads=12）: 上限 32 だと 1 チャンク 553 クエリ =
+    // スコア 470 MB で頭打ちになり、活性化バッファは 1316 MB より下がらなかった。
+    static const int64_t kMaxAttnChunks = []{
+        if (const char* e = getenv("TRELLIS_ATTN_MAX_CHUNKS")) return atoll(e);
+        return (int64_t)256;
+    }();
     if (nq * kMaxAttnChunks < Lq) nq = (Lq + kMaxAttnChunks - 1) / kMaxAttnChunks;
     if (nq >= Lq) nq = Lq;                                      // small attn: single chunk, no concat
 

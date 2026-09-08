@@ -40,7 +40,11 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
                      const std::vector<float>& rcos, const std::vector<float>& rsin)
     : m_(m), p_(p), N_(N), Lc_(n_cond) {
     const int half = p_.head_dim / 2;
-    size_t meta = ggml_tensor_overhead() * 16384 + ggml_graph_overhead_custom(32768, false) + (1 << 20);
+    // sdpa のクエリ分割はチャンク 1 本につき約 8 ノードを足す。30 ブロック x 2 attention で
+    // 1 グラフに載るので、チャンク数を増やすとここが先に枯れる（ggml_new_object: not enough
+    // space）。枠はホスト側のメタデータだけで 1 テンソル約 368 B なので、広げても数十 MB。
+    // 活性化バッファ（GPU 側、ブラウザでは 4 GB 予算）を削るほうが遥かに重要。
+    size_t meta = ggml_tensor_overhead() * 131072 + ggml_graph_overhead_custom(262144, false) + (1 << 20);
     ctx_ = ggml_init({ meta, nullptr, true });
     gh0_  = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.in_ch, N_);   ggml_set_input(gh0_);
     gtf_  = ggml_new_tensor_1d(ctx_, GGML_TYPE_F32, 256);            ggml_set_input(gtf_);
@@ -55,7 +59,7 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     dbg_nan_ = std::getenv("TRELLIS_DBG_NAN") != nullptr;
     gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_,
                             dbg_nan_ ? &inter_ : nullptr, gproj_, gidx_);
-    g_ = ggml_new_graph_custom(ctx_, 32768, false);
+    g_ = ggml_new_graph_custom(ctx_, 262144, false);
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);
     if (dbg_nan_) for (auto& [nm, t] : inter_) { ggml_build_forward_expand(g_, t); ggml_set_output(t); }
