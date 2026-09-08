@@ -8,6 +8,7 @@
 #include <cmath>
 #include <string>
 #include <stdexcept>
+#include "npy.h"
 
 namespace trellis {
 using T = ggml_tensor;
@@ -87,6 +88,15 @@ T* dinov3_build(ggml_context* c, const Model& m, int S, Dinov3Inputs& in) {
     T* reg = ggml_cast(c, ggml_reshape_2d(c, m.get("reg_token"), D, 4), GGML_TYPE_F32);
     T* x = ggml_concat(c, ggml_concat(c, cls, reg, 1), pe, 1);        // [1024, Ntok]
 
+    // TRELLIS_DBG_DINOV3_LAYERS=<dir> のとき、各ブロック出力の先頭 5 トークン
+    // （cls + register 4 本 = conditioning の z_global そのもの）を出力にマークして
+    // 層ごとに PyTorch と突き合わせられるようにする。全トークンは 1024^2 入力で
+    // 4101 x 1024 x 4 B x 25 層 = 420 MB になるので、先頭 5 本だけに絞る。
+    const char* dbg_layers = getenv("TRELLIS_DBG_DINOV3_LAYERS");
+    if (dbg_layers && in.layers) {   // ブロック前（埋め込み直後）も 1 本目として記録する
+        T* head = ggml_cont(c, ggml_view_2d(c, x, x->ne[0], 5, x->nb[1], 0));
+        ggml_set_output(head); in.layers->push_back(head);
+    }
     for (int i = 0; i < NLAYERS; ++i) {
         const std::string b = "blocks." + std::to_string(i);
         T* y = ln(c, x, 1e-5f, m.get(b + ".norm1.weight"), m.get(b + ".norm1.bias"));
@@ -99,6 +109,11 @@ T* dinov3_build(ggml_context* c, const Model& m, int S, Dinov3Inputs& in) {
         y = lin(c, m, b + ".mlp.fc2", y);
         y = ggml_mul(c, y, m.get(b + ".gamma_2"));
         x = ggml_add(c, x, y);
+        if (dbg_layers && in.layers) {
+            T* head = ggml_cont(c, ggml_view_2d(c, x, x->ne[0], 5, x->nb[1], 0));   // [D, 5]
+            ggml_set_output(head);
+            in.layers->push_back(head);
+        }
     }
     x = ln(c, x, 1e-5f);                                              // final non-affine LN
     return x;
@@ -111,11 +126,15 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
     size_t meta = ggml_tensor_overhead() * 8192 + ggml_graph_overhead_custom(16384, false) + (1 << 20);
     ggml_context* c = ggml_init({ meta, nullptr, true });
     Dinov3Inputs in{};
+    std::vector<T*> layer_heads;
+    const char* dbg_layers = getenv("TRELLIS_DBG_DINOV3_LAYERS");
+    if (dbg_layers) in.layers = &layer_heads;
     T* x = dinov3_build(c, m, S, in);
     ggml_set_output(x);
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 16384, false);
     ggml_build_forward_expand(g, x);
+    for (T* h : layer_heads) ggml_build_forward_expand(g, h);
     const std::string tag = "dinov3_S" + std::to_string(S);
     trellis_graph_dump(tag.c_str(), g);
     check_graph_supported(m.backend, g, tag.c_str());
@@ -126,6 +145,19 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
     ggml_backend_tensor_set(in.sin, rsin.data(), 0, rsin.size() * 4);
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("dinov3: compute failed");
     std::vector<float> out = tensor_to_f32(x);   // [D, Ntok] ggml -> flat d + D*tok
+    if (dbg_layers && *dbg_layers) {
+        for (size_t i = 0; i < layer_heads.size(); ++i) {
+            std::vector<float> h = tensor_to_f32(layer_heads[i]);   // [D, 5]
+            char path[512];
+            if (i == 0) snprintf(path, sizeof path, "%s/cpp_embed.npy", dbg_layers);
+            else snprintf(path, sizeof path, "%s/cpp_layer%02zu.npy", dbg_layers, i - 1);
+            npy::save(path, h.data(), { 5, (int64_t)layer_heads[i]->ne[0] });
+        }
+        char path[512];
+        snprintf(path, sizeof path, "%s/cpp_final.npy", dbg_layers);
+        npy::save(path, out.data(), { 5, (int64_t)x->ne[0] });   // 先頭 5 トークンのみ
+        fprintf(stderr, "[dinov3] dumped %zu layer heads + final to %s\n", layer_heads.size(), dbg_layers);
+    }
     ggml_gallocr_free(alloc); ggml_free(c);
     return out;
 }
