@@ -21,11 +21,15 @@ struct TransformsFile {
     std::vector<TransformsFrame> frames;
     float camera_angle_x = 0.0f;   // top-level fallback FOV, radians
     bool  has_camera_angle_x = false;
-    float mesh_scale = 1.0f;
+    // Pixal3D projection scale is semantically required for multiview inputs. A wrong default
+    // can still produce a plausible-looking but geometrically broken reconstruction, so the
+    // parser rejects a missing/non-positive mesh_scale instead of silently assuming 1.0.
+    float mesh_scale = 0.0f;
 };
 
 // Parses `path` into `out`. Returns false (with an stderr message describing what's wrong)
-// on a missing file, malformed JSON, or a frame missing file_path/transform_matrix.
+// on a missing file, malformed JSON, missing/invalid mesh_scale, or a frame missing
+// file_path/transform_matrix.
 bool load_transforms_json(const std::string& path, TransformsFile& out);
 
 } // namespace trellis
