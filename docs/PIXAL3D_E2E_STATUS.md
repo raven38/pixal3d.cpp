@@ -104,7 +104,10 @@ native: `trellis-test-pixal3d-real-e2e`、同じ 4 view）。
 
 postprocess の予算がブラウザだけ違う（remesh_res 512 / target_faces 500 000 対 1024 / 1 000 000）
 のは wasm32 の 4 GiB ヒープ制約によるもので、face 数とメッシュの粗さの差はここから来ている。
-神経回路の段（conditioning / flow / decode）は両者とも同じ設定で走っている。
+神経回路の段も**完全に同条件ではない**: browser は `g_no_fa`（plain softmax）で回り SS decoder
+だけ CPU backend、native は FlashAttention + 全段 Metal。したがって上の表は backend 統合と
+メモリの gate であって、backend 間の数値 parity の測定ではない（parity は §7a の同一 fixture
+比較で測っている）。
 
 token 数がばらつくのは、SS decode の閾値が離散判定で、backend 間（および FA / SDPA 間）の
 わずかな数値差がそのまま active voxel 数を変えるため。
