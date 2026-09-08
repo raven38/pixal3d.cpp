@@ -1,6 +1,7 @@
 #include "transforms_json.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -156,8 +157,20 @@ bool load_transforms_json(const std::string& path, TransformsFile& out) {
     if (const JsonValue* v = obj_get(root, "camera_angle_x"); v && v->type == JsonType::Number) {
         out.camera_angle_x = (float)v->num; out.has_camera_angle_x = true;
     }
-    if (const JsonValue* v = obj_get(root, "mesh_scale"); v && v->type == JsonType::Number) {
-        out.mesh_scale = (float)v->num;
+
+    const JsonValue* mesh_scale = obj_get(root, "mesh_scale");
+    if (!mesh_scale || mesh_scale->type != JsonType::Number) {
+        fprintf(stderr,
+                "transforms_json: %s is missing required top-level 'mesh_scale'; refusing to assume 1.0 because an incorrect scale can silently corrupt Pixal3D multiview geometry\n",
+                path.c_str());
+        return false;
+    }
+    out.mesh_scale = (float)mesh_scale->num;
+    if (!std::isfinite(out.mesh_scale) || out.mesh_scale <= 0.0f) {
+        fprintf(stderr,
+                "transforms_json: %s has invalid mesh_scale=%g; expected a finite value > 0\n",
+                path.c_str(), (double)out.mesh_scale);
+        return false;
     }
 
     const JsonValue* frames = obj_get(root, "frames");
