@@ -129,6 +129,14 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
                                       bool coords_only = false) {
     const char* kind = coords_only ? "sparse_upsample" : (guide_subs ? "tex_dec" : "shape_dec");
     int N = (int)coords.size();
+    // 最終 C2S の出力 [64, M] は res-1024 のテクスチャデコーダで M=4.76M、つまり 1.22 GB。
+    // 従来はこれを host へ読み戻してから output_layer を掛けており、wasm32 の 4 GiB ヒープでは
+    // 読み戻しで std::bad_alloc になっていた。output_layer を最終 C2S のグラフへ融合すると
+    // host が受け取るのは [out_ch, M]（6ch で 114 MB）だけになる。数値と分割の切れ目は
+    // linear_rows と同じ（include/sparse.h の C2SFinalHead を参照）。
+    // 段別ダンプを取るときは 64ch の中間そのものが見たいので融合しない。
+    const C2SFinalHead head{ "output_layer", out_ch, true };
+    const bool fuse_head = !coords_only && !getenv("TRELLIS_DBG_STAGE_DUMP") && !getenv("TRELLIS_NO_C2S_FUSE");
     // from_latent [32,N] -> [1024,N]
     std::vector<float> h = linear_rows(m, latent, 32, N, "from_latent", 1024, false, kind);
     stage_dump(kind, "from_latent", h, 1024, coords);
@@ -154,14 +162,17 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
         mem_probe("after ConvNeXt stage");
         stage_dump(kind, "stage" + std::to_string(si) + "_convnext", h, st.C, coords);
         const std::vector<uint8_t>* ext = guide_subs ? &(*guide_subs)[si] : nullptr;
+        const bool fuse = fuse_head && si == 3;   // 最終段だけ head を融合する
         C2SResult r = sparse_c2s(m, std::string("blocks.") + st.s + "." + std::to_string(st.c2si), h, st.C, coords, st.Cout, ext,
-                                 (std::string(kind) + "_c2s_stage" + std::to_string(si)).c_str());
+                                 (std::string(kind) + "_c2s_stage" + std::to_string(si)).c_str(),
+                                 fuse ? &head : nullptr);
         if (subs_out) subs_out->push_back(r.subdiv);
         h = std::move(r.feats); coords = std::move(r.coords); N = (int)coords.size();
         mem_probe("after c2s");
-        stage_dump(kind, "stage" + std::to_string(si) + "_c2s", h, st.Cout, coords);
+        stage_dump(kind, "stage" + std::to_string(si) + "_c2s", h, fuse ? out_ch : st.Cout, coords);
     }
     if (coords_only) return {};   // cascade upsample: just need the grown coords
+    if (fuse_head) { stage_dump(kind, "output", h, out_ch, coords); return h; }   // 融合済み
     // final LN(no affine) + output_layer -> [out_ch, M]
     std::vector<float> out = linear_rows(m, h, 64, N, "output_layer", out_ch, true, kind);
     stage_dump(kind, "output", out, out_ch, coords);

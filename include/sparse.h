@@ -29,11 +29,27 @@ ggml_tensor* sparse_convnext(ggml_context* c, const Model& m, const std::string&
 // ext_subdiv: if non-null, use this [8*N] binarized mask (tex decoder guide_subs); else predict
 // via to_subdiv (shape decoder). The returned `subdiv` is the [8*N] mask actually used.
 struct C2SResult { std::vector<float> feats; std::vector<std::array<int,3>> coords; int C = 0; std::vector<uint8_t> subdiv; };
+
+// デコーダ最終段のヘッド（LayerNorm(affine 無し) + Linear）を c2s のグラフに融合するための指定。
+// 最終 C2S の出力 [Cout, M] は res-1024 のテクスチャデコーダで M=4.76M / Cout=64、つまり
+// 1.22 GB になる。従来はこれを host へ読み戻してから output_layer を掛けていたので、wasm32 の
+// 4 GiB ヒープでは読み戻しの時点で std::bad_alloc になっていた。ヘッドを渡すと chunk ごとに
+// [Cout, nr] → LN → Linear → [out_ch, nr] まで進めて 64ch の chunk を捨てるので、device 上に
+// [Cout, M] を作らず、host が受け取るのも [out_ch, M]（6ch なら 114 MB）だけになる。
+// 数値は linear_rows(pre_norm=true) と同じ（eps 1e-5・affine 無しの norm → mul_mat → bias）で、
+// chunk 幅も同じ 1M 列上限なので分割の切れ目も一致する。
+struct C2SFinalHead {
+    std::string prefix;      // 重みは m.get(prefix + ".weight") / ".bias"
+    int out_ch = 0;
+    bool pre_norm = true;    // LayerNorm(affine 無し, eps 1e-5) を先に掛ける
+};
 // `tag`: label for graph_dump.h (TRELLIS_DUMP_OPS), identifying the caller's stage; purely diagnostic.
+// `head`: 非 null なら上記の融合を行い、返る feats は [out_ch * M]・C は out_ch になる。
 C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<float>& feats_in, int Cin,
                      const std::vector<std::array<int,3>>& coords, int Cout,
                      const std::vector<uint8_t>* ext_subdiv = nullptr,
-                     const char* tag = "c2s");
+                     const char* tag = "c2s",
+                     const C2SFinalHead* head = nullptr);
 
 } // namespace trellis

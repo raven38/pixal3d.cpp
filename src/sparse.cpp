@@ -177,7 +177,8 @@ struct GraphRun {
 C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<float>& feats_in, int Cin,
                      const std::vector<std::array<int,3>>& coords, int Cout,
-                     const std::vector<uint8_t>* ext_subdiv, const char* tag) {
+                     const std::vector<uint8_t>* ext_subdiv, const char* tag,
+                     const C2SFinalHead* head) {
     const int N = (int)coords.size();
     if (N == 0) throw std::runtime_error("c2s: empty input coordinate set in " + prefix);
     if (Cin <= 0 || Cout <= 0 || feats_in.size() != (size_t)Cin * N)
@@ -342,6 +343,12 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     if (chunk2 * kMaxChunks2 < M) chunk2 = (M + kMaxChunks2 - 1) / kMaxChunks2;
     if (chunk2 >= M) chunk2 = M;
 
+    // head が指定されていれば、chunk ごとに LN + Linear まで進めて 64ch の chunk をその場で
+    // 捨てる。バッファは [Cout, M] ではなく [out_ch, M] になり、device も host も 1.22 GB を
+    // 持たなくて済む（include/sparse.h の C2SFinalHead を参照）。
+    const int out_c = head ? head->out_ch : Cout;
+    T* Wh = head ? m.get(head->prefix + ".weight") : nullptr;
+    T* bh = head ? m.get(head->prefix + ".bias") : nullptr;
     T* out = nullptr;
     for (int64_t m0 = 0; m0 < M; m0 += chunk2) {
         const int64_t nr2 = std::min<int64_t>(chunk2, M - m0);
@@ -350,11 +357,15 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                 : ggml_cont(c, ggml_view_2d(c, xs, K, nr2, xs->nb[1], (size_t)m0 * xs->nb[1]));
         T* skr = ggml_repeat_4d(c, ggml_reshape_3d(c, xr, 1, K, nr2), R, K, nr2, 1);
         o = ggml_add(c, o, ggml_reshape_2d(c, skr, Cout, nr2));
-        // written into one [Cout, M] buffer, as for hraw above -- a concat chain here would
-        // again peak at 2x the 8.4 GB output. Every column is covered by some chunk, so the
+        if (head) {   // shape_decoder.cpp の linear_rows(pre_norm) と同じ eps / 演算順
+            T* y = head->pre_norm ? ggml_norm(c, o, 1e-5f) : o;
+            o = ggml_add(c, ggml_mul_mat(c, Wh, y), bh);                        // [out_ch, nr2]
+        }
+        // written into one [out_c, M] buffer, as for hraw above -- a concat chain here would
+        // again peak at 2x the output. Every column is covered by some chunk, so the
         // pad's zero fill is overwritten and only sizes the buffer.
-        if (!out) { out = ggml_pad(c, o, 0, (int)(M - nr2), 0, 0); continue; }   // [Cout, M]
-        roots.push_back(ggml_cpy(c, o, ggml_view_2d(c, out, Cout, nr2,
+        if (!out) { out = ggml_pad(c, o, 0, (int)(M - nr2), 0, 0); continue; }   // [out_c, M]
+        roots.push_back(ggml_cpy(c, o, ggml_view_2d(c, out, out_c, nr2,
                                                     out->nb[1], (size_t)m0 * out->nb[1])));
     }
 
