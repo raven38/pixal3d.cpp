@@ -290,8 +290,7 @@ attention・sparse coords・4分割グラフは測れるほどの誤差を持ち
    （どちらも F32 [1024,3,16,16]）は **sha256 が byte 一致**
    （`ce6713297defe2507b1374abcd80f4fe9a2b8920ee1ec79d0747e66602f6d095`）。同じ重みである。
 
-したがって残差 5e-3 は **C++ と参照の DINOv3 forward の差**である。どちら側にあるか
-（どの演算がずれているか）は**未特定**。これは texture 段の問題ではなく、
+したがって残差は **C++ と参照の DINOv3 forward の差**である。**2026-09-09 に層別で特定した（§5b）。**これは texture 段の問題ではなく、
 ss / shape_512 / shape_1024 / tex_1024 の全段が等しく持っている既存の差で、
 `trellis-test-dinov3` 自身の基準（`max|d|/gmax < 5e-2`）の内側にある。DINOv3 段そのものの
 parity 調査は本作業の範囲外。
@@ -309,6 +308,67 @@ transformers は Pixal3D の requirements が pin する **4.57.3**（image の 
 `DINOv3ViTModel.layer` が無く `extract_features` が動かない）。`ref_pixal3d_cond_slat.py` の
 メタは natten 0.21.0 で取られており、**natten の版は一致していない**（NAF は新旧どちらの
 API にも対応しているが、版差の影響は測っていない）。
+
+## 5b. DINOv3 の残差の内訳（2026-09-09、特定済み）
+
+`tools/ref_dinov3_layers.py`（参照、CPU pod で可・natten 不要）と
+`TRELLIS_DBG_DINOV3_LAYERS=<dir>`（C++）で、各ブロック出力の先頭 5 トークン
+（cls + register 4 本 = z_global そのもの）を突き合わせた。入力は同じ CHW
+（PIL LANCZOS + アルファ乗算 + ImageNet 正規化）を両側に与え、conditioning 経路にあった
+resize 実装差（C++ は `stbir_resize_uint8`、参照は PIL LANCZOS）を排除している。
+
+### 見つかった実バグ: 埋め込みトークンが f16 に丸められていた
+
+| 段 | 修正前 | 埋め込みだけ f32 | 全部 f32 |
+|---|---|---|---|
+| 埋め込み（ブロック前） | 2.128e-04 | **0.000e+00** | 0.000e+00 |
+| layer00 | 7.402e-05 | 7.413e-05 | 7.413e-05 |
+| layer23 | 7.410e-05 | 7.427e-05 | 7.427e-05 |
+| final（非アフィン LN 後） | 6.234e-04 | 6.400e-04 | 6.400e-04 |
+
+原因は完全に確定した（3 つの数字が一致する）:
+
+```
+cpp_embed vs GGUF の値   L2 rel = 0.000e+00   （C++ は GGUF の値をそのまま使う）
+ref_embed vs GGUF(f16)   L2 rel = 2.128e-04
+ref を f16 に丸めた場合  L2 rel = 2.128e-04
+```
+
+`cls_token` は `[1024,1,1]`、`reg_token` は `[1024,4,1]` なので `tools/convert.py` の
+「2D 以上は f16」に引っかかっていた。これらは行列積の重みではなく残差ストリームへ直接
+足される値なので、丸めがそのままトークンの誤差になる。f32 に戻して 10 KB 増。
+
+### 残る 6.4e-04 は浮動小数の加算順序（構造的）
+
+埋め込みを直しても layer00 以降は変わらない。**全部 f32 の GGUF でも 4 桁まで同一**
+なので、重み精度でもない。入力はビット完全、埋め込みもビット完全、重みも f32 で、
+なお layer 0 の出力が 1e-4 台ずれる。
+
+| layer00 | L2 rel | 値の桁 |
+|---|---|---|
+| token2（massive activation） | 7.41e-05 | \|max\| = 137 683 |
+| 他 4 トークン | 2.27e-04 | \|max\| = 24 |
+
+DINOv3 の layer 0 は埋め込み O(0.5) を **137 683 まで増幅する（利得 2.9×10^5）**。
+この massive activation を作る過程で桁落ちが起きるため、加算順序の違いがそのまま
+可視の差になる。相対誤差が 24 層を通じて 7.4e-05 でほぼ一定なのは、layer 0 で一度
+入った差が残差接続をそのまま流れているためで、累積していない。
+
+PyTorch のカーネルと加算順序を一致させない限り消えない差であり、DINOv3 段自身の
+判定基準（`src/test_dinov3.cpp` の `max|d|/gmax < 5e-2`）に対して約 700 倍の余裕がある。
+**実害のある差ではないと判断する。**
+
+## 5c. CUDA での `check_graph_supported`（2026-09-09、静的検証）
+
+`src/ss_decoder.cpp` に足した guard が CUDA を壊さないことを、vendored ggml の
+ソースに対して静的に確認した。SS decoder が組む op は
+ADD / CONT / MUL / NORM / PERMUTE / RESHAPE / MUL_MAT / UNARY(SILU) と、
+非 Apple では `ggml_conv_3d` が展開する IM2COL_3D。
+`thirdparty/ggml/src/ggml-cuda/ggml-cuda.cu` の `supports_op` はこのすべてに true を返す
+（IM2COL_3D は 3078 行と 5435 行、SILU は 2900 行）。
+
+**CUDA 実機での実行ではない。** 手元に CUDA が無く、`#ifdef __APPLE__` は
+コンパイル時分岐なので macOS では im2col 経路をそもそも踏めない。
 
 ## 7. 実測（2026-09-08, M4 Max / Chrome WebGPU vs Metal）
 

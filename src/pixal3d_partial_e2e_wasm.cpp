@@ -36,6 +36,9 @@ int run_partial(const string& tex_flow,const string& shape_dec,const string& tex
 #else
  opt.target_faces=1000000;
 #endif
+    // 予算の A/B を native から取るための上書き（既定はこの上で決まる）。
+    if(const char*e=getenv("PIXAL3D_REMESH_RES"))opt.remesh_res=atoi(e);
+    if(const char*e=getenv("PIXAL3D_TARGET_FACES"))opt.target_faces=atoi(e);
     string pr;bool ok=pixal3d_write_production_glb(out,mesh,so.coords,pbr,so.res,opt,&pr);rep("%s",pr.c_str());if(!ok)return 5;
     FILE*f=fopen(out.c_str(),"rb");long bytes=-1;if(f){fseek(f,0,SEEK_END);bytes=ftell(f);fclose(f);}rep("partial-e2e: textured GLB path=%s bytes=%ld atlas=%d\n",out.c_str(),bytes,opt.texture_size);return 0;
 }
