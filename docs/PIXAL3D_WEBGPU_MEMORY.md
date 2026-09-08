@@ -638,3 +638,76 @@ S=512/R=32/T=512・V=2 で dense+`pixal3d_gather_proj` と **全成分ビット�
 `tools/ref_pixal3d_cond_slat.py` の `tex_cond_global.npy` / `tex_cond_proj.npy` は
 DINOv3+NAF(natten)+spconv が要るため CUDA 必須で、この Mac では生成できない。**本節の
 検証は「検証済みの単一グラフ実装との同値性」であり、PyTorch 参照との突き合わせは未実施**。
+
+## 12. Texture Flow の GPU 予算と Q8_0（2026-09-09）
+
+ブラウザで Texture Flow を回すとマシン全体が固まっていた。原因は wasm ヒープではなく
+**GPU 側の常駐量が WebGPU の予算を超えていた**こと。超えても確保は成功するが、
+ユニファイドメモリ上で Metal がメモリを往復させ続け、1 forward が 40 秒から
+139〜176 秒に伸びて帯域を WindowServer ごと奪う。
+
+### 内訳は N（Texture Flow のトークン数 = grid-64 のアクティブボクセル数）に比例する
+
+実測 2 点（native Metal, `TRELLIS_ATTN_CHUNK_MB=128`）から:
+
+```
+活性化 = 59.7 KB/token x N + 0.2 MB      （N=12083 -> 705.1 MB / N=17690 -> 1032.2 MB）
+cond   = 16.0 KB/token x N               （proj [2048,N] を positive/negative 2 本）
+合計   = 重み（固定）+ 75.7 KB/token x N
+```
+
+| 重み | 上限 N（予算 4095 MB） |
+|---|---|
+| f16 2647 MB | **19 600** |
+| Q8_0 1408 MB | **約 36 400** |
+
+N は被写体の grid-64 での**表面積**で決まる（体積ではない。cyclops のアクティブ集合は
+内部ボクセルが 5.0% しかない厚さ 1 層のシェル）。細身の人物で 4 794、頭部の胸像で 17 690。
+
+### 活性化を削る: attention のクエリ分割
+
+活性化 1888 MB の過半は `kAttnChunkBytes = 1024 MB`（sdpa のクエリ分割 1 チャンクあたりの
+スコア行列の予算）そのものだった。下げると:
+
+| `TRELLIS_ATTN_CHUNK_MB` | 活性化 | 備考 |
+|---|---|---|
+| 1024（native の既定） | 1888.1 MB | |
+| 512 | 1381.2 MB | |
+| 256 | 1316.5 MB | 旧 `kMaxAttnChunks = 32` で頭打ち |
+| **128（ブラウザの既定）** | **1032.2 MB** | 上限を 256 に広げた後 |
+| 64 / 32 | 1032.2 MB | attention 以外が支配的になり頭打ち |
+
+クエリ分割は softmax がクエリ行ごとに閉じているので結果が変わらない。**実測でも
+12 step 全部の latent がビット一致**（chunk 1024 対 128、max abs = 0）、所要も
+644.4 -> 602.5 秒で悪化しない。上限を縛っていたのは `flow_runner.cpp` のテンソル
+メタデータ枠（1 本 368 B）で、広げても数十 MB。
+
+### 重みを削る: Q8_0（ブラウザは採用、native は f16 のまま）
+
+`tools/quantize_gguf.py` で 365 テンソルを Q8_0 化 → 2647 MB -> **1408 MB**。
+
+| | f16 | Q8_0 |
+|---|---|---|
+| 合計常駐（N=17690） | 3956 MB（余裕 3.4%） | **2717 MB（余裕 34%）** |
+| 上限 N | 19 600 | **約 36 400** |
+| 12 step 所要 | 602.5 s | 594.5 s |
+| latent の最終差 | — | L2 rel 2.7e-02（step ごとに増幅） |
+| **baseColor 4096^2** | — | **max 7/255**・平均 0.36/255・差>2 の画素 0.019%・差>8 は 0% |
+| metallicRoughness | — | max 1/255 |
+| 4 視点レンダ | — | max 6/255、差>2 の画素 0.024% |
+| 形状（V/F/bbox） | — | **完全一致**（texture flow は色にしか効かない） |
+
+latent の 2.7e-02 は最終的な色では 1 画素単位の max 7/255 にしかならず、それが出るのは
+全画素の 0.019%。**視覚的に区別できない。** 余裕 3.4% では被写体が 1 割大きいだけで
+破綻するので、ブラウザは Q8_0 を使う。native はメモリ制約が無いので f16 のまま
+（参照との一致を優先）。ブラウザ側はファイル名で選ぶだけなのでコード変更は不要
+（`pixal3d_tex_flow_1024_mv.gguf` を Q8_0 版に差し替える）。
+
+### 走らせる前に落とすゲート
+
+`DitRunner` はグラフ確保の直後に weights + activations + cond を合計し、
+`ggml_backend_dev_memory` の total と比べて超えていたら throw する。
+`TRELLIS_DEVICE_BUDGET_MB=4095` でブラウザの予算を native から模擬でき、
+**ブラウザを起動せずに「この入力はブラウザで通るか」を判定できる**。
+`TRELLIS_DBG_BUDGET=1` で内訳表示、`TRELLIS_ALLOW_OVER_BUDGET=1` で意図的に踏める。
+
