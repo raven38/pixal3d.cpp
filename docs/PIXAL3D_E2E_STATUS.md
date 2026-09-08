@@ -158,6 +158,22 @@ res=1024 の narrow-band remesh の出力は被写体で大きく変わる:
 **未検証**。検証するには postprocess 予算を C ABI から渡せるようにして、
 正しい入力で browser 側を 1024/1M で回す必要がある（約 40 分）。
 
+**実測（2026-09-09、native Metal の最大 RSS）**: `pixal3d-partial-run` に
+`PIXAL3D_REMESH_RES` / `PIXAL3D_TARGET_FACES` を足して cyclops（decode 4 730 295 voxel /
+9 485 720 面）で測った。
+
+| `remesh_res` | remesh 出力 | QEM 後 | **native の最大 RSS** |
+|---|---|---|---|
+| 1024 / 1M | 9 158 222 V / 18 318 052 F | 952 316 F | **7.30 GB** |
+| 512 / 500k | 2 267 769 V / 4 536 476 F | 482 520 F | **5.39 GB** |
+
+**`remesh_res=1024` は wasm32 では構造的に不可能**（4 GiB の上限に対し native で 7.30 GB）。
+ポインタ幅が半分になる分を引いても届かない。**512 でも native で 5.39 GB** 必要で、
+ブラウザ側の余裕は無い。この被写体規模では postprocess の予算を native と揃えられない。
+
+小さい被写体（views4_fixed: decode 1 673 286 voxel / 3 409 360 面）は 512 で完走している。
+入力の規模に応じて予算を自動で落とす方が、固定 512 より筋が良い。
+
 **優先度の判断（2026-09-08、§2 の結果を受けて改訂）: 後回しにできるのは小さい被写体だけ。**
 当初は「正しさの blocker ではない」と判断したが、公式サンプル（cyclops、decode で
 950 万三角形）の fixture-input full E2E は `remesh_res=512` でも `std::bad_alloc` で落ちた
