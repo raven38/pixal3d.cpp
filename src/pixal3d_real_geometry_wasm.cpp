@@ -58,6 +58,41 @@ vector<float> tflow(const string&p,const vector<array<int,3>>&co,const Pixal3dCo
  SamplerParams sp;sp.steps=12;sp.guidance_strength=1.f;sp.guidance_rescale=0;sp.gi0=.6f;sp.gi1=.9f;sp.rescale_t=3;
  auto o=sample_flow(f,nz,c.global.data(),ng.data(),c.proj.data(),np.data(),sp);delete r;m.free();return o;}
 
+
+// SS decoder だけは backend を分ける。ggml WebGPU backend は GGML_OP_IM2COL_3D も
+// GGML_OP_CONV_3D も実装していない（docs/PIXAL3D_WEBGPU_OP_GAP.md）。エラーにならず
+// NaN 混じりの logits が返るため、SS の active voxel が潰れて以降の形状が全部壊れる
+// （実測: browser の ss_logits が nonfinite=21143、ss_coords の bbox が x[2..4] に収縮）。
+// trellis-test-pixal3d-ss-sample の dec_gpu=-1 と同じ扱いで CPU backend に載せる。
+constexpr int SS_DEC_BACKEND =
+#ifdef __EMSCRIPTEN__
+    -1;   // CPU
+#else
+    0;
+#endif
+
+// ---- 段ごとの計測（browser と native の最初の食い違いを特定するため）----
+// 形が壊れたときに「どの段までは同じか」を数値で言えるようにする。座標は bbox と重心、
+// テンソルは mean/std/min/max と非有限数。両バックエンドで同じ行が出る。
+void log_coords(const char* tag,const vector<array<int,3>>&c){
+ if(c.empty()){rlog("[stage] %-14s N=0\n",tag);return;}
+ int lo[3]={1<<30,1<<30,1<<30},hi[3]={-(1<<30),-(1<<30),-(1<<30)};double mu[3]={0,0,0};
+ for(const auto&v:c)for(int k=0;k<3;++k){lo[k]=std::min(lo[k],v[k]);hi[k]=std::max(hi[k],v[k]);mu[k]+=v[k];}
+ rlog("[stage] %-14s N=%zu bbox x[%d..%d] y[%d..%d] z[%d..%d] centroid(%.1f,%.1f,%.1f)\n",
+      tag,c.size(),lo[0],hi[0],lo[1],hi[1],lo[2],hi[2],mu[0]/c.size(),mu[1]/c.size(),mu[2]/c.size());}
+void log_vec(const char* tag,const vector<float>&v){
+ if(v.empty()){rlog("[stage] %-14s empty\n",tag);return;}
+ double s1=0,s2=0;float lo=v[0],hi=v[0];size_t nf=0;
+ for(float x:v){if(!std::isfinite(x)){++nf;continue;}s1+=x;s2+=(double)x*x;lo=std::min(lo,x);hi=std::max(hi,x);}
+ const double n=(double)(v.size()-nf),mean=n>0?s1/n:0.0;
+ rlog("[stage] %-14s n=%zu mean=%+.6f std=%.6f min=%+.4f max=%+.4f nonfinite=%zu\n",
+      tag,v.size(),mean,n>0?std::sqrt(std::max(0.0,s2/n-mean*mean)):0.0,lo,hi,nf);}
+// 頂点配列の bbox（最終メッシュがどの軸で潰れているかを段の直後に見る）
+void log_verts(const char* tag,const vector<float>&v){
+ if(v.size()<3){rlog("[stage] %-14s no verts\n",tag);return;}
+ float lo[3]={v[0],v[1],v[2]},hi[3]={v[0],v[1],v[2]};
+ for(size_t i=0;i+2<v.size();i+=3)for(int k=0;k<3;++k){lo[k]=std::min(lo[k],v[i+k]);hi[k]=std::max(hi[k],v[i+k]);}
+ rlog("[stage] %-14s V=%zu bbox size (%.4f, %.4f, %.4f)\n",tag,v.size()/3,hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]);}
 // m: dino, naf, ss_flow, ss_dec, shape512, shape_dec, shape1024 [, tex_flow, tex_dec]
 // tex 付き（m.size()==9）なら live Texture conditioning 以降まで回して textured GLB を書く。
 int run(const vector<string>&m,const string&views,const string&out,uint32_t seed){
@@ -68,9 +103,9 @@ int run(const vector<string>&m,const string&views,const string&out,uint32_t seed
  if(getenv("TRELLIS_NOFA")) g_no_fa=true;   // native から browser と同じ経路を踏むとき
 #endif
  Pixal3dInputViews in;string err;if(!pixal3d_load_input_views(views,in,err)){rlog("input error: %s\n",err.c_str());return 2;}rlog("real input: V=%zu mesh_scale=%.4f\n",in.views512.size(),in.mesh_scale);
- Pixal3dCond cs;{Model d=Model::load(m[0],0);cs=pixal3d_cond_ss_gpu(d,in.views512,512,16,in.mesh_scale);d.free();}vector<float>ng(cs.global.size(),0),np(cs.proj.size(),0);Model sm=Model::load(m[2],0);DiTParams dp;dp.in_ch=8;dp.out_ch=8;dp.d_cond=1024;if(!dit_detect_proj_attn(sm,dp))return 3;auto*dr=make_dense_runner(sm,dp,16,cs.n_global);FlowFwdProj ff=[&](const vector<float>&x,float t,const float*a,const float*b){return dr->forward(x,t,a,b);};SamplerParams s;s.steps=12;s.guidance_strength=7.5f;s.guidance_rescale=.7f;s.gi0=.6f;s.gi1=1;s.rescale_t=5;auto z=sample_flow(ff,noise(8*4096,seed),cs.global.data(),ng.data(),cs.proj.data(),np.data(),s);delete dr;sm.free();vector<float>zd(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zd[(size_t)c*4096+i]=z[c+8*i];vector<array<int,3>>co;{Model d=Model::load(m[3],0);auto l=ss_decode(d,zd);d.free();co=ss_coords(l,64,32);}if(co.empty())return 4;
- Pixal3dCond c5;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);c5=pixal3d_cond_slat_gpu(d,n,in.views512,{512,32,512,in.mesh_scale},nullptr,&co);d.free();n.free();}auto ln=sflow(m[4],co,c5,noise(32*co.size(),seed+1));vector<float>ld(ln.size());for(size_t i=0;i<co.size();++i)for(int c=0;c<32;++c)ld[c+32*i]=ln[c+32*i]*STD[c]+MEAN[c];vector<array<int,3>>up;{Model d=Model::load(m[5],0);up=shape_upsample(d,ld,co);d.free();}std::set<array<int,3>>q;for(auto&c:up)q.insert({(int)std::lround((c[0]+.5f)/512.f*63),(int)std::lround((c[1]+.5f)/512.f*63),(int)std::lround((c[2]+.5f)/512.f*63)});vector<array<int,3>>hr(q.begin(),q.end());rlog("live Shape1024 tokens=%zu\n",hr.size());
- Pixal3dCond ch;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);ch=pixal3d_cond_slat_gpu(d,n,in.views1024,{1024,64,512,in.mesh_scale},nullptr,&hr);d.free();n.free();}auto hn=sflow(m[6],hr,ch,noise(32*hr.size(),seed+2));vector<float>hd(hn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)hd[c+32*i]=hn[c+32*i]*STD[c]+MEAN[c];ShapeOut so;{Model d=Model::load(m[5],0);so=shape_decode(d,hd,hr,1024);d.free();}Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;
+ Pixal3dCond cs;{Model d=Model::load(m[0],0);cs=pixal3d_cond_ss_gpu(d,in.views512,512,16,in.mesh_scale);d.free();}log_vec("ss_cond_glob",cs.global);log_vec("ss_cond_proj",cs.proj);vector<float>ng(cs.global.size(),0),np(cs.proj.size(),0);Model sm=Model::load(m[2],0);DiTParams dp;dp.in_ch=8;dp.out_ch=8;dp.d_cond=1024;if(!dit_detect_proj_attn(sm,dp))return 3;auto*dr=make_dense_runner(sm,dp,16,cs.n_global);FlowFwdProj ff=[&](const vector<float>&x,float t,const float*a,const float*b){return dr->forward(x,t,a,b);};SamplerParams s;s.steps=12;s.guidance_strength=7.5f;s.guidance_rescale=.7f;s.gi0=.6f;s.gi1=1;s.rescale_t=5;auto z=sample_flow(ff,noise(8*4096,seed),cs.global.data(),ng.data(),cs.proj.data(),np.data(),s);delete dr;sm.free();log_vec("ss_latent",z);vector<float>zd(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zd[(size_t)c*4096+i]=z[c+8*i];vector<array<int,3>>co;{Model d=Model::load(m[3],SS_DEC_BACKEND);auto l=ss_decode(d,zd);d.free();log_vec("ss_logits",l);co=ss_coords(l,64,32);}if(co.empty())return 4;log_coords("ss_coords@64",co);
+ Pixal3dCond c5;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);c5=pixal3d_cond_slat_gpu(d,n,in.views512,{512,32,512,in.mesh_scale},nullptr,&co);d.free();n.free();}log_vec("s512_cond_glob",c5.global);log_vec("s512_cond_proj",c5.proj);auto ln=sflow(m[4],co,c5,noise(32*co.size(),seed+1));log_vec("s512_latent",ln);vector<float>ld(ln.size());for(size_t i=0;i<co.size();++i)for(int c=0;c<32;++c)ld[c+32*i]=ln[c+32*i]*STD[c]+MEAN[c];vector<array<int,3>>up;{Model d=Model::load(m[5],0);up=shape_upsample(d,ld,co);d.free();}log_coords("upsample@512",up);std::set<array<int,3>>q;for(auto&c:up)q.insert({(int)std::lround((c[0]+.5f)/512.f*63),(int)std::lround((c[1]+.5f)/512.f*63),(int)std::lround((c[2]+.5f)/512.f*63)});vector<array<int,3>>hr(q.begin(),q.end());rlog("live Shape1024 tokens=%zu\n",hr.size());log_coords("hr_coords@64",hr);
+ Pixal3dCond ch;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);ch=pixal3d_cond_slat_gpu(d,n,in.views1024,{1024,64,512,in.mesh_scale},nullptr,&hr);d.free();n.free();}log_vec("s1024_cond_glob",ch.global);log_vec("s1024_cond_proj",ch.proj);auto hn=sflow(m[6],hr,ch,noise(32*hr.size(),seed+2));log_vec("s1024_latent",hn);vector<float>hd(hn.size());for(size_t i=0;i<hr.size();++i)for(int c=0;c<32;++c)hd[c+32*i]=hn[c+32*i]*STD[c]+MEAN[c];ShapeOut so;{Model d=Model::load(m[5],0);so=shape_decode(d,hd,hr,1024);d.free();}log_coords("decoded_vox",so.coords);Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;log_verts("raw_mesh",mesh.verts);
  if(!with_tex){if(!write_glb(out.c_str(),mesh.verts.data(),mesh.V(),mesh.faces.data(),mesh.F()))return 6;rlog("REAL_INPUT_LIVE_SS=1\nREAL_INPUT_LIVE_SHAPE512=1\nREAL_INPUT_LIVE_SHAPE1024=1\nREAL_INPUT_TEXTURE_COND_BLOCKED=1\nREAL_GEOMETRY_E2E_RESULT: OK V=%d F=%d\n",mesh.V(),mesh.F());return 0;}
  // ---- live Texture-1024 conditioning（fixture 注入なし）----
  Pixal3dCond ct;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);Pixal3dCondStats cst;ct=pixal3d_cond_slat_gpu(d,n,in.views1024,{1024,64,1024,in.mesh_scale},&cst,&hr);d.free();n.free();

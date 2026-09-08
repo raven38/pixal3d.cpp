@@ -68,6 +68,11 @@ static Seg run_seg(const Model& m, const std::vector<float>& in_host,
     ggml_cgraph* g = ggml_new_graph_custom(c, 8192, false);
     ggml_build_forward_expand(g, out);
     trellis_graph_dump(tag, g);
+    // backend が対応していない op を黙って飛ばすと、エラーにならずに NaN 混じりの
+    // logits が返り、SS の active voxel が潰れて以降の形状が全部壊れる（実測: ggml
+    // WebGPU backend は GGML_OP_IM2COL_3D / GGML_OP_CONV_3D を持たず、browser の
+    // ss_logits に nonfinite が 21143 個出た）。ここで先に落とす。
+    check_graph_supported(m.backend, g, tag);
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("ss_dec: alloc failed");
     ggml_backend_tensor_set(in, in_host.data(), 0, in_host.size() * 4);
