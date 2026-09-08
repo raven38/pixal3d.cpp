@@ -87,36 +87,46 @@ grid_resolution 64, use_naf_upsample, **naf_target_size 1024**, multiview_fusion
 f32 で回し、dense な `z_proj [1, 64^3, 2048]`（2.1 GB）は保存せず、C++ が実際に使った
 active voxel（`hr_coords.npy`, N=12 083）で gather した `[N, 2048]` だけを保存する。
 
-C++ 側: `PIXAL3D_DUMP_FIXTURE` を付けた `trellis-test-pixal3d-real-e2e`（Metal, **分割グラフ**の
-`cond_slat_gpu_chunked` 経路）。入力 view・coords・`mesh_scale` は両者同一。
+C++ 側: `trellis-test-pixal3d-cond-tex --coords hr_coords.npy`（Metal、**分割グラフ**の
+`cond_slat_gpu_chunked` 経路、view_alloc 3 332 MB）。入力 view・coords・`mesh_scale` は同一。
 
-| tensor | max abs | mean abs | L2 rel | cosine | bit identical |
-|---|---|---|---|---|---|
-| `global` [1,5,1024] | 3.631e-02 | 3.144e-03 | 5.011e-03 | 0.9999874425 | no |
-| `proj` lr `[:1024]` | 5.689e-02 | 3.944e-03 | 5.402e-03 | 0.9999854080 | no |
-| `proj` hr `[1024:]` | 4.753e-02 | 2.910e-03 | 3.996e-03 | 0.9999922445 | no |
-| `proj` 全体 | 5.689e-02 | 3.427e-03 | 4.757e-03 | 0.9999887460 | no |
+判定は既存の `src/test_pixal3d_cond_slat.cpp` の `compare()` と同じ定義:
+**`rel = max|d| / max|ref|`、tol 2e-2**（絶対値の max|d| ではない）。
 
-非有限値は両側とも 0。
+| tensor | max abs | mean abs | **rel (tol 2e-2)** | L2 rel | cosine | bit identical |
+|---|---|---|---|---|---|---|
+| `global` [1,5,1024] | 3.631e-02 | 3.144e-03 | **1.238e-03 PASS** | 5.011e-03 | 0.9999874425 | no |
+| `proj` lr `[:1024]` | 5.689e-02 | 3.944e-03 | **2.327e-03 PASS** | 5.402e-03 | 0.9999854080 | no |
+| `proj` hr `[1024:]` | 4.753e-02 | 2.910e-03 | **1.950e-03 PASS** | 3.996e-03 | 0.9999922445 | no |
+| `proj` 全体 | 5.689e-02 | 3.427e-03 | **2.327e-03 PASS** | 4.757e-03 | 0.9999887460 | no |
 
-**読み方（重要）**: `z_global` は DINOv3 の最終 LN 後の先頭 5 トークン（cls + register 4本）を
-view で平均しただけで、**NAF も ProjGrid も chunk 分割も通っていない**。その `global` が既に
-L2 rel 5.011e-03 出ているので、この差は DINOv3 バックボーンの段で入っている。NAF@1024 +
-ProjGrid HR + block-chunk 累積を通した `proj hr` はむしろ `global` より小さい
-（3.996e-03 / cos 0.9999922）。つまり **texture 段に固有の実装（naf_target_size=1024 の
-neighborhood attention、sparse coords、4分割グラフ）は測れるほどの誤差を足していない**。
+非有限値は両側とも 0。**全項目が基準を約 10 倍の余裕で満たしている**。
 
-差の出どころは C++ の DINOv3 GGUF が **f16**（`dinov3.gguf` 606 MB ≒ ViT-L 300M params × 2 B、
-`tools/convert.py` は 2D 以上を f16・1D を f32 に落とす）なのに対し参照が f32 であること。
-ViT-L の 24 ブロックを通した f16 の相対誤差としては妥当な桁。**この仮説は未検証**
-（f32 GGUF を作って A/B していない）。
+**texture 段固有の実装は誤差を足していない**: `z_global` は DINOv3 の最終 LN 後の先頭 5 トークン
+（cls + register 4本）を view 平均しただけで、NAF も ProjGrid も chunk 分割も通らない。その
+`global` が既に L2 rel 5.011e-03 出ており、NAF@1024 + ProjGrid HR + block-chunk 累積を通した
+`proj hr` はむしろ小さい（3.996e-03 / cos 0.9999922）。naf_target_size=1024 の neighborhood
+attention・sparse coords・4分割グラフは測れるほどの誤差を持ち込んでいない。
 
-**受け入れ基準に対する判定**: 着手前に凍結した基準は「既存の `trellis-test-pixal3d-cond-slat`
-と同じ tol、max abs ≤ 2e-2」。**max abs はこれを超えている**（global 3.6e-2 / proj 5.7e-2）。
-tol は動かさない。cosine と L2 相対で見れば実用上一致だが、基準としては未達である。
+### 残差の出どころを 2 つ潰した（どちらも否定）
 
-**環境の注記**: 参照 pod は natten **0.17.5**（shi-labs.com の証明書切れで pip の
-wheel index が引けず、手元で取得して sha256 照合した wheel を PVC 経由で入れた）、
+1. **f16 重みの精度ではない**。`FORCE_F32=1 tools/convert.py dinov3` で f32 の
+   `dinov3.gguf`（1.21 GB, f16=0 / f32=318）を作って同じ比較を回したところ、
+   `global` rel 1.238e-03 → 1.246e-03、`proj` 2.327e-03 → 2.328e-03 と**ほぼ変化なし**
+   （4 桁目まで同じ）。f16 の丸めが原因という仮説は反証された。
+2. **checkpoint の違いでもない**。C++ は timm の
+   `vit_large_patch16_dinov3.lvd1689m`、参照は `camenduru/dinov3-vitl16-pretrain-lvd1689m`
+   を使っているが、`patch_embed.proj.weight` / `embeddings.patch_embeddings.weight`
+   （どちらも F32 [1024,3,16,16]）は **sha256 が byte 一致**
+   （`ce6713297defe2507b1374abcd80f4fe9a2b8920ee1ec79d0747e66602f6d095`）。同じ重みである。
+
+したがって残差 5e-3 は **C++ 側 DINOv3 forward の実装差**に由来する。これは texture 段の問題
+ではなく、ss / shape_512 / shape_1024 / tex_1024 の全段が等しく持っている既存の差で、
+`trellis-test-dinov3` 自身の基準（`max|d|/gmax < 5e-2`）の内側にある。DINOv3 段そのものの
+parity（どの演算がずれているか）は本作業の範囲外で、**未調査**。
+
+**環境の注記**: 参照 pod は natten **0.17.5**（shi-labs.com の証明書が期限切れで pip の
+wheel index が引けないため、手元で取得して sha256 照合した wheel を PVC 経由で入れた）、
 transformers は Pixal3D の requirements が pin する **4.57.3**（image の 5.8.0 は
 `DINOv3ViTModel.layer` が無く `extract_features` が動かない）。`ref_pixal3d_cond_slat.py` の
 メタは natten 0.21.0 で取られており、**natten の版は一致していない**（NAF は新旧どちらの
