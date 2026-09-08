@@ -32,10 +32,12 @@ int run_partial(const string& tex_flow,const string& shape_dec,const string& tex
  // wasm32 のヒープは 4 GiB が上限。res=1024 の narrow-band remesh は実測 7.8M 頂点 /
  // 15.6M 面を作り、その後の QEM と合わせて収まらない（std::bad_alloc）。粗いグリッドで
  // 同じ経路を回す。使った値は postprocess の report 行に出る。
- // 2026-09-09: 実測で wasm の live ピークは native の最大 RSS の約 1/3（remesh 512 で
- // native 5.39 GB 対 wasm 1.87 GB）。ポインタ幅が半分なのと vector の容量確保の差による。
- // 1024 が 4 GiB に収まるかを測るため既定を native と揃える。収まらなければ戻す。
- opt.remesh_res=1024;opt.target_faces=1000000;
+ // 実測（2026-09-09, cyclops: decode 9 485 680 面）:
+ //   512  -> remesh 4 536 496 面、host live ピーク 1 869 MB、完走
+ //   1024 -> remesh に入った時点で live 1 644 MB、18 318 052 面を作ろうとして std::bad_alloc
+ // native の最大 RSS は 512 で 5.39 GB / 1024 で 7.30 GB。wasm の live ピークは native の
+ // 約 1/3（ポインタ幅が半分・vector の容量確保の差）だが、それでも 1024 は 4 GiB に入らない。
+ opt.remesh_res=512;opt.target_faces=500000;
 #else
  opt.target_faces=1000000;
 #endif
