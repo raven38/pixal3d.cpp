@@ -127,31 +127,39 @@ browser は `web/texture/run_playwright.js`（Chrome/WebGPU）。同じ条件・
 非有限値は両側とも 0。誤差は step とともに単調に積み上がるだけで、跳ぶ step は無い
 （spec 32 の step-jump 破損の兆候は出ていない）。実時間は browser 496.0 s / native 12 forwards。
 
-## 7b. 未解決: ブラウザの live geometry が X 軸につぶれる（2026-09-08 発見）
+## 7b. 解決済み: ブラウザの live geometry が X 軸に潰れていた（2026-09-08）
 
-browser の real-input full E2E は**完走して textured GLB を書く**が、出てくる形状は板状につぶれている。
+**症状**: browser の real-input E2E は完走して GLB を書くのに、形状が X 軸に潰れていた
+（最終 GLB の bbox [0.101, 0.996, 0.980]。native は [0.905, 0.971, 0.578]）。
 
-| GLB | bbox サイズ (x,y,z) | 出所 |
-|---|---|---|
-| browser full E2E | **[0.101, 0.996, 0.980]** | ブラウザの live shape latent |
-| browser partial E2E | [0.968, 0.972, 0.579] | native の shape latent を fixture で注入 |
-| native full E2E (NOFA) | [0.905, 0.971, 0.578] | native の live shape latent |
+**切り分け**: 実入力パイプラインの各段に計測（座標の bbox / 重心、テンソルの
+mean/std/min/max/非有限数）を入れて browser と native を並べた。
 
-X 方向だけ約 1/9 に潰れている。**レンダの見え方ではなく実際の頂点座標**（4 視点レンダも板を映す）。
+| stage | native (Metal) | browser 修正前 | browser 修正後 |
+|---|---|---|---|
+| `ss_cond_proj` | std 0.966560 | 0.966559 | 0.966559 |
+| `ss_latent` | mean +0.007359 std 0.532235 | +0.007341 / 0.532413 | 同左 |
+| **`ss_logits`** | mean −146.74 std 56.01 **nonfinite 0** | mean −27.60 std **12518** **nonfinite 21143** | mean −146.78 std 56.07 **nonfinite 0** |
+| `ss_coords@64` | x[0..31] y[0..31] z[5..24] centroid(15.2,18.4,15.3) | **x[2..4]** y[0..31] z[0..31] | x[0..31] y[0..31] z[5..24] centroid(15.2,18.4,15.3) |
+| `hr_coords@64` | N=12 083 x[1..63] z[11..48] | N=10 901 **x[4..10]** | N=11 907 x[1..62] z[11..48] |
+| raw mesh bbox | (0.9652, 0.9692, 0.5763) | — | **(0.9537, 0.9750, 0.5799)** |
 
-切り分けられている範囲:
+**根本原因**: ggml WebGPU backend は `GGML_OP_IM2COL_3D` も `GGML_OP_CONV_3D` も実装して
+いない（`docs/PIXAL3D_WEBGPU_OP_GAP.md`: "every Conv3d in this file is unsupported
+regardless of which branch compiles"）。SS decoder (`src/ss_decoder.cpp`) は全段が Conv3d で、
+かつ `ss_decode` は `trellis_graph_dump` は呼ぶが **`check_graph_supported` を呼んでいなかった**
+ため、FlashAttention のときのように実行前に弾かれず、黙って NaN 混じりの occupancy logits を
+返していた。その logits から取った active voxel が薄いスラブになり、以降の Shape-512 /
+Shape-1024 / decode が全部その上に積み上がっていた。
 
-- **shape decode / dual grid / texture flow / texture decode / production postprocess は
-  ブラウザで正しい** —— partial E2E が native 由来の latent から native と同じ形を出している。
-- **live Texture-1024 conditioning も正しい**（本文書 §0 の同値性、および partial との整合）。
-- 疑わしいのは **ブラウザ側の SS → Shape-512 → upsample → Shape-1024 のどこか**。
-  Shape-1024 の token 数も browser 10 901 / native 12 083 と 1 割少なく、潰れた形状と整合する。
-- ブラウザ 2 run で token 数は 10 901 で一致するので、**再現性はある**（乱数の揺らぎではない）。
+**修正**:
 
-これは今回のタスクの blocker（Texture-1024 conditioning）とは別の、**新たに見つかった browser 固有の
-不具合**。v0.9 を tag する前に潰す必要がある。次の一手は、ステージごとの latent を browser と
-native で dump して最初に食い違う段を特定すること（`web/ss` の harness が SS / Shape-512 の
-latent を吐けるので、そこから）。
+1. wasm ビルドでは **SS decoder だけ CPU backend に載せる**（`Model::load(path, -1)`。
+   `trellis-test-pixal3d-ss-sample` の `dec_gpu=-1` と同じ扱い）。他の段は WebGPU のまま。
+2. `ss_decode` に `check_graph_supported` を追加し、同種の「黙って壊れる」を実行前のエラーにする。
+
+**教訓**: `check_graph_supported` を通っているグラフ（DiT / conditioning / NAF）は未対応 op を
+実行前に弾くが、通っていないグラフは黙って壊れる。新しいグラフを足したら必ず通すこと。
 
 ## 6. 走らせ方（このリポジトリでの実行手順）
 
