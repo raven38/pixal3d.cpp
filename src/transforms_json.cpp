@@ -157,6 +157,7 @@ bool load_transforms_json(const std::string& path, TransformsFile& out) {
         out.camera_angle_x = (float)v->num; out.has_camera_angle_x = true;
     }
     if (const JsonValue* v = obj_get(root, "mesh_scale"); v && v->type == JsonType::Number) {
+        out.has_mesh_scale = true;
         out.mesh_scale = (float)v->num;
     }
 
