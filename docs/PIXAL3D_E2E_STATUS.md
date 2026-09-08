@@ -89,8 +89,11 @@ active voxel（`hr_coords.npy`, N=12 083）で gather した `[N, 2048]` だけ�
 
 C++ 側: `trellis-test-pixal3d-cond-tex --coords hr_coords.npy`（Metal、**分割グラフ**の
 `cond_slat_gpu_chunked` 経路、view_alloc 3 332 MB）。入力 view・coords・`mesh_scale` は同一。
+`PIXAL3D_DUMP_FIXTURE` を付けた `trellis-test-pixal3d-real-e2e` の dump とこのテストの出力は
+**bit 一致**（`max|d| = 0`）なので、どちらを比較に使っても同じ。
 
-判定は既存の `src/test_pixal3d_cond_slat.cpp` の `compare()` と同じ定義:
+比較は `tools/compare_cond_ref.py <ref_dir> <cpp_dir_or_prefix>` で再現できる。判定は既存の
+`src/test_pixal3d_cond_slat.cpp` の `compare()` と同じ定義:
 **`rel = max|d| / max|ref|`、tol 2e-2**（絶対値の max|d| ではない）。
 
 | tensor | max abs | mean abs | **rel (tol 2e-2)** | L2 rel | cosine | bit identical |
@@ -120,10 +123,18 @@ attention・sparse coords・4分割グラフは測れるほどの誤差を持ち
    （どちらも F32 [1024,3,16,16]）は **sha256 が byte 一致**
    （`ce6713297defe2507b1374abcd80f4fe9a2b8920ee1ec79d0747e66602f6d095`）。同じ重みである。
 
-したがって残差 5e-3 は **C++ 側 DINOv3 forward の実装差**に由来する。これは texture 段の問題
-ではなく、ss / shape_512 / shape_1024 / tex_1024 の全段が等しく持っている既存の差で、
+したがって残差 5e-3 は **C++ と参照の DINOv3 forward の差**である。どちら側にあるか
+（どの演算がずれているか）は**未特定**。これは texture 段の問題ではなく、
+ss / shape_512 / shape_1024 / tex_1024 の全段が等しく持っている既存の差で、
 `trellis-test-dinov3` 自身の基準（`max|d|/gmax < 5e-2`）の内側にある。DINOv3 段そのものの
-parity（どの演算がずれているか）は本作業の範囲外で、**未調査**。
+parity 調査は本作業の範囲外。
+
+**参照テンソルの所在**: pod の PVC `/nfs/pixal3d_condtex/out/`
+（`tex_cond_global.npy` sha256 `312e5875…`、`tex_cond_proj.npy` sha256 `d6b07833…`、
+`meta.json`、および `s1024_images.npy` / `camera_angle_x.npy` / `transform_matrix.npy` /
+`mesh_scale.npy`）。入力の coords は `/nfs/pixal3d_condtex/podsend/hr_coords.npy`。
+`kubectl cp` は 99 MB の `tex_cond_proj.npy` を 1 度無言で切り詰めたので、取り出しは毎回
+sha256 で照合すること。
 
 **環境の注記**: 参照 pod は natten **0.17.5**（shi-labs.com の証明書が期限切れで pip の
 wheel index が引けないため、手元で取得して sha256 照合した wheel を PVC 経由で入れた）、
