@@ -37,6 +37,7 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
 #include <emscripten/heap.h>
+#include <malloc.h>
 #define PIXAL3D_FULL_EXPORT EMSCRIPTEN_KEEPALIVE
 #else
 #define PIXAL3D_FULL_EXPORT
@@ -51,10 +52,18 @@ void frep(const char* fmt, ...) {
     char b[2048]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
     g_full_report += b; fputs(b, stdout); fflush(stdout);
 }
-// wasm32 の 4 GiB ヒープでどこまで積んだかを段ごとに残す。native では何も出さない。
+// wasm32 の 4 GiB ヒープの内訳を段ごとに残す。native では何も出さない。
+// grown は emscripten_get_heap_size()、つまり **一度 grow した linear memory のサイズ**で、
+// free しても縮まない high-water mark。live/free は mallinfo() の実測値で、こちらが
+// 「いま本当に確保されている量」。bad_alloc は live + 断片化 + 単発の巨大要求が
+// 4 GiB に当たって起きるので、grown だけを見て残量を語らないこと。
+// mallinfo の各フィールドは int なので 2 GB を超えると負になる。unsigned で読み直す。
 void fheap(const char* tag) {
 #ifdef __EMSCRIPTEN__
-    frep("[heap] %-18s %.0f MB\n", tag, emscripten_get_heap_size() / 1048576.0);
+    struct mallinfo mi = mallinfo();
+    frep("[heap] %-18s grown %.0f MB  live %.0f MB  free %.0f MB\n", tag,
+         emscripten_get_heap_size() / 1048576.0,
+         (double)(unsigned)mi.uordblks / 1048576.0, (double)(unsigned)mi.fordblks / 1048576.0);
 #else
     (void)tag;
 #endif
@@ -135,9 +144,18 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
     Pixal3dCond c512;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{512,32,512,mesh_scale};c512=pixal3d_cond_slat_gpu(d,n,v512,prm,nullptr,&coords);d.free();n.free();}auto lrnorm=shape_flow(model[4],coords,c512,deterministic_noise(fixture+"/shape_noise.npy",32*coords.size(),seed+1));vector<float>lrdn(lrnorm.size());for(size_t n=0;n<coords.size();++n)for(int c=0;c<32;++c)lrdn[c+32*n]=lrnorm[c+32*n]*SHAPE_STD[c]+SHAPE_MEAN[c];
     // upsample + Pixal3D quantize to grid64
     vector<array<int,3>> up;{Model d=Model::load(model[5],0);up=shape_upsample(d,lrdn,coords);d.free();}std::set<array<int,3>>qs;for(auto&c:up)qs.insert({(int)std::lround((c[0]+.5f)/512.f*63.f),(int)std::lround((c[1]+.5f)/512.f*63.f),(int)std::lround((c[2]+.5f)/512.f*63.f)});vector<array<int,3>>hr(qs.begin(),qs.end());frep("Shape512 -> Shape1024 tokens=%zu\n",hr.size());
+    // hr が確定したらもう要らない。qs は node-based container なので vector より遥かに重い。
+    std::set<array<int,3>>().swap(qs);up.clear();up.shrink_to_fit();
+    // SS / Shape512 の conditioning と 512 の view はここから先で一度も読まない。
+    css=Pixal3dCond{};c512=Pixal3dCond{};neg.clear();neg.shrink_to_fit();negp.clear();negp.shrink_to_fit();
+    z.clear();z.shrink_to_fit();zdec.clear();zdec.shrink_to_fit();
+    lrnorm.clear();lrnorm.shrink_to_fit();lrdn.clear();lrdn.shrink_to_fit();
+    v512.clear();v512.shrink_to_fit();fheap("after Shape512");
     // Shape1024 live cond + flow (NAF T512, supported path)
     Pixal3dCond c1024;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{1024,64,512,mesh_scale};c1024=pixal3d_cond_slat_gpu(d,n,v1024,prm,nullptr,&hr);d.free();n.free();}
     auto shnorm=shape_flow(model[6],hr,c1024,deterministic_noise(fixture+"/hr_shape_noise.npy",32*hr.size(),seed+2));vector<float>shdn(shnorm.size());for(size_t n=0;n<hr.size();++n)for(int c=0;c<32;++c)shdn[c+32*n]=shnorm[c+32*n]*SHAPE_STD[c]+SHAPE_MEAN[c];
+    // c1024.proj は N*2048*4（N=17 660 で約 145 MB）。Shape1024 flow を抜けたら不要。
+    c1024=Pixal3dCond{};fheap("after Shape1024");
     // Texture-1024 conditioning（live）。debug=1 のときだけ旧 fixture 経路。
     Pixal3dCond ct; bool live_tex_cond=true;
     if(tex_cond_fixture){
@@ -150,9 +168,15 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
         frep("live tex cond: tokens=%zu d_proj=%d graph peak %.1f MB resident %.1f MB %.1f s\n",hr.size(),ct.d_proj,cst.view_alloc_bytes/1048576.0,(cst.weight_bytes+cst.cond_bytes)/1048576.0,cst.total_ms/1000.0);
     }
     auto txnorm=texture_flow(model[7],hr,ct,shnorm,deterministic_noise(fixture+"/tex_noise.npy",32*hr.size(),seed+3));vector<float>txdn(txnorm.size());for(size_t n=0;n<hr.size();++n)for(int c=0;c<32;++c)txdn[c+32*n]=txnorm[c+32*n]*TEX_STD[c]+TEX_MEAN[c];
+    // ct.proj も N*2048*4（約 145 MB）。Texture Flow を抜けたら conditioning は全部不要。
+    ct=Pixal3dCond{};v1024.clear();v1024.shrink_to_fit();
+    shnorm.clear();shnorm.shrink_to_fit();txnorm.clear();txnorm.shrink_to_fit();fheap("after TextureFlow");
     ShapeOut so;{Model d=Model::load(model[5],0);so=shape_decode(d,shdn,hr,1024);d.free();}
+    shdn.clear();shdn.shrink_to_fit();
     frep("shape_decode done: %zu voxels res=%d\n",so.coords.size(),so.res);fheap("shape_decode");
     Mesh mesh=dual_grid_to_mesh(so);if(mesh.F()<=0)return 5;
+    // feats7 は [7,M]（M=4.76M で約 133 MB）。メッシュを作ったら tex decoder には要らない。
+    so.feats7.clear();so.feats7.shrink_to_fit();
     frep("mesh V=%d F=%d\n",mesh.V(),mesh.F());fheap("dual_grid_to_mesh");
     vector<float>raw;{Model d=Model::load(model[8],0);raw=tex_decode(d,txdn,hr,so.subs);d.free();}if(raw.size()!=so.coords.size()*6)return 5;
     frep("tex_decode done: %zu voxels x6 (%.1f MB)\n",so.coords.size(),raw.size()*4/1048576.0);fheap("tex_decode");
