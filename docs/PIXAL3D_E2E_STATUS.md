@@ -77,6 +77,32 @@ TriBvh（950 万三角形）と QEM を 4 GiB のヒープ内で持てない。*
 fixture 経路そのものの問題ではない。§4 の「後回しでよい」判断はこの結果で見直しが要る:
 **予算差は品質の問題にとどまらず、被写体が大きいと browser では完走しない**。
 
+**より小さい被写体では完走する（= fixture 経路は動く）**。`views4 + mesh_scale=0.206` の
+bundle（decode 175 万 voxel / 369 万三角形）で同じ harness を回すと:
+
+```
+FULL_E2E_LIVE_SS=1 / LIVE_SHAPE512=1 / LIVE_SHAPE1024=1 / LIVE_TEXTURE_COND=1
+FULL_E2E_TEXTURE_FLOW=1 / FULL_E2E_GLB=1
+FULL_MODEL_E2E_RESULT: LIVE_ALL_STAGES V=1754158 F=3675898
+FULL_FIXTURE_RESULT: OK_LIVE_TEXTURE_COND   (GLB 21 665 332 B)
+```
+
+所要は SS 180.6 s / Shape-512 25.5 s / Shape-1024 328.0 s（4 794 token, native 4 750）/
+live tex cond 65.9 s（graph peak 1 538 MB）/ Texture Flow 165.0 s /
+postprocess remesh 1 353 592 面 → QEM 447 556 面。
+
+| | browser fixture 経路 | native real-input 経路 |
+|---|---|---|
+| 前処理 | PIL LANCZOS（bundle） | `stbir_resize_uint8` |
+| Shape-1024 tokens | 4 794 | 4 750 |
+| 最終 GLB | V=336 487 F=447 556 | V=694 278 F=945 776 |
+| bbox | (0.6296, 0.9989, 0.3126) | (0.6320, 0.9858, 0.3115) |
+| 入力に対する mean silhouette IoU | **0.9044** | **0.9089** |
+
+**fixture-input full E2E は解決済み**。前処理も seed も違う 2 経路が IoU 0.904 対 0.909 で
+一致しており、bundle 経路が real-input 経路と同じ形を出すことが確認できた。
+残る制約は §4 の tail のサイズ上限だけである。
+
 ## 3. Partial E2E（最小の integration gate）
 
 Browser target: `pixal3d-webgpu-partial-e2e-wasm`、harness `web/partial_e2e/`
