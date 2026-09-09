@@ -17,7 +17,31 @@ tauri-apps/tauri#5286, closed as not planned). So the mapping is: tag `v0.9.0-de
 artifact metadata `0.9.0`, and a release note must state both. Rust is not installed on the
 reference machine, so `cargo`/`tauri build` was not run locally for this change; `npm run build`
 (tsc --noEmit + vite) passes, and the Linux `tauri build --no-bundle` gate in
-`.github/workflows/studio-tauri-xvfb.yml` covers the Rust side. Installer paths that rely on `releases/latest` must also be verified for prerelease/tag-specific assets instead of assuming the latest stable release.
+`.github/workflows/studio-tauri-xvfb.yml` covers the Rust side. The installers resolve a concrete release before downloading anything (#36). `--tag`/`-Tag` takes
+an explicit tag, `latest` the newest stable, `latest-prerelease` the newest release *including*
+prereleases; `/releases/latest` (which skips prereleases) is reached only by the explicit `latest`
+channel, so an explicitly named tag or `latest-prerelease` can never fall back to stable assets.
+An explicit tag is rejected unless the API returns that exact tag, and tags are restricted to
+`[A-Za-z0-9._+-]` so a tag cannot smuggle a URL fragment or path segment. Every expected asset must
+be present in the resolved release — the check is an exact literal match — otherwise the install
+stops with the resolved tag and the actual asset list. A receipt is written to
+`<config dir>/release.json`: repo, tag, release id, the tag's commit SHA (resolved via
+`/commits/<tag>`, because `target_commitish` may be a branch name), requested tag, runtime bundle,
+backend and model set.
+
+Behaviour change: the desktop app asset is now required. Previously a missing AppImage / setup.exe
+only warned and left a runtime-only install; now the install stops before downloading anything.
+Pass `--skip-app` / `-SkipApp` for a runtime-only install. A prerelease Desktop alpha is therefore installed as:
+
+```sh
+./install/install.sh --repo raven38/pixal3d.cpp --tag v0.9.0-desktop-alpha    # Linux
+./install/install.ps1 -Repo raven38/pixal3d.cpp -Tag v0.9.0-desktop-alpha     # Windows
+```
+
+While this repository is private, both installers need `GITHUB_TOKEN`/`GH_TOKEN` with `repo`
+access — the public asset URL 404s, so with a token they download through the API asset endpoint.
+Making the alpha release public is the alternative; that is a distribution decision, not a script
+change.
 
 Every release note must record runtime commit, model-set/version, manifest SHA256, validated hardware/browser surfaces, and known issues.
 
@@ -156,7 +180,8 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | CUDA `ss_decode` graph-support path exercised on NVIDIA hardware | ✅ #11 | NVIDIA L4 validation |
 | Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
-| Installer downloads/verifies the exact release manifest/model set | ⬜ | clean-install release candidate |
+| Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` is unverified beyond static checks — no PowerShell on the reference machine |
+| Installer downloads/verifies the exact model set against its manifest | ⬜ | still open: the installers fetch the inherited TRELLIS.2 weights from HF and only record `model_set`/`version` from an existing `pixal3d-models.json`; they do not download or SHA256-verify the Pixal3D set |
 | Package/Tauri version matches `v0.9.0-desktop-alpha` | ✅ | #35: metadata `0.9.0` in all four files; tag carries `-desktop-alpha` (see above) |
 
 Desktop alpha deliberately requires an explicit positive `mesh_scale`. Automatic estimation from PR #5 is not part of the release path because the real calibration datasets produced large errors (cyclops expected ~1.0 → 1.261568; views4 expected ~0.206 → 0.381288).
