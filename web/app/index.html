@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pixal3D Web</title>
+<style>
+:root{font-family:Inter,ui-sans-serif,system-ui;color:#e9eef5;background:#0b0e12}*{box-sizing:border-box}body{margin:0}.top{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid #232933;background:#10141a}.brand{font-weight:700}.badge{font-size:12px;padding:4px 8px;border:1px solid #384253;border-radius:99px}.wrap{display:grid;grid-template-columns:minmax(360px,520px) 1fr;min-height:calc(100vh - 56px)}.left{padding:18px;border-right:1px solid #232933;overflow:auto}.right{min-width:0;display:flex;flex-direction:column}.card{border:1px solid #2a313c;border-radius:12px;background:#12171e;padding:12px;margin-bottom:12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.muted{color:#9aa7b6;font-size:12px}.primary,.btn{border:0;border-radius:8px;padding:9px 12px;cursor:pointer}.primary{background:#eaf2ff;color:#10141a;font-weight:650}.btn{background:#242c37;color:#e9eef5;border:1px solid #364150}.primary:disabled,.btn:disabled{opacity:.45;cursor:not-allowed}.progress{height:6px;background:#222a34;border-radius:99px;overflow:hidden;margin-top:8px}.bar{height:100%;width:0;background:#eaf2ff}.viewer{flex:1;min-height:480px;background:#090b0e;display:grid;place-items:center}.viewer model-viewer{width:100%;height:100%;min-height:480px}.viewer-empty{color:#687687}.toolbar{padding:10px 14px;border-top:1px solid #232933;display:flex;gap:8px}.log{max-height:180px;overflow:auto;white-space:pre-wrap;font:11px ui-monospace,SFMono-Regular,monospace;background:#090b0e;padding:8px;border-radius:8px}.cal{border:0!important;padding:0!important;margin:0!important}.cal-head{display:flex;justify-content:space-between}.cal-drop{border:1px dashed #566273;border-radius:10px;padding:14px;text-align:center;cursor:pointer;margin:10px 0}.cal-drop.drag{border-color:#7dcfff;background:#10202a}.cal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.cal-view{position:relative;aspect-ratio:1;background:#0b0e12;overflow:hidden;border-radius:8px;cursor:grab}.cal-view.dragging{opacity:.45}.cal-view img{width:100%;height:100%;object-fit:contain}.cal-view .guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:2px solid #50d2ff;pointer-events:none}.cal-view span{position:absolute;left:6px;bottom:5px;background:#0009;padding:2px 5px;border-radius:4px;font-size:10px}.cal-view .ord{position:absolute;right:6px;top:5px;background:#0009;padding:2px 5px;border-radius:4px;font-size:10px}.cal-controls{display:grid;grid-template-columns:1fr 96px;gap:8px}.cal-controls input{width:100%}.cal-msg{font-size:12px;color:#9aa7b6;margin:8px 0}.ok{color:#75d49b}.warn{color:#e6b85c}@media(max-width:900px){.wrap{grid-template-columns:1fr}.right{min-height:520px}.left{border-right:0;border-bottom:1px solid #232933}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">◈ Pixal3D Web</div><span id="webgpu" class="badge">checking WebGPU…</span></header>
+<main class="wrap">
+<section class="left">
+  <div class="card">
+    <b>Model storage</b>
+    <div id="model-status" class="muted" style="margin-top:6px">Checking browser storage…</div>
+    <div class="progress"><div id="model-bar" class="bar"></div></div>
+    <div class="muted" style="margin-top:8px">Install requires <code>pixal3d-models.json</code> plus its GGUF files. Size and SHA-256 are verified before the cache becomes ready.</div>
+    <div class="row" style="margin-top:10px"><button id="install-models" class="btn">Install verified model set…</button><input id="model-files" type="file" multiple accept=".gguf,.json,application/json" hidden></div>
+  </div>
+  <div class="card"><div id="calibration"></div></div>
+  <div class="card">
+    <div class="row"><label>Resolution <select id="resolution"><option value="1024">1024</option><option value="1536" disabled>1536 (desktop only)</option></select></label><label>Seed <input id="seed" type="number" value="1" min="0" style="width:90px"></label></div>
+    <div class="row" style="margin-top:12px"><button id="run" class="primary" disabled>Generate 3D</button><button id="cancel" class="btn" disabled>Cancel</button></div>
+    <div id="progress-text" class="muted" style="margin-top:8px"></div>
+  </div>
+  <details class="card"><summary>Developer log</summary><pre id="log" class="log"></pre></details>
+</section>
+<section class="right">
+  <div id="viewer" class="viewer"><div class="viewer-empty">Generated GLB preview appears here.</div></div>
+  <div class="toolbar"><button id="reset" class="btn" disabled>Reset view</button><button id="download" class="btn" disabled>Download GLB</button></div>
+</section>
+</main>
+<script type="module" src="main.js"></script>
+</body>
+</html>
