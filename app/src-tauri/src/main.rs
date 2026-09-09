@@ -4,6 +4,7 @@
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 mod config;
+mod model_cache;
 mod server;
 
 use server::ServerState;
@@ -29,15 +30,12 @@ fn default_output_dir() -> String {
     config::default_output_dir()
 }
 
-/// Resolve the output dir (creating it), return the full path for `name` so the UI
-/// can write the GLB there via the fs plugin.
 #[tauri::command]
 fn output_path(name: String) -> Result<String, String> {
     let dir = config::resolve_output_dir()?;
     Ok(dir.join(name).to_string_lossy().into_owned())
 }
 
-/// Open `path` in the OS file browser (Explorer / Finder / xdg-open).
 fn open_in_file_browser(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let mut cmd = std::process::Command::new("explorer");
@@ -50,28 +48,21 @@ fn open_in_file_browser(path: &std::path::Path) -> Result<(), String> {
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// Open the output directory in the OS file browser.
-/// AppData\Local is awkward to reach in Explorer, so this button matters.
 #[tauri::command]
 fn open_output_dir() -> Result<(), String> {
     let dir = config::resolve_output_dir()?;
     open_in_file_browser(&dir)
 }
 
-/// The logs directory path (whether or not it exists yet).
 #[tauri::command]
-fn logs_dir() -> String {
-    config::logs_dir()
-}
+fn logs_dir() -> String { config::logs_dir() }
 
-/// Open the logs directory in the OS file browser, creating it if needed.
 #[tauri::command]
 fn open_logs_dir() -> Result<(), String> {
     let dir = config::resolve_logs_dir()?;
     open_in_file_browser(&dir)
 }
 
-/// Path of the current/last server launch's log file, if any.
 #[tauri::command]
 fn current_log_path(state: tauri::State<ServerState>) -> Option<String> {
     server::log_path(state.inner())
@@ -80,14 +71,38 @@ fn current_log_path(state: tauri::State<ServerState>) -> Option<String> {
 #[tauri::command]
 fn restart_server(app: tauri::AppHandle, state: tauri::State<ServerState>) -> Result<(), String> {
     let cfg = config::load().ok_or("no config.json found")?;
-    // Explicit restart: the user just changed settings, so never reuse a stale
-    // server on the port — spawn fresh so the new config actually takes effect.
     server::start(&app, &cfg, state.inner(), false)
 }
 
 #[tauri::command]
 fn server_running(state: tauri::State<ServerState>) -> bool {
     server::is_running(state.inner())
+}
+
+#[tauri::command]
+fn model_cache_info() -> Result<model_cache::ModelCacheInfo, String> {
+    let root = model_cache::managed_root()?;
+    let active = config::load().map(|c| c.models_dir).unwrap_or_default();
+    model_cache::inspect(&root, &active)
+}
+
+#[tauri::command]
+fn delete_managed_model_cache(state: tauri::State<ServerState>) -> Result<u64, String> {
+    let root = model_cache::managed_root()?;
+    match config::load() {
+        Some(cfg) => {
+            let info = model_cache::inspect(&root, &cfg.models_dir)?;
+            if info.active_is_managed {
+                server::stop(state.inner());
+            }
+        }
+        None => {
+            // If config cannot be read, we cannot prove the running server is not
+            // using the managed cache. Stop conservatively before destructive I/O.
+            server::stop(state.inner());
+        }
+    }
+    model_cache::delete_all(&root)
 }
 
 fn main() {
@@ -115,10 +130,11 @@ fn main() {
             open_logs_dir,
             current_log_path,
             restart_server,
-            server_running
+            server_running,
+            model_cache_info,
+            delete_managed_model_cache
         ])
         .setup(|app| {
-            // Auto-launch the server if the installer already wrote a usable config.
             if let Some(cfg) = config::load() {
                 if !cfg.server_bin.is_empty() {
                     let state = app.state::<ServerState>();
