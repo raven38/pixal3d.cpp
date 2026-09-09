@@ -12,31 +12,6 @@ export interface GenParams {
   uv: Uv;
 }
 
-/**
- * Pixal3D multiview の入力一式（POST /generate_mv に対応）。
- * transforms は transforms.json のバイト列、views は frames[].file_path と同名のファイル。
- * mesh_scale が無いと推論側が既定 1.0 で静かに壊れる（2026-09-08 実測: シルエット IoU
- * 0.909 -> 0.107）ので、送る前に validateMultiview() で弾く。
- */
-export interface MultiviewInput {
-  transforms: string; // transforms.json の中身
-  views: File[]; // frames[].file_path と同名
-}
-
-/** POST /generate_mv のノブ。resolution / bgRemoval は multiview では使わない。 */
-export interface MvParams {
-  seed: number;
-  uv: Uv;
-  /** 0 = transforms.json の全フレームを使う。 */
-  numViews: number;
-}
-
-export const DEFAULT_MV_PARAMS: MvParams = {
-  seed: 42,
-  uv: "xatlas",
-  numViews: 0,
-};
-
 export const DEFAULT_PARAMS: GenParams = {
   resolution: 1024,
   seed: 42,
