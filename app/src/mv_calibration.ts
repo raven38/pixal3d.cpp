@@ -1,5 +1,12 @@
 import { generateMultiview, type MultiviewFile } from "./api";
 import { listen } from "./tauri";
+import {
+  hasErrors,
+  imageAlphaStatus,
+  validateMetadata,
+  type AlphaCheckResult,
+  type PreflightItem,
+} from "./mv_preflight";
 
 interface TransformFrame {
   file_path: string;
@@ -17,6 +24,8 @@ type ViewEntry = { file: File; frame: TransformFrame; url: string };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const basename = (p: string) => p.replace(/\\/g, "/").split("/").pop() || p;
+const validScale = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v > 0;
 
 function injectStyle(): void {
   if (document.getElementById("mv-calibration-style")) return;
@@ -36,6 +45,7 @@ function injectStyle(): void {
     .mvcal-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.mvcal-controls label{font-size:12px}.mvcal-controls select,.mvcal-controls input{width:100%;box-sizing:border-box;margin-top:4px}
     .mvcal-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.mvcal-hint{font-size:11px;opacity:.7;margin-top:7px;line-height:1.35}
     .mvcal-status{font-size:12px;margin-top:8px}.mvcal-good{color:#75d49b}.mvcal-warn{color:#e6b85c}
+    .mvcal-preflight{margin-top:10px;padding:8px;border:1px solid #30343b;border-radius:8px;font-size:11px}.mvcal-preflight ul{margin:5px 0 0;padding-left:18px}.mvcal-preflight .error{color:#ff8e8e}.mvcal-preflight .warning{color:#e6b85c}.mvcal-preflight .ok{color:#75d49b}
     .mvcal-progress{margin-top:10px;padding:9px;border-radius:8px;background:#0f1217;border:1px solid #282c33}.mvcal-progress[hidden]{display:none}.mvcal-stage{font-size:12px}.mvcal-elapsed{font-size:11px;opacity:.7;margin-top:3px}
   `;
   document.head.appendChild(s);
@@ -44,35 +54,53 @@ function injectStyle(): void {
 async function alphaBounds(file: File): Promise<{ w: number; h: number } | null> {
   const bmp = await createImageBitmap(file).catch(() => null);
   if (!bmp) return null;
-  const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
-  const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return null;
-  ctx.drawImage(bmp, 0, 0); const d = ctx.getImageData(0, 0, c.width, c.height).data;
-  let xmin=c.width,ymin=c.height,xmax=-1,ymax=-1;
-  for(let y=0;y<c.height;y++) for(let x=0;x<c.width;x++) { if(d[(y*c.width+x)*4+3] <= 16) continue; xmin=Math.min(xmin,x);xmax=Math.max(xmax,x);ymin=Math.min(ymin,y);ymax=Math.max(ymax,y); }
-  bmp.close();
-  if(xmax<xmin||ymax<ymin) return null;
-  return { w:(xmax-xmin+1)/c.width, h:(ymax-ymin+1)/c.height };
+  try {
+    const maxDim = 512;
+    const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+    const width = Math.max(1, Math.round(bmp.width * scale));
+    const height = Math.max(1, Math.round(bmp.height * scale));
+    const c = document.createElement("canvas");
+    c.width = width;
+    c.height = height;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(bmp, 0, 0, width, height);
+    const d = ctx.getImageData(0, 0, width, height).data;
+    let xmin = width, ymin = height, xmax = -1, ymax = -1;
+    for (let y = 0; y < height; y += 2) {
+      for (let x = 0; x < width; x += 2) {
+        if (d[(y * width + x) * 4 + 3] <= 16) continue;
+        xmin = Math.min(xmin, x); xmax = Math.max(xmax, x);
+        ymin = Math.min(ymin, y); ymax = Math.max(ymax, y);
+      }
+    }
+    if (xmax < xmin || ymax < ymin) return null;
+    return { w: (xmax - xmin + 1) / width, h: (ymax - ymin + 1) / height };
+  } finally {
+    bmp.close();
+  }
 }
 
 export function mountMvCalibration(root: HTMLElement): void {
   injectStyle();
   root.innerHTML = `
     <div class="mvcal">
-      <div class="mvcal-head"><div><div class="mvcal-title">Pixal3D multiview</div><div class="mvcal-sub">Drop views + transforms.json, reorder them, calibrate mesh scale, then generate.</div></div></div>
+      <div class="mvcal-head"><div><div class="mvcal-title">Pixal3D multiview</div><div class="mvcal-sub">Drop views + transforms.json, reorder them, set mesh scale, then generate.</div></div></div>
       <div id="mvcal-drop" class="mvcal-drop" tabindex="0">Drop RGBA views + transforms.json here<br><span class="muted">or click to choose files</span><div id="mvcal-files-summary" class="mvcal-files"></div></div>
       <input id="mvcal-files" type="file" multiple accept="image/*,.json,application/json" hidden>
       <div id="mvcal-body" hidden>
         <div id="mvcal-grid" class="mvcal-grid"></div>
         <div class="mvcal-hint">Drag view cards to reorder. The patched transforms.json will use this frame order.</div>
         <label>Mesh scale</label>
-        <div class="mvcal-row"><input id="mvcal-range" type="range" min="0.02" max="2" step="0.001"><input id="mvcal-num" type="number" min="0.001" max="4" step="0.001"></div>
+        <div class="mvcal-row"><input id="mvcal-range" type="range" min="0.02" max="2" step="0.001"><input id="mvcal-num" type="number" min="0.001" max="4" step="0.001" placeholder="required"></div>
         <div id="mvcal-status" class="mvcal-status"></div>
         <div class="mvcal-controls">
           <label>Resolution<select id="mvcal-res"><option value="1024" selected>1024 · cascade</option><option value="1536">1536 · high</option></select></label>
           <label>Seed<input id="mvcal-seed" type="number" min="0" step="1" value="42"></label>
         </div>
-        <div class="mvcal-hint">Blue guides change with scale across all views. Extreme values or inconsistent framing are flagged before generation.</div>
-        <div class="mvcal-actions"><button id="mvcal-download" class="tool-btn">Save calibrated transforms.json</button><button id="mvcal-generate" class="primary">Generate MV 3D</button><button id="mvcal-cancel" class="link-btn" disabled>Cancel</button></div>
+        <div id="mvcal-preflight" class="mvcal-preflight"></div>
+        <div class="mvcal-hint">A missing mesh_scale is never guessed. Type a positive value explicitly; the slider is enabled only after that manual value exists.</div>
+        <div class="mvcal-actions"><button id="mvcal-download" class="tool-btn">Save calibrated transforms.json</button><button id="mvcal-generate" class="primary" disabled>Generate MV 3D</button><button id="mvcal-cancel" class="link-btn" disabled>Cancel</button></div>
         <div id="mvcal-progress" class="mvcal-progress" hidden><div id="mvcal-stage" class="mvcal-stage">starting…</div><div id="mvcal-elapsed" class="mvcal-elapsed">0:00</div></div>
       </div>
     </div>`;
@@ -85,6 +113,7 @@ export function mountMvCalibration(root: HTMLElement): void {
   const range = root.querySelector<HTMLInputElement>("#mvcal-range")!;
   const num = root.querySelector<HTMLInputElement>("#mvcal-num")!;
   const status = root.querySelector<HTMLElement>("#mvcal-status")!;
+  const preflight = root.querySelector<HTMLElement>("#mvcal-preflight")!;
   const gen = root.querySelector<HTMLButtonElement>("#mvcal-generate")!;
   const cancel = root.querySelector<HTMLButtonElement>("#mvcal-cancel")!;
   const res = root.querySelector<HTMLSelectElement>("#mvcal-res")!;
@@ -96,89 +125,305 @@ export function mountMvCalibration(root: HTMLElement): void {
   let meta: TransformMeta | null = null;
   let views: ViewEntry[] = [];
   let imageFiles: File[] = [];
-  let initialScale = 0.2;
+  let guideReferenceScale: number | null = null;
   let dragging = -1;
   let activeAbort: AbortController | null = null;
   let timer: number | null = null;
   let generating = false;
+  let lastPreflight: PreflightItem[] = [];
+  const alphaCache = new WeakMap<File, AlphaCheckResult>();
+
+  range.disabled = true;
 
   void listen<string>("server-log", (line) => {
     if (generating && String(line).trim()) stage.textContent = String(line).trim();
   });
 
-  const cleanupViews = () => { views.forEach(v => URL.revokeObjectURL(v.url)); views = []; };
-  const currentScale = () => clamp(Number(num.value) || initialScale, 0.001, 4);
-  const orderedMeta = () => ({ ...meta!, mesh_scale: currentScale(), frames: views.map(v => v.frame) });
-  const patchBlob = () => new Blob([JSON.stringify(orderedMeta(), null, 2)], { type:"application/json" });
-  const fmt = (ms:number) => { const s=Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; };
+  const cleanupViews = () => {
+    views.forEach((v) => URL.revokeObjectURL(v.url));
+    views = [];
+  };
+
+  const currentScale = (): number | null => {
+    const raw = num.value.trim();
+    if (!raw) return null;
+    const value = Number(raw);
+    return validScale(value) ? clamp(value, 0.001, 4) : null;
+  };
+
+  const orderedMeta = () => {
+    const meshScale = currentScale();
+    if (!meta || meshScale == null) throw new Error("mesh_scale is required");
+    return { ...meta, mesh_scale: meshScale, frames: views.map((v) => v.frame) };
+  };
+
+  const patchBlob = () =>
+    new Blob([JSON.stringify(orderedMeta(), null, 2)], { type: "application/json" });
+
+  const fmt = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  const alphaStatus = async (file: File) => {
+    const cached = alphaCache.get(file);
+    if (cached) return cached;
+    const result = await imageAlphaStatus(file);
+    alphaCache.set(file, result);
+    return result;
+  };
+
+  const renderPreflight = (items: PreflightItem[]) => {
+    lastPreflight = items;
+    const errors = items.filter((i) => i.level === "error").length;
+    const warnings = items.filter((i) => i.level === "warning").length;
+    preflight.replaceChildren();
+    const heading = document.createElement("b");
+    heading.textContent = `${errors ? `${errors} error(s)` : "Preflight passed"}${warnings ? ` · ${warnings} warning(s)` : ""}`;
+    preflight.appendChild(heading);
+    const ul = document.createElement("ul");
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.className = item.level;
+      li.textContent = `${item.level === "error" ? "✕" : item.level === "warning" ? "⚠" : "✓"} ${item.message}`;
+      ul.appendChild(li);
+    }
+    preflight.appendChild(ul);
+    gen.disabled = generating || errors > 0;
+  };
+
+  const runPreflight = async () => {
+    const meshScale = currentScale();
+    const metaForValidation = meta
+      ? ({ ...meta, mesh_scale: meshScale ?? undefined } as TransformMeta)
+      : null;
+    const items = validateMetadata(
+      metaForValidation,
+      views.map((v) => v.frame.file_path),
+      Number(res.value),
+    );
+    const alphaResults = await Promise.all(
+      views.map(async (v) => ({ view: v, result: await alphaStatus(v.file) })),
+    );
+    for (const { view, result } of alphaResults) {
+      if (result === "opaque") {
+        items.push({
+          level: "error",
+          code: `alpha-${view.frame.file_path}`,
+          message: `${view.frame.file_path}: image is fully opaque; an RGBA cutout matte is required`,
+        });
+      } else if (result === "decode_error") {
+        items.push({
+          level: "error",
+          code: `decode-${view.frame.file_path}`,
+          message: `${view.frame.file_path}: image could not be decoded for alpha validation`,
+        });
+      }
+    }
+    renderPreflight(items);
+    return items;
+  };
+
+  const renderGuide = async () => {
+    const scale = currentScale();
+    const guides = [...grid.querySelectorAll<HTMLElement>(".mvcal-guide")];
+    if (scale == null) {
+      guides.forEach((g) => { g.hidden = true; });
+      range.disabled = true;
+      status.className = "mvcal-status mvcal-warn";
+      status.textContent = "mesh_scale missing · enter a value manually; no default is assumed";
+      return;
+    }
+
+    guides.forEach((g) => { g.hidden = false; });
+    range.disabled = false;
+    range.value = String(clamp(scale, 0.02, 2));
+    if (guideReferenceScale == null) guideReferenceScale = scale;
+    const ratio = clamp(guideReferenceScale / scale, 0.22, 2.2);
+    guides.forEach((g) => {
+      g.style.width = `${clamp(72 * ratio, 18, 96)}%`;
+      g.style.height = `${clamp(72 * ratio, 18, 96)}%`;
+    });
+
+    const bounds = await Promise.all(views.slice(0, 4).map((v) => alphaBounds(v.file)));
+    const cover = bounds.filter(Boolean).map((b) => Math.max(b!.w, b!.h));
+    const spread = cover.length ? Math.max(...cover) - Math.min(...cover) : 0;
+    status.className = `mvcal-status ${spread > 0.35 ? "mvcal-warn" : "mvcal-good"}`;
+    const source = validScale(meta?.mesh_scale) && Math.abs(meta.mesh_scale - scale) < 1e-9
+      ? "from transforms.json"
+      : "manual value (not estimated)";
+    status.textContent = `scale ${scale.toFixed(3)} · ${source} · ${views.length} views${spread > 0.35 ? " · view framing differs strongly; check cameras/FOV" : ""}`;
+  };
 
   const renderCards = () => {
     grid.innerHTML = "";
     views.slice(0, 8).forEach((v, i) => {
-      const card = document.createElement("div"); card.className="mvcal-view"; card.draggable=true; card.dataset.index=String(i);
-      card.innerHTML=`<img src="${v.url}" alt="view ${i}"><div class="mvcal-guide"></div><div class="mvcal-name"></div><div class="mvcal-order">${i+1}</div>`;
-      (card.querySelector(".mvcal-name") as HTMLElement).textContent=v.frame.file_path;
-      card.addEventListener("dragstart",()=>{dragging=i;card.classList.add("dragging");});
-      card.addEventListener("dragend",()=>{dragging=-1;card.classList.remove("dragging");});
-      card.addEventListener("dragover",e=>e.preventDefault());
-      card.addEventListener("drop",e=>{e.preventDefault(); const target=Number(card.dataset.index); if(dragging<0||dragging===target)return; const [m]=views.splice(dragging,1); views.splice(target,0,m); dragging=-1; renderCards(); void renderGuide();});
+      const card = document.createElement("div");
+      card.className = "mvcal-view";
+      card.draggable = true;
+      card.dataset.index = String(i);
+      card.innerHTML = `<img src="${v.url}" alt="view ${i}"><div class="mvcal-guide"></div><div class="mvcal-name"></div><div class="mvcal-order">${i + 1}</div>`;
+      (card.querySelector(".mvcal-name") as HTMLElement).textContent = v.frame.file_path;
+      card.addEventListener("dragstart", () => { dragging = i; card.classList.add("dragging"); });
+      card.addEventListener("dragend", () => { dragging = -1; card.classList.remove("dragging"); });
+      card.addEventListener("dragover", (e) => e.preventDefault());
+      card.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const target = Number(card.dataset.index);
+        if (dragging < 0 || dragging === target) return;
+        const [moved] = views.splice(dragging, 1);
+        views.splice(target, 0, moved);
+        dragging = -1;
+        renderCards();
+        void renderGuide();
+        void runPreflight();
+      });
       grid.appendChild(card);
     });
   };
 
-  const renderGuide = async () => {
-    const s = currentScale(); num.value=s.toFixed(3); range.value=String(clamp(s,0.02,2));
-    const ratio = clamp(initialScale / s, 0.22, 2.2);
-    [...grid.querySelectorAll<HTMLElement>(".mvcal-guide")].forEach(g => { g.style.width=`${clamp(72*ratio,18,96)}%`; g.style.height=`${clamp(72*ratio,18,96)}%`; });
-    const bounds = await Promise.all(views.slice(0,4).map(v => alphaBounds(v.file)));
-    const cover = bounds.filter(Boolean).map(b => Math.max(b!.w,b!.h));
-    const spread = cover.length ? Math.max(...cover)-Math.min(...cover) : 0;
-    status.className = "mvcal-status " + (s<0.02||s>2||spread>0.35 ? "mvcal-warn":"mvcal-good");
-    status.textContent = `scale ${s.toFixed(3)} · ${views.length} views${spread>0.35 ? " · view framing differs strongly; check cameras/FOV" : " · framing consistency looks usable"}`;
-  };
-
   const reconcile = async () => {
     cleanupViews();
-    if(!meta){ body.hidden=true; summary.textContent=`${imageFiles.length} image(s), transforms.json missing`; return; }
-    const byName=new Map<string,File>(); imageFiles.forEach(f=>{byName.set(f.name,f); const rel=f.webkitRelativePath?.split("/").slice(1).join("/"); if(rel)byName.set(rel,f);});
-    for(const fr of meta.frames){ const f=byName.get(fr.file_path)||byName.get(fr.file_path.replace(/^\.\//,""))||byName.get(basename(fr.file_path)); if(f)views.push({file:f,frame:fr,url:URL.createObjectURL(f)}); }
-    summary.textContent=`${imageFiles.length} image(s) · ${views.length}/${meta.frames.length} matched`;
-    if(!views.length){ body.hidden=true; status.textContent="No frame images matched transforms.json"; return; }
-    initialScale=typeof meta.mesh_scale==="number"&&isFinite(meta.mesh_scale)&&meta.mesh_scale>0?meta.mesh_scale:0.2;
-    num.value=initialScale.toFixed(3); range.value=String(clamp(initialScale,0.02,2));
-    body.hidden=false; renderCards(); await renderGuide();
+    if (!meta) {
+      body.hidden = true;
+      summary.textContent = `${imageFiles.length} image(s), transforms.json missing`;
+      return;
+    }
+    const byName = new Map<string, File>();
+    imageFiles.forEach((f) => {
+      byName.set(f.name, f);
+      const rel = f.webkitRelativePath?.split("/").slice(1).join("/");
+      if (rel) byName.set(rel, f);
+    });
+    for (const fr of meta.frames) {
+      const f = byName.get(fr.file_path) ||
+        byName.get(fr.file_path.replace(/^\.\//, "")) ||
+        byName.get(basename(fr.file_path));
+      if (f) views.push({ file: f, frame: fr, url: URL.createObjectURL(f) });
+    }
+    summary.textContent = `${imageFiles.length} image(s) · ${views.length}/${meta.frames.length} matched`;
+    if (!views.length) {
+      body.hidden = true;
+      status.textContent = "No frame images matched transforms.json";
+      return;
+    }
+
+    guideReferenceScale = validScale(meta.mesh_scale) ? meta.mesh_scale : null;
+    if (guideReferenceScale != null) {
+      num.value = guideReferenceScale.toFixed(3);
+      range.value = String(clamp(guideReferenceScale, 0.02, 2));
+      range.disabled = false;
+    } else {
+      num.value = "";
+      range.value = "0.2";
+      range.disabled = true;
+    }
+    body.hidden = false;
+    renderCards();
+    await renderGuide();
+    await runPreflight();
   };
 
   const ingest = async (list: File[]) => {
-    const tf=list.find(f=>f.name==="transforms.json"||f.name.toLowerCase().endsWith(".json"));
-    if(tf){ try{meta=JSON.parse(await tf.text()) as TransformMeta;}catch{status.textContent="Invalid transforms.json";return;} if(!Array.isArray(meta.frames)||!meta.frames.length){status.textContent="transforms.json has no frames";return;} }
-    const imgs=list.filter(f=>f.type.startsWith("image/")||/\.(png|jpe?g|webp)$/i.test(f.name));
-    if(imgs.length) imageFiles=imgs;
+    const tf = list.find((f) => f.name === "transforms.json" || f.name.toLowerCase().endsWith(".json"));
+    if (tf) {
+      try {
+        meta = JSON.parse(await tf.text()) as TransformMeta;
+      } catch {
+        meta = null;
+        summary.textContent = "Invalid transforms.json";
+        body.hidden = true;
+        return;
+      }
+    }
+    const imgs = list.filter((f) => f.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(f.name));
+    if (imgs.length) imageFiles = imgs;
     await reconcile();
   };
 
-  drop.addEventListener("click",()=>picker.click());
-  drop.addEventListener("keydown",e=>{if((e as KeyboardEvent).key==="Enter")picker.click();});
-  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
-  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
-  drop.addEventListener("drop",e=>void ingest([...(e as DragEvent).dataTransfer?.files??[]]));
-  picker.addEventListener("change",()=>void ingest([...(picker.files??[])]));
-  range.addEventListener("input",()=>{num.value=Number(range.value).toFixed(3); void renderGuide();});
-  num.addEventListener("input",()=>void renderGuide());
-  root.querySelector("#mvcal-download")!.addEventListener("click",()=>{ if(!meta)return; const a=document.createElement("a");a.href=URL.createObjectURL(patchBlob());a.download="transforms.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000); });
-  cancel.addEventListener("click",()=>activeAbort?.abort());
-  gen.addEventListener("click", async()=>{
-    if(!meta||!views.length||generating)return;
-    generating=true; activeAbort=new AbortController(); gen.disabled=true; cancel.disabled=false; progress.hidden=false; stage.textContent="starting…";
-    const started=Date.now(); elapsed.textContent="0:00"; timer=window.setInterval(()=>elapsed.textContent=fmt(Date.now()-started),1000);
-    try{
-      const mv:MultiviewFile[]=views.map(v=>({name:v.frame.file_path,blob:v.file}));
-      const resolution=Number(res.value)===1536?1536:1024;
-      const seedValue=Math.max(0,Number(seed.value)||42);
-      const {glb}=await generateMultiview(patchBlob(),mv,{seed:seedValue,resolution,uv:"xatlas",numViews:views.length},activeAbort.signal);
-      stage.textContent="complete";
-      window.dispatchEvent(new CustomEvent("pixal3d-mv-result",{detail:{glb,name:"multiview",meshScale:currentScale(),resolution,seed:seedValue}}));
-    }catch(e){ if(activeAbort.signal.aborted) stage.textContent="cancelled"; else {stage.textContent="failed"; window.dispatchEvent(new CustomEvent("pixal3d-mv-error",{detail:String((e as Error).message||e)}));} }
-    finally{generating=false;activeAbort=null;gen.disabled=false;cancel.disabled=true;if(timer)window.clearInterval(timer);timer=null;}
+  drop.addEventListener("click", () => picker.click());
+  drop.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") picker.click(); });
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
+  drop.addEventListener("drop", (e) => void ingest([...(e as DragEvent).dataTransfer?.files ?? []]));
+  picker.addEventListener("change", () => void ingest([...(picker.files ?? [])]));
+
+  range.addEventListener("input", () => {
+    if (range.disabled) return;
+    num.value = Number(range.value).toFixed(3);
+    void renderGuide();
+    void runPreflight();
+  });
+  num.addEventListener("input", () => {
+    const scale = currentScale();
+    if (scale != null && guideReferenceScale == null) guideReferenceScale = scale;
+    range.disabled = scale == null;
+    void renderGuide();
+    void runPreflight();
+  });
+  res.addEventListener("change", () => void runPreflight());
+
+  root.querySelector("#mvcal-download")!.addEventListener("click", async () => {
+    if (!meta) return;
+    const items = await runPreflight();
+    if (hasErrors(items)) {
+      alert("Fix preflight errors before saving calibrated transforms.json");
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(patchBlob());
+    a.download = "transforms.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  cancel.addEventListener("click", () => activeAbort?.abort());
+  gen.addEventListener("click", async () => {
+    if (!meta || !views.length || generating) return;
+    const items = await runPreflight();
+    if (hasErrors(items)) return;
+
+    const meshScale = currentScale();
+    if (meshScale == null) return;
+    generating = true;
+    activeAbort = new AbortController();
+    gen.disabled = true;
+    cancel.disabled = false;
+    progress.hidden = false;
+    stage.textContent = "starting…";
+    const started = Date.now();
+    elapsed.textContent = "0:00";
+    timer = window.setInterval(() => { elapsed.textContent = fmt(Date.now() - started); }, 1000);
+    try {
+      const mv: MultiviewFile[] = views.map((v) => ({ name: v.frame.file_path, blob: v.file }));
+      const resolution = Number(res.value) === 1536 ? 1536 : 1024;
+      const seedValue = Math.max(0, Number(seed.value) || 42);
+      const { glb } = await generateMultiview(
+        patchBlob(),
+        mv,
+        { seed: seedValue, resolution, uv: "xatlas", numViews: views.length, autoMeshScale: false },
+        activeAbort.signal,
+      );
+      stage.textContent = "complete";
+      window.dispatchEvent(new CustomEvent("pixal3d-mv-result", {
+        detail: { glb, name: "multiview", meshScale, resolution, seed: seedValue },
+      }));
+    } catch (e) {
+      if (activeAbort.signal.aborted) {
+        stage.textContent = "cancelled";
+      } else {
+        stage.textContent = "failed";
+        window.dispatchEvent(new CustomEvent("pixal3d-mv-error", {
+          detail: String((e as Error).message || e),
+        }));
+      }
+    } finally {
+      generating = false;
+      activeAbort = null;
+      if (timer != null) window.clearInterval(timer);
+      timer = null;
+      cancel.disabled = true;
+      gen.disabled = hasErrors(lastPreflight);
+    }
   });
 }

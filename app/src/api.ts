@@ -83,6 +83,12 @@ export interface MultiviewParams {
   uv: GenParams["uv"];
   /** Optional limit: use only the first N frames from transforms.json. */
   numViews?: number;
+  /**
+   * Safety marker used by the desktop MV preflight UI. Only false is accepted here:
+   * this client requires an explicit positive mesh_scale before sending the request and
+   * does not opt into the experimental auto-estimator.
+   */
+  autoMeshScale?: false;
 }
 
 function toMultiviewForm(
