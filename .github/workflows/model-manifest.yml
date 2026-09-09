@@ -4,15 +4,23 @@ on:
   pull_request:
     paths:
       - 'models/pixal3d-model-set.schema.json'
+      - 'models/*/pixal3d-models.json'
       - 'tools/model_manifest.py'
+      - 'docs/PIXAL3D_RELEASE_CHECKLIST.md'
       - '.github/workflows/model-manifest.yml'
   push:
     branches: [main]
     paths:
       - 'models/pixal3d-model-set.schema.json'
+      - 'models/*/pixal3d-models.json'
       - 'tools/model_manifest.py'
+      - 'docs/PIXAL3D_RELEASE_CHECKLIST.md'
       - '.github/workflows/model-manifest.yml'
   workflow_dispatch:
+
+concurrency:
+  group: model-manifest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -28,3 +36,5 @@ jobs:
         run: python tools/model_manifest.py self-test
       - name: Verify JSON Schema and Python contract agree
         run: python tools/model_manifest.py schema-test
+      - name: Verify committed release manifest identity
+        run: python tools/model_manifest.py check-committed
