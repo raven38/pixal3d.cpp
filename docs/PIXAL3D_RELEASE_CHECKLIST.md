@@ -143,8 +143,25 @@ shape-quality regression; it does not show Q8_0 is better. Runtime was 744–778
 (SS ~126 s, shape ~150 s, shape decode ~10 s at ~1.73 M voxels, texture 92–236 s, postprocess the
 remainder).
 
-Still open: the official `cyclops` sample has not been run against these manifests, and no Chrome
-/WebGPU run has been done at all — the rows below stay ⬜.
+### Official `cyclops` sample (2026-09-10, same machine)
+
+`assets/mv_images/example` from `TencentARC/Pixal3D` (4 RGBA views at 1024², `mesh_scale: 1.0`
+declared), seed 1, res 1024:
+
+| | `pixal3d-q8_0 v1` | `pixal3d-f16 v1` |
+|---|---:|---:|
+| mean silhouette IoU | 0.9801 | 0.9805 |
+| scale_error | 0.0031 | 0.0032 |
+| final GLB | V=639,713 F=950,170 | V=629,701 F=955,022 |
+| runtime | 1443.7 s | 1559.6 s |
+| gate | PASS | PASS |
+
+Both match the 0.9785 recorded for this sample in `docs/PIXAL3D_E2E_STATUS.md`, and the two model
+sets differ by 0.0004 — again no detectable quality difference, on a second subject class (a large,
+bulky subject vs. the thin-limbed figure of the views4-style input above), which is what makes the
+Q8_0-for-the-browser decision safe to state.
+
+Still open: no Chrome/WebGPU run has been done at all — those rows stay ⬜.
 
 ### Regenerate / verify
 
@@ -192,7 +209,7 @@ consume these manifests but are tracked in their own rows.
 | Linux/GCC C++ build gate on `main` | ✅ | PR #33 |
 | Explicit `mesh_scale`; no silent production fallback | ✅ | #19 / PR #27 |
 | Release model directory gets a real generated manifest | ✅ | #34: `models/pixal3d-f16-v1/` + `models/pixal3d-q8_0-v1/` |
-| Official cyclops + views4 result recorded for exact runtime/model set | 🔶 | views4-style input re-run against both manifests (E2E table above, 4 runs, all PASS); official `cyclops` sample still not run |
+| Official cyclops + views4 result recorded for exact runtime/model set | ✅ | both manifests, both inputs: views4-style at seeds 1/2 and the official cyclops sample — 6 runs, all PASS (tables above) |
 
 ## Desktop alpha
 
