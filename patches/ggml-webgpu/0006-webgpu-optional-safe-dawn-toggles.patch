@@ -1,0 +1,44 @@
+--- a/src/ggml-webgpu/ggml-webgpu.cpp
++++ b/src/ggml-webgpu/ggml-webgpu.cpp
+@@ -3901,14 +3901,38 @@
+     // Enable Dawn-specific toggles to increase native performance
+     // TODO: Maybe WebGPU needs a "fast" mode where you can request compilers skip adding checks like these,
+     //       only for native performance?
+-    const char * const          deviceEnabledToggles[]  = { "disable_robustness", "disable_workgroup_init",
+-                                                            "disable_polyfills_on_integer_div_and_mod" };
++    //
++    // pixal3d: two of these are native-only *safety* removals, not just speed knobs, and they are
++    // the only structural native-vs-browser difference we have found that can produce silent wrong
++    // results rather than an error:
++    //   disable_robustness      - drops the out-of-bounds clamp Dawn normally injects into WGSL
++    //                             buffer accesses. An out-of-range index then reads/writes whatever
++    //                             is adjacent in the allocation instead of being clamped, with no
++    //                             validation error and no device-lost callback.
++    //   disable_workgroup_init  - leaves workgroup memory uninitialized. A shader that reads a
++    //                             workgroup slot before writing it sees stale bytes natively and
++    //                             zeros in the browser.
++    // Emscripten never enables either, which matches the observed split (native Dawn shows
++    // intermittent mid-run corruption on the same fixture the browser runs clean).
++    // GGML_WEBGPU_NO_UNSAFE_TOGGLES=1 drops those two so the A/B can be run without rebuilding;
++    // the default is unchanged upstream behaviour.
++    const bool                  ggml_webgpu_safe_toggles = getenv("GGML_WEBGPU_NO_UNSAFE_TOGGLES") != nullptr &&
++                                                           getenv("GGML_WEBGPU_NO_UNSAFE_TOGGLES")[0] == '1';
++    const char * const          deviceEnabledTogglesFast[] = { "disable_robustness", "disable_workgroup_init",
++                                                               "disable_polyfills_on_integer_div_and_mod" };
++    const char * const          deviceEnabledTogglesSafe[] = { "disable_polyfills_on_integer_div_and_mod" };
++    const char * const * const  deviceEnabledToggles       = ggml_webgpu_safe_toggles ? deviceEnabledTogglesSafe
++                                                                                      : deviceEnabledTogglesFast;
+     const char * const          deviceDisabledToggles[] = { "timestamp_quantization" };
+     wgpu::DawnTogglesDescriptor deviceTogglesDesc;
+     deviceTogglesDesc.enabledToggles      = deviceEnabledToggles;
+-    deviceTogglesDesc.enabledToggleCount  = 3;
++    deviceTogglesDesc.enabledToggleCount  = ggml_webgpu_safe_toggles ? 1 : 3;
+     deviceTogglesDesc.disabledToggles     = deviceDisabledToggles;
+     deviceTogglesDesc.disabledToggleCount = 1;
++    if (ggml_webgpu_safe_toggles) {
++        GGML_LOG_INFO("ggml_webgpu: GGML_WEBGPU_NO_UNSAFE_TOGGLES=1 -- keeping Dawn's robustness "
++                      "clamp and workgroup-memory zeroing\n");
++    }
+ 
+     dev_desc.nextInChain = &deviceTogglesDesc;
+ #endif
