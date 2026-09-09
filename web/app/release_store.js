@@ -30,7 +30,7 @@ export function validateReleaseManifest(m) {
 }
 
 function manifestIdentity(m) {
-  return m ? `${m.model_set}\n${m.version}\n${m.files.map((f) => `${f.name}:${f.sha256}:${f.size_bytes}`).join('\n')}` : '';
+  return m ? `${m.model_set}\n${m.version}\n${m.files.map((f) => `${f.name}:${f.role}:${f.required}:${f.sha256}:${f.size_bytes}`).join('\n')}` : '';
 }
 
 async function originRoot() {
