@@ -56,6 +56,14 @@ Examples:
 ```bash
 # reuse weights already on a fast drive; force Vulkan
 ./install/install.sh --backend vulkan --models-dir /mnt/ssd/trellis --skip-models
+
+# Install a specific release instead of the newest stable one. `--tag` takes a
+# tag, `latest` (newest stable) or `latest-prerelease` (newest release including
+# prereleases). An explicitly named tag is never allowed to fall back to the
+# newest stable release, and the install stops if the release is missing an
+# expected asset. Private repos need GITHUB_TOKEN. Add --skip-app for a
+# runtime-only install: the desktop app asset is otherwise required.
+./install/install.sh --repo OWNER/NAME --tag v0.9.0-desktop-alpha
 ```
 
 ## Backend detection
