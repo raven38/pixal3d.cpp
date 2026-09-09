@@ -64,6 +64,15 @@ Examples:
 # expected asset. Private repos need GITHUB_TOKEN. Add --skip-app for a
 # runtime-only install: the desktop app asset is otherwise required.
 ./install/install.sh --repo OWNER/NAME --tag v0.9.0-desktop-alpha
+
+# Install the Pixal3D model set from its manifest and verify every file's exact
+# size and SHA256. The install fails (and removes the offending file) on any
+# mismatch; the manifest is copied into the models dir only once all files pass.
+./install/install.sh --model-manifest models/pixal3d-q8_0-v1/pixal3d-models.json \
+                     --model-base-url https://example.invalid/pixal3d-q8_0-v1
+
+# Verify an already-installed model set and exit (no downloads, no config writes)
+./install/install.sh --verify-models --models-dir /path/to/models
 ```
 
 ## Backend detection

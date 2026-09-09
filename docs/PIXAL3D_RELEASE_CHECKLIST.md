@@ -29,6 +29,32 @@ stops with the resolved tag and the actual asset list. A receipt is written to
 `/commits/<tag>`, because `target_commitish` may be a branch name), requested tag, runtime bundle,
 backend and model set.
 
+### Manifest-verified model set install
+
+`--model-manifest PATH|URL|release` (`-ModelManifest`) installs the model set a manifest describes
+and verifies **every file's exact size and SHA256** before the install is allowed to succeed;
+`--model-base-url` (`-ModelBaseUrl`) says where the files live. `--verify-models`
+(`-VerifyModels`) verifies an existing models directory against its manifest and exits without
+downloading anything or writing any config — that is the gate a clean-install E2E (#18) can run
+before and after installing.
+
+Fail-closed properties, each verified (2026-09-10, macOS):
+
+| case | result |
+|---|---|
+| real `pixal3d-q8_0 v1`, 9 files / 7.54 GiB, all present | `model set OK — pixal3d-q8_0 v1`, rc 0, 4.7 s |
+| one file corrupted | `does not verify: tex_dec.gguf` + `(8 of 9 files match the manifest)`, rc 1 |
+| one file missing | `does not verify: ss_dec.gguf`, rc 1 |
+| manifest names `../escape.gguf` | `unsafe file name in model manifest`, rc 1 |
+| `schema_version: 2` | `unsupported model manifest schema_version: 2`, rc 1 |
+| served file tampered mid-download | prints expected vs. got size/SHA256, **deletes the bad file**, rc 1 |
+| download into an empty dir | 9 files fetched, verified, manifest copied in last, rc 0 |
+
+The manifest is copied into the models directory only after every file verifies, so its presence
+means "complete, verified model set" — which is exactly how `app/src-tauri/src/model_cache.rs` and
+`web/app/model_store.js` read it. The receipt records `manifest_sha256` and a `verified` flag that
+is true only when this run actually hashed the files.
+
 Behaviour change: the desktop app asset is now required. Previously a missing AppImage / setup.exe
 only warned and left a runtime-only install; now the install stops before downloading anything.
 Pass `--skip-app` / `-SkipApp` for a runtime-only install. A prerelease Desktop alpha is therefore installed as:
@@ -181,7 +207,7 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` is unverified beyond static checks — no PowerShell on the reference machine |
-| Installer downloads/verifies the exact model set against its manifest | ⬜ | still open: the installers fetch the inherited TRELLIS.2 weights from HF and only record `model_set`/`version` from an existing `pixal3d-models.json`; they do not download or SHA256-verify the Pixal3D set |
+| Installer downloads/verifies the exact model set against its manifest | ✅ | `--model-manifest` / `--verify-models` (see below); verified against the real `pixal3d-q8_0 v1` set and five fail-closed cases |
 | Package/Tauri version matches `v0.9.0-desktop-alpha` | ✅ | #35: metadata `0.9.0` in all four files; tag carries `-desktop-alpha` (see above) |
 
 Desktop alpha deliberately requires an explicit positive `mesh_scale`. Automatic estimation from PR #5 is not part of the release path because the real calibration datasets produced large errors (cyclops expected ~1.0 → 1.261568; views4 expected ~0.206 → 0.381288).
