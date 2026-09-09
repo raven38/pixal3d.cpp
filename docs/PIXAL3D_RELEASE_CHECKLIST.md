@@ -84,6 +84,10 @@ using the consumer-mandated filename `pixal3d-models.json` (hardcoded in
 | Manifest SHA256 | `722f94c360da5e0dad2651a070489cd8c3de9e00c616b5f88607db41bb0588cd` | `5648ee78259808ff2b664574a666cd880c2c2b584ab8cd225bf80480e17d669f` |
 | Total model bytes | 13,660,816,128 (12.72 GiB) | 8,091,975,360 (7.54 GiB) |
 
+The F16 files themselves no longer live on the reference machine (they were moved to shared storage
+after verifying all nine SHA256 digests); the manifest is what makes them recoverable and
+identifiable. The Q8_0 set stays local because it is the Web release identity.
+
 **This deviates from #34's original acceptance condition** ("Desktop/Web consume the same
 manifest"). Both frontends consume the same *contract* — one schema, one filename, one generator,
 the same nine roles — but not the same file, because a single set cannot satisfy both requirements:
