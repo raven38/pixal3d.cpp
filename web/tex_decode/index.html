@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pixal3D texture (PBR) decoder on WebGPU (WASM)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5em; }
+  label { display: block; margin: 0.4em 0; }
+  pre { background: #f4f4f4; padding: 1em; overflow: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<h2>Pixal3D texture (PBR) decoder on WebGPU (pixal3d_ss.wasm, pixal3d_tex_decode_run)</h2>
+<p>Hand the module shape_dec.gguf, tex_dec.gguf and a real-SLAT fixture directory (coords, f32
+shape SLAT, f32 texture SLAT, optionally the reference's f32_tex_coords / f32_tex_attrs for
+parity); the shape decoder runs first for its subdivision masks, then the texture decoder
+(from_latent, 4 x ConvNeXt stage + mask-driven C2S on the shared neighbor tables, final LayerNorm
++ 6-channel output_layer) runs inside the WASM module on the ggml WebGPU backend. JavaScript only
+mounts the files, prints the report and offers the raw attributes (attrs/coords .npy) for
+download; trellis-test-pixal3d-tex-decode --ext-attrs scores them natively.</p>
+<label>Shape decoder (shape_dec.gguf): <input id="shape_model" type="file"></label>
+<label>Texture decoder (tex_dec.gguf): <input id="tex_model" type="file"></label>
+<label>Fixture files (hr_coords/coords, f32_shape_slat/f32_slat, f32_tex_slat, f32_tex_coords, f32_tex_attrs): <input id="fixture" type="file" multiple></label>
+<label>Resolution (0 = 16x the input grid): <input id="res" type="number" value="0" min="0"></label>
+<button id="run">Run</button>
+<pre id="out"></pre>
+<script src="main.js"></script>
+</body>
+</html>

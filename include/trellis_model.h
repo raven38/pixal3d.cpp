@@ -11,6 +11,7 @@ struct ggml_context;
 struct gguf_context;
 struct ggml_backend;
 struct ggml_backend_buffer;
+struct ggml_cgraph;
 
 namespace trellis {
 
@@ -39,5 +40,12 @@ struct Model {
 
 // Read a tensor's full contents back to host as float32 (handles f16/f32).
 std::vector<float> tensor_to_f32(ggml_tensor* t);
+
+// Checks every node of `g` against ggml_backend_supports_op(backend). Prints one line per
+// unsupported node (op, name, dtypes/shapes) to stderr. Throws on the ggml WebGPU backend,
+// whose graph encoder silently skips nodes it has no kernel for (leaving their outputs
+// uninitialized) -- on every other backend an unsupported node aborts inside
+// ggml_backend_graph_compute anyway, so there the check only warns.
+void check_graph_supported(ggml_backend* backend, ggml_cgraph* g, const char* tag);
 
 } // namespace trellis

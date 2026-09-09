@@ -1,5 +1,6 @@
 #include "sparse.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
@@ -153,16 +154,19 @@ struct GraphRun {
     // `roots` are extra nodes to expand: writes into a preallocated `out` via ggml_cpy are
     // not reachable from `out` itself (nothing produces it), so they must be rooted explicitly.
     std::vector<float> run(ggml_tensor* out, const std::vector<std::pair<ggml_tensor*, const void*>>& inputs,
-                           const std::vector<ggml_tensor*>& roots = {}) {
+                           const std::vector<ggml_tensor*>& roots = {}, const char* tag = "c2s") {
         ggml_set_output(out);
         ggml_cgraph* g = ggml_new_graph_custom(c, kGraphNodes, false);
         for (ggml_tensor* r : roots) ggml_build_forward_expand(g, r);
         ggml_build_forward_expand(g, out);
+        trellis_graph_dump(tag, g);
+        check_graph_supported(m.backend, g, tag);   // WebGPU: throw rather than silently skip a node
         alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
         if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("c2s: alloc failed");
         if (getenv("TRELLIS_DBG_ALLOC"))
             fprintf(stderr, "      [c2s-alloc] nodes=%d  gallocr buffer = %.2f GB\n",
                     ggml_graph_n_nodes(g), ggml_gallocr_get_buffer_size(alloc, 0) / 1e9);
+        trellis_graph_alloc_trace(tag, g, ggml_gallocr_get_buffer_size(alloc, 0));   // TRELLIS_DBG_ALLOC_TRACE only
         for (auto& [t, data] : inputs) ggml_backend_tensor_set(t, data, 0, ggml_nbytes(t));
         if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("c2s: compute failed");
         return tensor_to_f32(out);
@@ -173,7 +177,8 @@ struct GraphRun {
 C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<float>& feats_in, int Cin,
                      const std::vector<std::array<int,3>>& coords, int Cout,
-                     const std::vector<uint8_t>* ext_subdiv) {
+                     const std::vector<uint8_t>* ext_subdiv, const char* tag,
+                     const C2SFinalHead* head) {
     const int N = (int)coords.size();
     if (N == 0) throw std::runtime_error("c2s: empty input coordinate set in " + prefix);
     if (Cin <= 0 || Cout <= 0 || feats_in.size() != (size_t)Cin * N)
@@ -194,7 +199,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
             T* gf = ggml_new_tensor_2d(c, GGML_TYPE_F32, Cin, N); ggml_set_input(gf);
             T* sd = ggml_add(c, mul_mat_rows(c, m.get(prefix + ".to_subdiv.weight"), gf),
                              m.get(prefix + ".to_subdiv.bias"));
-            return gr1.run(sd, { {gf, feats_in.data()} });   // [8, N] -- small
+            return gr1.run(sd, { {gf, feats_in.data()} }, {}, (std::string(tag) + "_subdiv_N" + std::to_string(N)).c_str());   // [8, N] -- small
         };
         constexpr int kAttempts = 3;
         for (int attempt = 0; attempt < kAttempts; ++attempt) {
@@ -338,6 +343,12 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     if (chunk2 * kMaxChunks2 < M) chunk2 = (M + kMaxChunks2 - 1) / kMaxChunks2;
     if (chunk2 >= M) chunk2 = M;
 
+    // head が指定されていれば、chunk ごとに LN + Linear まで進めて 64ch の chunk をその場で
+    // 捨てる。バッファは [Cout, M] ではなく [out_ch, M] になり、device も host も 1.22 GB を
+    // 持たなくて済む（include/sparse.h の C2SFinalHead を参照）。
+    const int out_c = head ? head->out_ch : Cout;
+    T* Wh = head ? m.get(head->prefix + ".weight") : nullptr;
+    T* bh = head ? m.get(head->prefix + ".bias") : nullptr;
     T* out = nullptr;
     for (int64_t m0 = 0; m0 < M; m0 += chunk2) {
         const int64_t nr2 = std::min<int64_t>(chunk2, M - m0);
@@ -346,17 +357,21 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                 : ggml_cont(c, ggml_view_2d(c, xs, K, nr2, xs->nb[1], (size_t)m0 * xs->nb[1]));
         T* skr = ggml_repeat_4d(c, ggml_reshape_3d(c, xr, 1, K, nr2), R, K, nr2, 1);
         o = ggml_add(c, o, ggml_reshape_2d(c, skr, Cout, nr2));
-        // written into one [Cout, M] buffer, as for hraw above -- a concat chain here would
-        // again peak at 2x the 8.4 GB output. Every column is covered by some chunk, so the
+        if (head) {   // shape_decoder.cpp の linear_rows(pre_norm) と同じ eps / 演算順
+            T* y = head->pre_norm ? ggml_norm(c, o, 1e-5f) : o;
+            o = ggml_add(c, ggml_mul_mat(c, Wh, y), bh);                        // [out_ch, nr2]
+        }
+        // written into one [out_c, M] buffer, as for hraw above -- a concat chain here would
+        // again peak at 2x the output. Every column is covered by some chunk, so the
         // pad's zero fill is overwritten and only sizes the buffer.
-        if (!out) { out = ggml_pad(c, o, 0, (int)(M - nr2), 0, 0); continue; }   // [Cout, M]
-        roots.push_back(ggml_cpy(c, o, ggml_view_2d(c, out, Cout, nr2,
+        if (!out) { out = ggml_pad(c, o, 0, (int)(M - nr2), 0, 0); continue; }   // [out_c, M]
+        roots.push_back(ggml_cpy(c, o, ggml_view_2d(c, out, out_c, nr2,
                                                     out->nb[1], (size_t)m0 * out->nb[1])));
     }
 
     std::vector<float> outv = gr2.run(out, { {gf, feats_in.data()}, {gn, nbr.data()},
                                              {gi, gidx.data()}, {gl, gloc.data()}, {gn2, nnbr.data()} },
-                                      roots);
+                                      roots, (std::string(tag) + "_conv_N" + std::to_string(N) + "_M" + std::to_string(M)).c_str());
     return { std::move(outv), std::move(nc), Cout, std::move(mask_used) };
 }
 

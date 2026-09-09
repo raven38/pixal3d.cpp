@@ -1,5 +1,6 @@
 #include "dinov3.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <string>
 #include <stdexcept>
+#include "npy.h"
 
 namespace trellis {
 using T = ggml_tensor;
@@ -53,11 +55,10 @@ static T* attn(ggml_context* c, const Model& m, const std::string& p, T* x, T* c
     return lin(c, m, p + ".proj", sdpa(c, q, k, v));
 }
 
-std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, int S) {
+void dinov3_rope_tables(int S, std::vector<float>& rcos, std::vector<float>& rsin) {
     const int Hp = S / 16, NP = Hp * Hp, Ntok = NP + NPREFIX;
-
     // host RoPE tables [Ntok*HD]: prefix tokens identity, patches dinov3 2D half-split
-    std::vector<float> rcos((size_t)Ntok * HD, 1.0f), rsin((size_t)Ntok * HD, 0.0f);
+    rcos.assign((size_t)Ntok * HD, 1.0f); rsin.assign((size_t)Ntok * HD, 0.0f);
     float inv[16]; for (int j = 0; j < 16; ++j) inv[j] = 1.0f / std::pow(100.0f, (float)j / 16.0f);
     const float TWO_PI = 6.283185307179586f;
     for (int p = 0; p < NP; ++p) {
@@ -68,12 +69,14 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
         size_t base = (size_t)(p + NPREFIX) * HD;
         for (int d = 0; d < 64; ++d) { float a = ang[d % 32]; rcos[base + d] = std::cos(a); rsin[base + d] = std::sin(a); }
     }
+}
 
-    size_t meta = ggml_tensor_overhead() * 8192 + ggml_graph_overhead_custom(16384, false) + (1 << 20);
-    ggml_context* c = ggml_init({ meta, nullptr, true });
+T* dinov3_build(ggml_context* c, const Model& m, int S, Dinov3Inputs& in) {
+    const int Hp = S / 16, NP = Hp * Hp, Ntok = NP + NPREFIX;
     T* img  = ggml_new_tensor_4d(c, GGML_TYPE_F32, S, S, 3, 1);       ggml_set_input(img);
     T* gcos = ggml_new_tensor_3d(c, GGML_TYPE_F32, HD, 1, Ntok);      ggml_set_input(gcos);
     T* gsin = ggml_new_tensor_3d(c, GGML_TYPE_F32, HD, 1, Ntok);      ggml_set_input(gsin);
+    in.img = img; in.cos = gcos; in.sin = gsin; in.ntok = Ntok;
 
     // patch embed: conv2d k16 s16 -> [Wp,Hp,1024,1] -> [1024, NP] (token = h*Hp + w) + bias
     T* pe = ggml_conv_2d(c, m.get("patch_embed.proj.weight"), img, 16, 16, 0, 0, 1, 1);
@@ -85,6 +88,15 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
     T* reg = ggml_cast(c, ggml_reshape_2d(c, m.get("reg_token"), D, 4), GGML_TYPE_F32);
     T* x = ggml_concat(c, ggml_concat(c, cls, reg, 1), pe, 1);        // [1024, Ntok]
 
+    // TRELLIS_DBG_DINOV3_LAYERS=<dir> のとき、各ブロック出力の先頭 5 トークン
+    // （cls + register 4 本 = conditioning の z_global そのもの）を出力にマークして
+    // 層ごとに PyTorch と突き合わせられるようにする。全トークンは 1024^2 入力で
+    // 4101 x 1024 x 4 B x 25 層 = 420 MB になるので、先頭 5 本だけに絞る。
+    const char* dbg_layers = getenv("TRELLIS_DBG_DINOV3_LAYERS");
+    if (dbg_layers && in.layers) {   // ブロック前（埋め込み直後）も 1 本目として記録する
+        T* head = ggml_cont(c, ggml_view_2d(c, x, x->ne[0], 5, x->nb[1], 0));
+        ggml_set_output(head); in.layers->push_back(head);
+    }
     for (int i = 0; i < NLAYERS; ++i) {
         const std::string b = "blocks." + std::to_string(i);
         T* y = ln(c, x, 1e-5f, m.get(b + ".norm1.weight"), m.get(b + ".norm1.bias"));
@@ -97,19 +109,55 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
         y = lin(c, m, b + ".mlp.fc2", y);
         y = ggml_mul(c, y, m.get(b + ".gamma_2"));
         x = ggml_add(c, x, y);
+        if (dbg_layers && in.layers) {
+            T* head = ggml_cont(c, ggml_view_2d(c, x, x->ne[0], 5, x->nb[1], 0));   // [D, 5]
+            ggml_set_output(head);
+            in.layers->push_back(head);
+        }
     }
     x = ln(c, x, 1e-5f);                                              // final non-affine LN
+    return x;
+}
+
+std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, int S) {
+    std::vector<float> rcos, rsin;
+    dinov3_rope_tables(S, rcos, rsin);
+
+    size_t meta = ggml_tensor_overhead() * 8192 + ggml_graph_overhead_custom(16384, false) + (1 << 20);
+    ggml_context* c = ggml_init({ meta, nullptr, true });
+    Dinov3Inputs in{};
+    std::vector<T*> layer_heads;
+    const char* dbg_layers = getenv("TRELLIS_DBG_DINOV3_LAYERS");
+    if (dbg_layers) in.layers = &layer_heads;
+    T* x = dinov3_build(c, m, S, in);
     ggml_set_output(x);
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 16384, false);
     ggml_build_forward_expand(g, x);
+    for (T* h : layer_heads) ggml_build_forward_expand(g, h);
+    const std::string tag = "dinov3_S" + std::to_string(S);
+    trellis_graph_dump(tag.c_str(), g);
+    check_graph_supported(m.backend, g, tag.c_str());
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("dinov3: alloc failed");
-    ggml_backend_tensor_set(img,  chw.data(), 0, chw.size() * 4);
-    ggml_backend_tensor_set(gcos, rcos.data(), 0, rcos.size() * 4);
-    ggml_backend_tensor_set(gsin, rsin.data(), 0, rsin.size() * 4);
+    ggml_backend_tensor_set(in.img, chw.data(), 0, chw.size() * 4);
+    ggml_backend_tensor_set(in.cos, rcos.data(), 0, rcos.size() * 4);
+    ggml_backend_tensor_set(in.sin, rsin.data(), 0, rsin.size() * 4);
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("dinov3: compute failed");
     std::vector<float> out = tensor_to_f32(x);   // [D, Ntok] ggml -> flat d + D*tok
+    if (dbg_layers && *dbg_layers) {
+        for (size_t i = 0; i < layer_heads.size(); ++i) {
+            std::vector<float> h = tensor_to_f32(layer_heads[i]);   // [D, 5]
+            char path[512];
+            if (i == 0) snprintf(path, sizeof path, "%s/cpp_embed.npy", dbg_layers);
+            else snprintf(path, sizeof path, "%s/cpp_layer%02zu.npy", dbg_layers, i - 1);
+            npy::save(path, h.data(), { 5, (int64_t)layer_heads[i]->ne[0] });
+        }
+        char path[512];
+        snprintf(path, sizeof path, "%s/cpp_final.npy", dbg_layers);
+        npy::save(path, out.data(), { 5, (int64_t)x->ne[0] });   // 先頭 5 トークンのみ
+        fprintf(stderr, "[dinov3] dumped %zu layer heads + final to %s\n", layer_heads.size(), dbg_layers);
+    }
     ggml_gallocr_free(alloc); ggml_free(c);
     return out;
 }

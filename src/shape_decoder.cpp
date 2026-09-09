@@ -1,11 +1,14 @@
 #include "shape_decoder.h"
 #include "sparse.h"
 #include "trellis_model.h"
+#include "graph_dump.h"
+#include "npy.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <stdexcept>
 
@@ -32,15 +35,19 @@ void mem_probe(const char* tag) {
 
 // run a graph producing `out`, with the given input tensors set from host data
 static std::vector<float> run1(const Model& m, ggml_context* c, T* out,
-                               std::vector<std::pair<T*, const void*>> ins) {
+                               std::vector<std::pair<T*, const void*>> ins,
+                               const char* tag = "shape_dec") {
     ggml_set_output(out);
     ggml_cgraph* g = ggml_new_graph_custom(c, kGraphNodes, false);
     ggml_build_forward_expand(g, out);
+    trellis_graph_dump(tag, g);
+    check_graph_supported(m.backend, g, tag);   // WebGPU: throw rather than silently skip a node
     ggml_gallocr_t a = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(a, g)) throw std::runtime_error("shape_dec alloc");
     if (getenv("TRELLIS_DBG_ALLOC"))
         fprintf(stderr, "      [stage-alloc] nodes=%d  gallocr buffer = %.2f GB\n",
                 ggml_graph_n_nodes(g), ggml_gallocr_get_buffer_size(a, 0) / 1e9);
+    trellis_graph_alloc_trace(tag, g, ggml_gallocr_get_buffer_size(a, 0));   // TRELLIS_DBG_ALLOC_TRACE only
     for (auto& [t, d] : ins) ggml_backend_tensor_set(t, d, 0, ggml_nbytes(t));
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("shape_dec compute");
     mem_probe("run1 computed (pre-readback)");
@@ -61,7 +68,8 @@ static ggml_context* mkctx() {
 static constexpr int64_t kLinearRowChunk = 1000000;
 
 static std::vector<float> linear_rows(const Model& m, const std::vector<float>& in, int Cin,
-                                      int64_t N, const std::string& prefix, int Cout, bool pre_norm) {
+                                      int64_t N, const std::string& prefix, int Cout, bool pre_norm,
+                                      const char* kind = "shape_dec") {
     std::vector<float> out((size_t)Cout * N);
     for (int64_t r0 = 0; r0 < N; r0 += kLinearRowChunk) {
         const int64_t n = std::min(kLinearRowChunk, N - r0);
@@ -69,11 +77,47 @@ static std::vector<float> linear_rows(const Model& m, const std::vector<float>& 
         T* gh = ggml_new_tensor_2d(c, GGML_TYPE_F32, Cin, n); ggml_set_input(gh);
         T* x = pre_norm ? ggml_norm(c, gh, 1e-5f) : gh;
         x = ggml_add(c, ggml_mul_mat(c, m.get(prefix + ".weight"), x), m.get(prefix + ".bias"));
-        std::vector<float> r = run1(m, c, x, { {gh, in.data() + (size_t)Cin * r0} });
+        std::string tag = std::string(kind) + "_" + prefix + "_N" + std::to_string(n);
+        std::vector<float> r = run1(m, c, x, { {gh, in.data() + (size_t)Cin * r0} }, tag.c_str());
         std::copy(r.begin(), r.end(), out.begin() + (size_t)Cout * r0);
         ggml_free(c);
     }
     return out;
+}
+
+// Debug-only per-stage dump (TRELLIS_DBG_STAGE_DUMP=<dir>; docs/PIXAL3D_WEBGPU_MEMORY.md §9):
+// every stage's coords [N,3] i32 in full, plus a coordinate-hashed row subset (~4096 rows) of
+// its features [n,C] f32 with those rows' coords, and [n, mean, std, absmax] of the whole
+// tensor. The subset rule (uint32 (x*73856093 ^ y*19349663 ^ z*83492791) % K == 0,
+// K = max(1, N/4096)) depends only on the coordinate, so two backends / the PyTorch reference
+// pick the same rows whenever their coordinate sets agree -- no [N,C] tensor is written.
+static void stage_dump(const char* kind, const std::string& stage, const std::vector<float>& h, int C,
+                       const std::vector<std::array<int,3>>& coords) {
+    const char* dir = getenv("TRELLIS_DBG_STAGE_DUMP");
+    if (!dir || !*dir) return;
+    const int64_t N = (int64_t)coords.size();
+    const std::string base = std::string(dir) + "/" + kind + "_" + stage + "_";
+    std::vector<int32_t> ci((size_t)N * 3);
+    for (int64_t i = 0; i < N; ++i) for (int a = 0; a < 3; ++a) ci[(size_t)i * 3 + a] = coords[(size_t)i][a];
+    npy::save_i32(base + "coords.npy", ci.data(), { N, 3 });
+    const uint32_t K = (uint32_t)std::max<int64_t>(1, N / 4096);
+    std::vector<int32_t> sc; std::vector<float> sf;
+    for (int64_t i = 0; i < N; ++i) {
+        const uint32_t x = (uint32_t)coords[(size_t)i][0], y = (uint32_t)coords[(size_t)i][1], z = (uint32_t)coords[(size_t)i][2];
+        if ((x * 73856093u ^ y * 19349663u ^ z * 83492791u) % K != 0) continue;
+        for (int a = 0; a < 3; ++a) sc.push_back(coords[(size_t)i][a]);
+        sf.insert(sf.end(), h.begin() + (size_t)C * i, h.begin() + (size_t)C * (i + 1));
+    }
+    const int64_t n = (int64_t)sc.size() / 3;
+    npy::save_i32(base + "sub_coords.npy", sc.data(), { n, 3 });
+    npy::save(base + "sub_feats.npy", sf.data(), { n, C });
+    double sum = 0, sq = 0, mx = 0;
+    for (float v : h) { sum += v; sq += (double)v * v; mx = std::max(mx, (double)std::fabs(v)); }
+    const double mean = h.empty() ? 0 : sum / (double)h.size();
+    const float st[4] = { (float)h.size(), (float)mean, (float)std::sqrt(std::max(0.0, sq / (double)std::max<size_t>(1, h.size()) - mean * mean)), (float)mx };
+    npy::save(base + "stats.npy", st, { 4 });
+    fprintf(stderr, "      [stage-dump] %s_%s: N=%lld C=%d subset=%lld (K=%u) mean=%.5f std=%.5f absmax=%.4f\n",
+            kind, stage.c_str(), (long long)N, C, (long long)n, K, mean, st[2], mx);
 }
 
 // Generic SparseUnetVaeDecoder: from_latent -> 4×(ConvNeXt stage + C2S) -> final LN -> output_layer.
@@ -83,9 +127,19 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
                                       const std::vector<std::vector<uint8_t>>* guide_subs,
                                       std::vector<std::vector<uint8_t>>* subs_out,
                                       bool coords_only = false) {
+    const char* kind = coords_only ? "sparse_upsample" : (guide_subs ? "tex_dec" : "shape_dec");
     int N = (int)coords.size();
+    // 最終 C2S の出力 [64, M] は res-1024 のテクスチャデコーダで M=4.76M、つまり 1.22 GB。
+    // 従来はこれを host へ読み戻してから output_layer を掛けており、wasm32 の 4 GiB ヒープでは
+    // 読み戻しで std::bad_alloc になっていた。output_layer を最終 C2S のグラフへ融合すると
+    // host が受け取るのは [out_ch, M]（6ch で 114 MB）だけになる。数値と分割の切れ目は
+    // linear_rows と同じ（include/sparse.h の C2SFinalHead を参照）。
+    // 段別ダンプを取るときは 64ch の中間そのものが見たいので融合しない。
+    const C2SFinalHead head{ "output_layer", out_ch, true };
+    const bool fuse_head = !coords_only && !getenv("TRELLIS_DBG_STAGE_DUMP") && !getenv("TRELLIS_NO_C2S_FUSE");
     // from_latent [32,N] -> [1024,N]
-    std::vector<float> h = linear_rows(m, latent, 32, N, "from_latent", 1024, false);
+    std::vector<float> h = linear_rows(m, latent, 32, N, "from_latent", 1024, false, kind);
+    stage_dump(kind, "from_latent", h, 1024, coords);
     struct Stage { int C, nblk, Cout, c2si; const char* s; };
     const Stage stages[4] = { {1024,4,512,4,"0"}, {512,16,256,16,"1"}, {256,8,128,8,"2"}, {128,4,64,4,"3"} };
     for (int si = 0; si < 4; ++si) {
@@ -101,19 +155,28 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
             T* x = gh;
             for (int j = 0; j < st.nblk; ++j)
                 x = sparse_convnext(c, m, std::string("blocks.") + st.s + "." + std::to_string(j), x, gn, N);
-            h = run1(m, c, x, { {gh, h.data()}, {gn, nbr.data()} });
+            std::string tag = std::string(kind) + "_convnext_stage" + std::to_string(si) + "_N" + std::to_string(N);
+            h = run1(m, c, x, { {gh, h.data()}, {gn, nbr.data()} }, tag.c_str());
             ggml_free(c);
         }
         mem_probe("after ConvNeXt stage");
+        stage_dump(kind, "stage" + std::to_string(si) + "_convnext", h, st.C, coords);
         const std::vector<uint8_t>* ext = guide_subs ? &(*guide_subs)[si] : nullptr;
-        C2SResult r = sparse_c2s(m, std::string("blocks.") + st.s + "." + std::to_string(st.c2si), h, st.C, coords, st.Cout, ext);
+        const bool fuse = fuse_head && si == 3;   // 最終段だけ head を融合する
+        C2SResult r = sparse_c2s(m, std::string("blocks.") + st.s + "." + std::to_string(st.c2si), h, st.C, coords, st.Cout, ext,
+                                 (std::string(kind) + "_c2s_stage" + std::to_string(si)).c_str(),
+                                 fuse ? &head : nullptr);
         if (subs_out) subs_out->push_back(r.subdiv);
         h = std::move(r.feats); coords = std::move(r.coords); N = (int)coords.size();
         mem_probe("after c2s");
+        stage_dump(kind, "stage" + std::to_string(si) + "_c2s", h, fuse ? out_ch : st.Cout, coords);
     }
     if (coords_only) return {};   // cascade upsample: just need the grown coords
+    if (fuse_head) { stage_dump(kind, "output", h, out_ch, coords); return h; }   // 融合済み
     // final LN(no affine) + output_layer -> [out_ch, M]
-    return linear_rows(m, h, 64, N, "output_layer", out_ch, true);
+    std::vector<float> out = linear_rows(m, h, 64, N, "output_layer", out_ch, true, kind);
+    stage_dump(kind, "output", out, out_ch, coords);
+    return out;
 }
 
 ShapeOut shape_decode(const Model& m, const std::vector<float>& latent,

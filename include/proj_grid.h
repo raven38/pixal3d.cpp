@@ -49,6 +49,15 @@ void proj_grid_project(int R, int S, const Camera& cam,
 std::vector<float> proj_grid_sample(const float* fmap, int C, int H, int W,
                                      int R, int S, const Camera& cam);
 
+// Bilinear-tap decomposition of proj_grid_sample for a device-side gather: for every grid
+// token k the sample equals sum_{t<4} fmap[c][idx[t][k]] * w[t][k], where idx indexes the
+// flattened [H*W] plane (h*W + w, the same order as DINOv3's patch tokens) with border
+// clamping and w carries the bilinear weights (float of the same double-precision products
+// grid_sample_bilinear uses). idx/w: 4 arrays of R^3 each (t = 00, 01, 10, 11 corners).
+// Used by pixal3d_cond_ss_gpu (get_rows x4 + weighted sum on the model's backend).
+void proj_grid_bilinear_taps(int H, int W, int R, int S, const Camera& cam,
+                              std::vector<int32_t> idx[4], std::vector<float> w[4]);
+
 // compute_relative_calc_mat for one batch element:
 //   calc_mat_i = F' @ inv(C_0) @ C_i,  F' = front-view matrix with F'[1][3] = -distance0.
 // c2w: [V*16] row-major 4x4 c2w matrices (view 0 = main view).

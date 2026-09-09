@@ -30,8 +30,21 @@ inline uint64_t key3(int x, int y, int z) {
     return ((uint64_t)(uint32_t)x << 42) | ((uint64_t)(uint32_t)y << 21) | (uint32_t)z;
 }
 
+// スレッド数。Emscripten ビルドは pthread 無しでリンクしているので std::thread の生成が
+// "thread constructor failed: Not supported" で throw する。さらに下の候補ビットセットは
+// スレッドごとに res^3/8 バイト（res=1024 で 134 MB）を確保するため、wasm32 の 4 GiB
+// ヒープでは並列度がそのままメモリ消費になる。ブラウザでは直列にする。
+inline int remesh_threads() {
+#ifdef __EMSCRIPTEN__
+    return 1;
+#else
+    return (int)std::max(1u, std::thread::hardware_concurrency());
+#endif
+}
+
 void parallel_for(int64_t n, const std::function<void(int64_t, int64_t)>& fn) {
-    const int nt = std::max(1u, std::thread::hardware_concurrency());
+    const int nt = remesh_threads();
+    if (nt <= 1) { if (n > 0) fn(0, n); return; }   // 直列（pthread 無しの wasm ビルド）
     std::vector<std::thread> ts;
     const int64_t chunk = (n + nt - 1) / nt;
     for (int t = 0; t < nt; ++t) {
@@ -76,7 +89,7 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
     {
         const int F = (int)iF;
         std::vector<std::vector<uint64_t>> parts;
-        const int nt = std::max(1u, std::thread::hardware_concurrency());
+        const int nt = remesh_threads();
         parts.assign(nt, {});
         std::vector<std::thread> ts;
         const int chunk = (F + nt - 1) / nt;
@@ -84,7 +97,7 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
             const int b = t * chunk, e = std::min(F, b + chunk);
             if (b >= e) break;
             parts[t].assign(cand.size(), 0);
-            ts.emplace_back([&, t, b, e]() {
+            auto job = [&, t, b, e]() {
                 auto& bits = parts[t];
                 auto setb = [&bits, res](int x, int y, int z) {
                     const int64_t i = ((int64_t)x * res + y) * res + z;
@@ -108,7 +121,8 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
                         for (int y = c0[1]; y <= c1[1]; ++y)
                             for (int z = c0[2]; z <= c1[2]; ++z) setb(x, y, z);
                 }
-            });
+            };
+            if (nt <= 1) job(); else ts.emplace_back(std::move(job));   // 直列（pthread 無しの wasm ビルド）
         }
         for (auto& th : ts) th.join();
         for (auto& bits : parts)

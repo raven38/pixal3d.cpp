@@ -33,6 +33,10 @@ After parity:
 - review upstream changes periodically
 - cherry-pick or merge changes only with validation fixtures
 - avoid updating ggml and Pixal3D graph logic in the same debugging commit when possible
+- local ggml changes go in `patches/ggml-webgpu/*.patch` (applied to the submodule working
+  tree at configure time, see `docs/GGML_FORK_DIFF.md` "Local patches"), never as edits to the
+  pinned submodule commit; keep each patch an `#ifndef`-guarded no-op by default so it can be
+  offered upstream and dropped on the next sync
 
 ## License and attribution
 

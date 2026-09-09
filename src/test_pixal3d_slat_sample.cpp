@@ -48,15 +48,51 @@
 //   against structured_latent_flow.py: `x = sp.sparse_cat([x, concat_cond], dim=-1)` -- noise
 //   channels first (0:32), concat_cond appended after (32:64) -- matching trellis_cli.cpp.
 //   trellis-test-pixal3d-slat-sample <flow.gguf> <fixture_dir> [gpu] [--stage shape512|shape_hr|tex]
+//                                    [--backend cpu|gpu|cuda|metal|vulkan|webgpu] [--noise FILE]
+//                                    [--concat-cond FILE] [--dump DIR] [--ext PREFIX] [--probe-steps k1,k2,..]
+//   --probe-steps  single-step gates: integrate sampler step k once from the f32 reference's
+//                 x_step{k-1} and score it against x_step{k} (f32 / cuda / cuda_nofa), then exit --
+//                 early/middle/late probes before committing to a full 12-step run on a slow backend.
+//   --stage       `texture` is an alias of `tex`, `shape1024` of `shape_hr` (the names the WebGPU
+//                 phases use; docs/spec/32-texture-flow-webgpu-prep.md).
+//   --backend B   the same device selection the SS / Shape-512 tests and the WASM entry use
+//                 (Model::load's gpu index: -1 = ggml CPU, 0 = the build's GPU device), spelled by
+//                 name: `cpu` -> -1, anything else -> 0 (or the positional [gpu] if given). After
+//                 loading, the backend ggml actually picked is checked against the name (`gpu`
+//                 accepts any non-CPU backend) and the run aborts on a mismatch -- so
+//                 `--backend webgpu` on a Metal/CUDA build fails loudly instead of silently
+//                 measuring the wrong device.
+//   --noise FILE  deterministic initial noise [N,32] f32 .npy to use instead of the fixture's
+//                 (tex_noise.npy etc.) -- the same serialized tensor can then drive PyTorch,
+//                 native and WebGPU/WASM runs (PIXAL3D.md validation principle).
+//   --concat-cond FILE  (tex only) the NORMALIZED shape SLAT [N,32] to concatenate instead of the
+//                 fixture's f32_tex_concat_cond.npy: the Shape-1024 stage's own x_final (a
+//                 cpp_/cuda_/browser_shape_x_final.npy dump of --stage shape_hr) is exactly this
+//                 tensor (verified 2026-09-06 on the hr_sample fixture: max|f32_tex_concat_cond -
+//                 f32_shape_x_final| = 2.4e-7), so this is how a validated Shape-1024 output is
+//                 wired into the texture stage without re-deriving it. Its distance from the
+//                 fixture's f32 concat_cond is reported.
+//   --dump DIR    write this run's per-step latents as DIR/cpp_x_step<k>.npy and DIR/cpp_x_final.npy
+//                 ([N,32] row-major, the fixture's layout) -- e.g. the native CUDA run, copied into the
+//                 fixture dir as cuda_x_step<k>.npy / cuda_x_final.npy, becomes a third reference here.
+//   --ext PREFIX  also score externally produced latents PREFIXx_step<k>.npy / PREFIXx_final.npy
+//                 (e.g. the browser/WASM run's) against the same references and against this run.
+// Every run also prints a `memory:` block (weights / DiT activation buffer / per-forward
+// conditioning inputs / sampler state / tex concat half / retained trace, plus the device's
+// free/total when the backend reports it), a per-step forward count + wall time (the tex stage's
+// guidance_strength is 1.0, so its sampler issues ONE forward per step -- no CFG pair), and a
+// one-line `summary:` with the final rel / cosine, the same numbers the WASM entry reports.
 #include "trellis_model.h"
 #include "flow_runner.h"
 #include "dit.h"
 #include "trellis_args.h"
 #include "npy.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -189,18 +225,37 @@ int main(int argc, char** argv) {
     }
     const string gguf_flow = argv[1], fdir = argv[2];
     int gpu = 0;
-    string stage_name = "shape512";
+    bool gpu_given = false;
+    string stage_name = "shape512", dump_dir, ext_prefix, backend_req, noise_path, concat_path, probe_arg;
     for (int i = 3; i < argc; ++i) {
         string a = argv[i];
         if (a == "--stage" && i + 1 < argc) stage_name = argv[++i];
-        else gpu = atoi(a.c_str());
+        else if (a == "--probe-steps" && i + 1 < argc) probe_arg = argv[++i];
+        else if (a == "--dump" && i + 1 < argc) dump_dir = argv[++i];
+        else if (a == "--ext" && i + 1 < argc) ext_prefix = argv[++i];
+        else if (a == "--backend" && i + 1 < argc) backend_req = argv[++i];
+        else if (a == "--noise" && i + 1 < argc) noise_path = argv[++i];
+        else if (a == "--concat-cond" && i + 1 < argc) concat_path = argv[++i];
+        else { gpu = atoi(a.c_str()); gpu_given = true; }
     }
     enum class Stage { SHAPE512, SHAPE_HR, TEX } stage;
     if (stage_name == "shape512") stage = Stage::SHAPE512;
-    else if (stage_name == "shape_hr") stage = Stage::SHAPE_HR;
-    else if (stage_name == "tex") stage = Stage::TEX;
-    else { fprintf(stderr, "unknown --stage '%s' (want shape512|shape_hr|tex)\n", stage_name.c_str()); return 1; }
+    else if (stage_name == "shape_hr" || stage_name == "shape1024") stage = Stage::SHAPE_HR;
+    else if (stage_name == "tex" || stage_name == "texture") stage = Stage::TEX;
+    else { fprintf(stderr, "unknown --stage '%s' (want shape512|shape_hr|shape1024|tex|texture)\n", stage_name.c_str()); return 1; }
     const bool is_tex = (stage == Stage::TEX);
+    // --backend: name -> Model::load gpu index (the mechanism every Pixal3D test shares); the
+    // actual backend is verified by name after loading (see below).
+    for (auto& ch : backend_req) ch = (char)tolower((unsigned char)ch);
+    if (!backend_req.empty()) {
+        static const char* known[] = { "cpu", "gpu", "cuda", "metal", "vulkan", "webgpu", "hip" };
+        bool ok = false; for (const char* k : known) ok = ok || backend_req == k;
+        if (!ok) { fprintf(stderr, "unknown --backend '%s' (want cpu|gpu|cuda|metal|vulkan|webgpu|hip)\n", backend_req.c_str()); return 1; }
+        if (backend_req == "cpu") { if (gpu_given && gpu >= 0) { fprintf(stderr, "--backend cpu conflicts with gpu=%d\n", gpu); return 1; } gpu = -1; }
+        else if (!gpu_given) gpu = 0;
+        else if (gpu < 0) { fprintf(stderr, "--backend %s conflicts with gpu=%d (CPU)\n", backend_req.c_str(), gpu); return 1; }
+    }
+    if (!concat_path.empty() && !is_tex) { fprintf(stderr, "--concat-cond is only meaningful for --stage tex\n"); return 1; }
 
     StageFiles sf;
     switch (stage) {
@@ -220,13 +275,18 @@ int main(int argc, char** argv) {
         break;
     }
 
-    printf("stage=%s fixture_dir=%s gpu=%d\n", stage_name.c_str(), fdir.c_str(), gpu);
+    printf("stage=%s fixture_dir=%s gpu=%d%s%s\n", stage_name.c_str(), fdir.c_str(), gpu,
+           backend_req.empty() ? "" : " backend=", backend_req.c_str());
 
     if (getenv("TRELLIS_NOFA")) { trellis::g_no_fa = true; printf("(TRELLIS_NOFA: soft_max path)\n"); }
 
     // ---- fixture inputs ----
     I32Array co = load_npy_i32(fdir + "/" + sf.coords);           // [N,4] (b,x,y,z)
-    npy::Array noise = npy::load(fdir + "/" + sf.noise);          // [N,32] (state/output channels)
+    const string noise_file = noise_path.empty() ? fdir + "/" + sf.noise : noise_path;
+    npy::Array noise = npy::load(noise_file);                     // [N,32] (state/output channels)
+    printf("initial noise: %s [%lld,%lld]\n", noise_file.c_str(),
+           (long long)(noise.shape.size() > 0 ? noise.shape[0] : 0), (long long)(noise.shape.size() > 1 ? noise.shape[1] : 0));
+    if (noise.shape.size() != 2) { fprintf(stderr, "noise must be [N,C] (got %zu dims)\n", noise.shape.size()); return 1; }
     npy::Array zg = npy::load(fdir + "/" + sf.cond_global);       // [1,5,1024]
     npy::Array zp = npy::load(fdir + "/" + sf.cond_proj);         // [N,2048]
     npy::Array nmean = npy::load(fdir + "/" + sf.norm_mean);      // [32]
@@ -273,17 +333,60 @@ int main(int argc, char** argv) {
     if (is_tex) {
         npy::Array cc;
         string used;
-        if (load_opt(fdir + "/f32_tex_concat_cond.npy", cc)) used = "f32_tex_concat_cond.npy";
+        if (!concat_path.empty()) {
+            // A Shape-1024 stage output (normalized x_final, [N,32] in hr_coords order) wired in
+            // as the texture stage's concat half. Must be on the same token list as this fixture.
+            if (!load_opt(concat_path, cc)) { fprintf(stderr, "--concat-cond: cannot open %s\n", concat_path.c_str()); return 1; }
+            used = concat_path;
+        } else if (load_opt(fdir + "/f32_tex_concat_cond.npy", cc)) used = "f32_tex_concat_cond.npy";
         else if (load_opt(fdir + "/bf16_tex_concat_cond.npy", cc)) used = "bf16_tex_concat_cond.npy";
-        else { fprintf(stderr, "tex stage: no f32_/bf16_ tex_concat_cond.npy found in %s\n", fdir.c_str()); return 1; }
-        if (cc.shape[0] != N) { fprintf(stderr, "tex_concat_cond tokens=%lld != N=%lld\n", (long long)cc.shape[0], (long long)N); return 1; }
+        else { fprintf(stderr, "tex stage: no f32_/bf16_ tex_concat_cond.npy found in %s (or pass --concat-cond FILE)\n", fdir.c_str()); return 1; }
+        if (cc.shape.size() != 2 || cc.shape[0] != N || cc.shape[1] != Cin) {
+            fprintf(stderr, "tex concat_cond %s: shape [%lld,%lld] != [N=%lld,%lld]\n", used.c_str(),
+                    (long long)(cc.shape.size() > 0 ? cc.shape[0] : 0), (long long)(cc.shape.size() > 1 ? cc.shape[1] : 0), (long long)N, (long long)Cin);
+            return 1;
+        }
         concat_cond.assign(cc.data.begin(), cc.data.begin() + (size_t)Cin * N);
         printf("tex concat_cond loaded from %s\n", used.c_str());
+        if (!concat_path.empty()) {
+            // How far the supplied Shape-1024 latent is from the reference's own concat_cond --
+            // the texture stage inherits this input error on top of its own flow error.
+            npy::Array ref_cc;
+            if (load_opt(fdir + "/f32_tex_concat_cond.npy", ref_cc)) {
+                print_stats("concat-cond vs f32_tex_concat_cond", diff_stats(concat_cond, ref_cc));
+                printf("         cos(concat-cond, f32 ref)=%.7f\n", mean_cosine(concat_cond, ref_cc, (int)Cin, N));
+            }
+            if (load_opt(fdir + "/bf16_tex_concat_cond.npy", ref_cc))
+                print_stats("concat-cond vs bf16_tex_concat_cond", diff_stats(concat_cond, ref_cc));
+        }
     }
+    // ggml_backend_dev_memory before the flow weights land (0/0 when the backend doesn't report it).
+    auto dev_mem = [](ggml_backend* b, size_t& free_b, size_t& total_b) {
+        free_b = total_b = 0;
+        if (ggml_backend_dev_t d = ggml_backend_get_device(b)) ggml_backend_dev_memory(d, &free_b, &total_b);
+    };
 
     // ---- sparse SLAT flow sampler ----
     trellis::Model mf = trellis::Model::load(gguf_flow, gpu);
-    printf("loaded %s (%zu tensors)\n", mf.arch.c_str(), mf.tensors.size());
+    const string backend_name = ggml_backend_name(mf.backend);
+    printf("loaded %s (%zu tensors) on backend '%s'\n", mf.arch.c_str(), mf.tensors.size(), backend_name.c_str());
+    if (!backend_req.empty()) {
+        string bn = backend_name; for (auto& ch : bn) ch = (char)tolower((unsigned char)ch);
+        const bool is_cpu = bn.find("cpu") != string::npos;
+        const bool ok = backend_req == "cpu" ? is_cpu
+                      : backend_req == "gpu" ? !is_cpu
+                      : backend_req == "hip" ? (bn.find("hip") != string::npos || bn.find("rocm") != string::npos)   // ggml-cuda under HIP reports "ROCm"
+                      : backend_req == "metal" ? (bn.find("metal") != string::npos || bn.find("mtl") != string::npos)   // ggml-metal reports "MTL0"
+                      : bn.find(backend_req) != string::npos;
+        if (!ok) {
+            fprintf(stderr, "--backend %s requested but the model loaded on '%s' (this build's GPU device is a different backend, or gpu=%d picked the CPU)\n",
+                    backend_req.c_str(), backend_name.c_str(), gpu);
+            mf.free();
+            return 1;
+        }
+    }
+    size_t dev_free_after_load = 0, dev_total = 0;
+    dev_mem(mf.backend, dev_free_after_load, dev_total);
     trellis::DiTParams p;
     p.in_ch = is_tex ? (int)(2 * Cin) : (int)Cin;   // tex DiT sees [state(32) ; shape_slat_norm(32)]
     p.out_ch = (int)Cin;
@@ -295,14 +398,51 @@ int main(int argc, char** argv) {
     if (p.d_proj != (int)Dp) { fprintf(stderr, "d_proj mismatch: checkpoint=%d fixture=%lld\n", p.d_proj, (long long)Dp); return 1; }
 
     trellis::DitRunner* run = trellis::make_sparse_runner(mf, p, coords3, (int)Lc);
+    printf("memory: weights %.1f MB (GGUF %s), dit activation buffer %.1f MB, cond inputs %.1f MB (global %lld x %lld + proj %lld x %lld, re-uploaded per forward)\n",
+           mf.total_bytes() / 1048576.0, ggml_backend_name(mf.backend), run->alloc_bytes() / 1048576.0,
+           (cond.size() + proj.size()) * 4 / 1048576.0, (long long)Dc, (long long)Lc, (long long)Dp, (long long)N);
+    // Memory accounting per component (buffer sizes, not a live VRAM query, like
+    // docs/PIXAL3D_WEBGPU_MEMORY.md §6/§7): weights = the GGUF's device buffer; activations = the
+    // gallocr buffer of one forward (the exact-SDPA score chunk / MLP hidden live here);
+    // conditioning = the per-forward global + proj inputs and their zero negatives (the sampler
+    // uploads one pair per forward); state = the sampler's [N,32] latent; tex extras = the fixed
+    // concat half and the rebuilt [N,64] DiT input; trace = the per-step latents this test keeps
+    // for the parity prints (host only, steps x state).
+    {
+        const double MB = 1048576.0;
+        const double w_mb = mf.total_bytes() / MB, a_mb = run->alloc_bytes() / MB;
+        const double cond_mb = (cond.size() + proj.size()) * 4 / MB, neg_mb = (neg_cond.size() + neg_proj.size()) * 4 / MB;
+        const double state_mb = sample.size() * 4 / MB;
+        const double concat_mb = concat_cond.size() * 4 / MB, x64_mb = is_tex ? (double)(2 * Cin * N) * 4 / MB : 0.0;
+        printf("memory (%s): weights %.1f MB | dit activations %.1f MB | cond per forward %.1f MB (+ zero neg %.1f MB) | state [N=%lld,%lld] %.2f MB",
+               backend_name.c_str(), w_mb, a_mb, cond_mb, neg_mb, (long long)N, (long long)Cin, state_mb);
+        if (is_tex) printf(" | tex concat half %.2f MB + [N,%lld] input %.2f MB per forward", concat_mb, (long long)(2 * Cin), x64_mb);
+        printf(" | device-resident sum %.1f MB\n", w_mb + a_mb + cond_mb + neg_mb + state_mb + x64_mb);
+        size_t f_now = 0, t_now = 0; dev_mem(mf.backend, f_now, t_now);
+        const bool cpu_backend = backend_name.find("CPU") != string::npos;
+        if (t_now > 0 && !cpu_backend) printf("memory (%s): device free/total after weights %.1f / %.1f MB, after dit alloc %.1f / %.1f MB\n",
+                              backend_name.c_str(), dev_free_after_load / MB, dev_total / MB, f_now / MB, t_now / MB);
+        else if (t_now > 0) printf("memory (%s): host RAM %.1f MB (ggml-cpu reports the total as both free and total; not tracked)\n", backend_name.c_str(), t_now / MB);
+        else printf("memory (%s): device free/total not reported by this backend\n", backend_name.c_str());
+    }
+    // Per-forward timing, grouped per sampler step: forwards sharing one t_scaled belong to the
+    // same Euler step (a CFG pair inside the guidance interval, a single forward outside it -- and
+    // always single for the tex stage, whose guidance_strength is 1.0).
+    struct FwdRec { float ts; double ms; };
+    vector<FwdRec> fwd_log;
     trellis::FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* c, const float* pj) {
-        if (!is_tex) return run->forward(x, ts, c, pj);
+        const auto tf = std::chrono::steady_clock::now();
+        auto done = [&](vector<float> r) {
+            fwd_log.push_back({ ts, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tf).count() });
+            return r;
+        };
+        if (!is_tex) return done(run->forward(x, ts, c, pj));
         vector<float> x64((size_t)2 * Cin * N);
         for (int64_t n = 0; n < N; ++n) {
             for (int64_t k = 0; k < Cin; ++k) x64[(size_t)k + 2 * Cin * n]        = x[(size_t)k + Cin * n];
             for (int64_t k = 0; k < Cin; ++k) x64[(size_t)Cin + k + 2 * Cin * n]  = concat_cond[(size_t)k + Cin * n];
         }
-        return run->forward(x64, ts, c, pj);
+        return done(run->forward(x64, ts, c, pj));
     };
 
     // Sampler params: hardcoded stage default, overridden by the fixture's own sampler_params.npy
@@ -327,23 +467,111 @@ int main(int argc, char** argv) {
         }
     }
 
+    auto lat_stats = [&](const vector<float>& v) {
+        double m = 0, mx = 0; size_t bad = 0;
+        for (float x : v) { if (!std::isfinite(x)) { ++bad; continue; } m += x; mx = std::max(mx, (double)std::fabs(x)); }
+        m /= v.size(); double var = 0; for (float x : v) if (std::isfinite(x)) var += (x - m) * (x - m);
+        printf("    latent mean=%+.6f std=%.6f max|x|=%.4f nonfinite=%zu\n", m, std::sqrt(var / v.size()), mx, bad);
+    };
+    // --probe-steps k1,k2,...: single-step gates before a full run. For each k the step k of the
+    // sampler (t = ts[k-1] -> ts[k], the same schedule sample_flow builds) is integrated ONCE from
+    // the f32 reference's x_step{k-1} and the result is scored against x_step{k} of the f32 / cuda
+    // / cuda_nofa references, so a divergence is attributed to one forward instead of to the
+    // accumulated trajectory. One forward per step (two inside a CFG interval); guidance rescale is
+    // not reproduced here (the tex sampler has none) -- probes of a rescaled step are refused.
+    if (!probe_arg.empty()) {
+        vector<int> probe;
+        for (size_t i0 = 0; i0 < probe_arg.size();) {
+            size_t i1 = probe_arg.find(',', i0); if (i1 == string::npos) i1 = probe_arg.size();
+            probe.push_back(atoi(probe_arg.substr(i0, i1 - i0).c_str())); i0 = i1 + 1;
+        }
+        vector<float> ts(sp.steps + 1);
+        for (int i = 0; i <= sp.steps; ++i) { const float t = 1.0f - (float)i / sp.steps; ts[i] = sp.rescale_t * t / (1.0f + (sp.rescale_t - 1.0f) * t); }
+        bool probe_ok = true;
+        for (int k : probe) {
+            if (k < 1 || k > sp.steps) { fprintf(stderr, "--probe-steps: step %d outside 1..%d\n", k, sp.steps); return 1; }
+            const float t = ts[k - 1], tprev = ts[k];
+            const float gs = (sp.gi0 <= t && t <= sp.gi1) ? sp.guidance_strength : 1.0f;
+            if (gs != 1.0f && sp.guidance_rescale > 0.0f) { fprintf(stderr, "--probe-steps: step %d is inside a rescaled guidance interval (not reproduced here)\n", k); return 1; }
+            npy::Array x0, rf, rc, rn;
+            const string s0 = sf.x_step_prefix + std::to_string(k - 1) + ".npy", s1 = sf.x_step_prefix + std::to_string(k) + ".npy";
+            if (!load_opt(fdir + "/f32_" + s0, x0) || !load_opt(fdir + "/f32_" + s1, rf)) { fprintf(stderr, "--probe-steps: f32_%s / f32_%s missing\n", s0.c_str(), s1.c_str()); return 1; }
+            vector<float> x(x0.data.begin(), x0.data.begin() + (size_t)Cin * N), pred;
+            const auto tp0 = std::chrono::steady_clock::now();
+            if (gs == 1.0f) pred = fwd(x, 1000.0f * t, cond.data(), proj.data());
+            else {
+                pred = fwd(x, 1000.0f * t, cond.data(), proj.data());
+                vector<float> neg = fwd(x, 1000.0f * t, neg_cond.data(), neg_proj.data());
+                for (size_t i = 0; i < pred.size(); ++i) pred[i] = gs * pred[i] + (1 - gs) * neg[i];
+            }
+            for (size_t i = 0; i < x.size(); ++i) x[i] -= (t - tprev) * pred[i];
+            printf("probe step %2d: t=%.4f->%.4f gs=%.1f from f32_%s, %.1f ms\n", k, t, tprev, gs, s0.c_str(),
+                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tp0).count());
+            lat_stats(x);
+            const Stats st = diff_stats(x, rf);
+            print_stats("f32", st); printf("         cos(mine,f32)=%.7f\n", mean_cosine(x, rf, (int)Cin, N));
+            if (load_opt(fdir + "/cuda_" + s1, rc)) { print_stats("cuda", diff_stats(x, rc)); printf("         cos(mine,cuda)=%.7f\n", mean_cosine(x, rc, (int)Cin, N)); }
+            if (load_opt(fdir + "/cuda_nofa_" + s1, rn)) { print_stats("cuda_nofa", diff_stats(x, rn)); printf("         cos(mine,cuda_nofa)=%.7f\n", mean_cosine(x, rn, (int)Cin, N)); }
+            // One step must stay within the full-run gate; a single forward has no accumulation.
+            const double thr = 5e-2;
+            printf("         probe verdict: rel(one step from f32 x_step%d, f32 x_step%d) = %.4e ; threshold = %.4e -> %s\n", k - 1, k, st.rel, thr, st.rel <= thr ? "PASS" : "FAIL");
+            probe_ok = probe_ok && st.rel <= thr;
+            if (!dump_dir.empty()) npy::save(dump_dir + "/cpp_probe_" + s1, x.data(), { N, Cin });
+        }
+        delete run; mf.free();
+        printf("=== probe %s ===\n", probe_ok ? "PASS" : "FAIL");
+        return probe_ok ? 0 : 1;
+    }
+
     vector<vector<float>> trace;
+    const auto t_sample0 = std::chrono::steady_clock::now();
     vector<float> out = trellis::sample_flow(fwd, sample, cond.data(), neg_cond.data(),
                                               proj.data(), neg_proj.data(), sp, &trace);
+    const double sample_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_sample0).count();
     delete run; mf.free();
+    printf("memory (host): per-step trace %zu x %.2f MB = %.1f MB\n", trace.size(), sample.size() * 4 / 1048576.0,
+           trace.size() * sample.size() * 4 / 1048576.0);
+    // Group the forward log into steps (consecutive forwards with the same t_scaled).
+    vector<int> step_nfwd; vector<double> step_ms, step_ts;
+    for (const FwdRec& r : fwd_log) {
+        if (step_ts.empty() || r.ts != step_ts.back()) { step_ts.push_back(r.ts); step_nfwd.push_back(0); step_ms.push_back(0.0); }
+        step_nfwd.back()++; step_ms.back() += r.ms;
+    }
+    double fwd_ms_total = 0; for (const FwdRec& r : fwd_log) fwd_ms_total += r.ms;
+    printf("timing: %zu forwards over %d steps, %.1f ms per forward, %.1f s sampling wall (%.1f s inside forwards)\n",
+           fwd_log.size(), sp.steps, fwd_log.empty() ? 0.0 : fwd_ms_total / fwd_log.size(), sample_ms / 1000.0, fwd_ms_total / 1000.0);
 
     // ---- per-step latent parity vs f32 and bf16 refs, plus f32-vs-bf16 calibration ----
     printf("\nper-step latent parity ([N=%lld,C=%lld], ggml channel-major == npy row-major, no remap):\n",
            (long long)N, (long long)Cin);
+    const std::vector<int64_t> lat_shape = { N, Cin };
     for (int k = 0; k <= sp.steps; ++k) {
         const vector<float>& mine = (k == 0) ? sample : trace[k - 1];   // trace[i] = sample after step i+1
-        npy::Array rf, rb;
-        bool hf = load_opt(fdir + "/f32_" + sf.x_step_prefix + std::to_string(k) + ".npy", rf);
-        bool hb = load_opt(fdir + "/bf16_" + sf.x_step_prefix + std::to_string(k) + ".npy", rb);
-        printf("  step %2d:\n", k);
-        if (hf) print_stats("f32", diff_stats(mine, rf)); else printf("    f32  (missing)\n");
+        npy::Array rf, rb, rc, re;
+        const string sk = sf.x_step_prefix + std::to_string(k) + ".npy";
+        bool hf = load_opt(fdir + "/f32_" + sk, rf);
+        bool hb = load_opt(fdir + "/bf16_" + sk, rb);
+        bool hc = load_opt(fdir + "/cuda_" + sk, rc);
+        bool he = !ext_prefix.empty() && load_opt(ext_prefix + sk, re);
+        if (k == 0) printf("  step %2d:\n", k);
+        else if ((size_t)k <= step_ts.size()) printf("  step %2d: t_scaled=%.3f forwards=%d %.1f ms\n", k, step_ts[k - 1], step_nfwd[k - 1], step_ms[k - 1]);
+        else printf("  step %2d:\n", k);
+        lat_stats(mine);
+        if (hf) { print_stats("f32", diff_stats(mine, rf)); printf("         cos(mine,f32)=%.7f\n", mean_cosine(mine, rf, (int)Cin, N)); }
+        else printf("    f32  (missing)\n");
         if (hb) print_stats("bf16", diff_stats(mine, rb)); else printf("    bf16 (missing)\n");
+        if (hc) { print_stats("cuda", diff_stats(mine, rc)); printf("         cos(mine,cuda)=%.7f\n", mean_cosine(mine, rc, (int)Cin, N)); }
         if (hf && hb) print_stats("f32v.bf16[calib]", diff_stats2(rf, rb));
+        if (he) {
+            printf("    [ext] %s%s\n", ext_prefix.c_str(), sk.c_str());
+            lat_stats(re.data);
+            if (hf) { print_stats("ext-f32", diff_stats(re.data, rf)); printf("         cos(ext,f32)=%.7f\n", mean_cosine(re.data, rf, (int)Cin, N)); }
+            if (hb) print_stats("ext-bf16", diff_stats(re.data, rb));
+            if (hc) { print_stats("ext-cuda", diff_stats(re.data, rc)); printf("         cos(ext,cuda)=%.7f\n", mean_cosine(re.data, rc, (int)Cin, N)); }
+            npy::Array rm; rm.shape = lat_shape; rm.data = mine;
+            print_stats("ext-mine", diff_stats(re.data, rm)); printf("         cos(ext,mine)=%.7f\n", mean_cosine(re.data, rm, (int)Cin, N));
+        }
+        if (!dump_dir.empty() && k > 0) npy::save(dump_dir + "/cpp_" + sk, mine.data(), lat_shape);
     }
 
     // Explicit final-latent check (redundant with trace.back(), ships as its own file).
@@ -358,7 +586,24 @@ int main(int argc, char** argv) {
         if (hf) { final_f32 = diff_stats(out, rf); has_final_f32 = true; print_stats("f32", final_f32); cos_f32 = mean_cosine(out, rf, (int)Cin, N); }
         else printf("    f32  (missing)\n");
         if (hb) print_stats("bf16", diff_stats(out, rb)); else printf("    bf16 (missing)\n");
+        npy::Array rc;
+        if (load_opt(fdir + "/cuda_" + sf.x_final + ".npy", rc)) {
+            print_stats("cuda", diff_stats(out, rc)); printf("         cos(mine,cuda)=%.7f\n", mean_cosine(out, rc, (int)Cin, N));
+        }
         if (hf && hb) { final_calib = diff_stats2(rf, rb); has_final_calib = true; print_stats("f32v.bf16[calib]", final_calib); }
+        if (!dump_dir.empty()) npy::save(dump_dir + "/cpp_" + sf.x_final + ".npy", out.data(), lat_shape);
+        npy::Array re;
+        if (!ext_prefix.empty() && load_opt(ext_prefix + sf.x_final + ".npy", re)) {
+            printf("    [ext] %s%s.npy\n", ext_prefix.c_str(), sf.x_final.c_str());
+            lat_stats(re.data);
+            if (hf) { Stats se = diff_stats(re.data, rf); print_stats("ext-f32", se); printf("         cos(ext,f32)=%.7f\n", mean_cosine(re.data, rf, (int)Cin, N));
+                      const double thr = std::max(2.0 * (hb ? diff_stats2(rf, rb).rel : 0.0), 5e-2);
+                      printf("         ext verdict: rel(ext, f32 ref) = %.4e ; threshold = %.4e -> %s\n", se.rel, thr, se.rel <= thr ? "PASS" : "FAIL"); }
+            if (hb) print_stats("ext-bf16", diff_stats(re.data, rb));
+            if (rc.numel() > 0) { print_stats("ext-cuda", diff_stats(re.data, rc)); printf("         cos(ext,cuda)=%.7f\n", mean_cosine(re.data, rc, (int)Cin, N)); }
+            npy::Array rm; rm.shape = lat_shape; rm.data = out;
+            print_stats("ext-mine", diff_stats(re.data, rm)); printf("         cos(ext,mine)=%.7f\n", mean_cosine(re.data, rm, (int)Cin, N));
+        }
     }
     if (cos_f32 >= 0) printf("  mean per-token cosine-similarity(mine, f32 ref) = %.6f\n", cos_f32);
 
@@ -396,5 +641,11 @@ int main(int argc, char** argv) {
                has_final_calib ? "" : "  [no bf16 calibration -- floor only]");
         printf("%s\n", pass ? "PASS" : "FAIL");
     }
+    // One-line machine-readable recap (the WASM entry prints the same fields).
+    printf("summary: stage=%s backend=%s N=%lld in_ch=%d steps=%d forwards=%zu fwd_ms=%.1f rel_final=%.4e cos_final=%.6f calib_rel=%.4e%s\n",
+           stage_name.c_str(), backend_name.c_str(), (long long)N, p.in_ch, sp.steps, fwd_log.size(),
+           fwd_log.empty() ? 0.0 : fwd_ms_total / fwd_log.size(),
+           has_final_f32 ? final_f32.rel : -1.0, cos_f32, has_final_calib ? final_calib.rel : -1.0,
+           concat_path.empty() ? "" : " concat_cond=external");
     return 0;
 }

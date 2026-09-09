@@ -1,0 +1,29 @@
+diff --git a/src/ggml-webgpu/ggml-webgpu.cpp b/src/ggml-webgpu/ggml-webgpu.cpp
+index 0b605fa8..6232bae1 100644
+--- a/src/ggml-webgpu/ggml-webgpu.cpp
++++ b/src/ggml-webgpu/ggml-webgpu.cpp
+@@ -5,6 +5,15 @@
+ 
+ #include "ggml-webgpu.h"
+ 
++// The subgroup-matrix mul_mat / flash_attn shaders accumulate in f16 (see the TODO in
++// mul_mat_subgroup_matrix.wgsl: "f16 accumulation causes NaNs"). Build with
++// -DGGML_WEBGPU_SUBGROUP_MATRIX=0 to never request ChromiumExperimentalSubgroupMatrix, so
++// every mul_mat takes the f32-accumulating reg_tile path (the same path Emscripten builds
++// always use). Default 1 keeps upstream behavior.
++#ifndef GGML_WEBGPU_SUBGROUP_MATRIX
++#define GGML_WEBGPU_SUBGROUP_MATRIX 1
++#endif
++
+ #include "ggml-backend-impl.h"
+ #include "ggml-impl.h"
+ #include "ggml-webgpu-shader-lib.hpp"
+@@ -3833,7 +3842,7 @@ static void create_webgpu_device(ggml_backend_webgpu_reg_context * ctx) {
+         wgpu::WGSLLanguageFeatureName::Packed4x8IntegerDotProduct);
+ 
+     bool valid_subgroup_matrix_config = false;
+-#ifndef __EMSCRIPTEN__
++#if !defined(__EMSCRIPTEN__) && GGML_WEBGPU_SUBGROUP_MATRIX
+     // Accept f16 subgroup matrix configurations (square or non-square).
+     // NVIDIA GPUs typically report square configs (e.g. 16x16x16),
+     // while Intel Xe2 GPUs report non-square configs (e.g. 8x16x16).

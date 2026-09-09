@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace trellis {
 
@@ -15,7 +17,23 @@ static bool g_cast_f32 = false;   // set per build_dit_dense call
 
 // Budget for one query chunk's [Lk, nq, nh] score tile in the exact (non-FA) SDPA path.
 // Bounds the peak regardless of Lq, which is what made FA necessary in the first place.
+// sdpa のクエリ分割 1 チャンクあたりのスコア行列の予算。分割数を変えても結果は同じ
+// （softmax はクエリ行ごとに閉じている）なので、これは純粋にメモリと速度の調整値。
+//
+// ブラウザだけ既定を下げる理由: WebGPU のデバイス予算は実測 4095 MB しかなく、
+// テクスチャ flow（N=17690, n_heads=12）の常駐は
+//   重み 2647 MB + 活性化 + conditioning 276 MB
+// なので、活性化を 1172 MB 以下に収めないと予算を超える。超えるとユニファイドメモリ上で
+// Metal がメモリを往復させ続け、1 forward が 40 秒から 139〜176 秒に伸びてマシン全体が
+// 巻き添えで固まる（2026-09-08 実測）。
+// 実測（native Metal, N=17690）: 1024 MB -> 活性化 1888 MB / 256 MB -> 1127 MB /
+// 128 MB -> 1032 MB（ここで attention 以外が支配的になり頭打ち）。128 MB なら
+// 合計 3956 MB で予算内に収まる。native は速度優先で 1024 MB のまま。
+#ifdef __EMSCRIPTEN__
+static constexpr int64_t kAttnChunkBytes = 128ll * 1024 * 1024;
+#else
 static constexpr int64_t kAttnChunkBytes = 1024ll * 1024 * 1024;
+#endif
 bool g_no_fa = false;             // --no-fa; set by trellis_run
 
 static T* lin(ggml_context* c, const Model& m, const std::string& p, T* x) {
@@ -45,8 +63,11 @@ static T* rms_gamma(ggml_context* c, T* x, T* gamma, float eps) {
 // output with two ggml_set_rows (single flat-grid dispatch each) rather than ggml_concat: ggml's
 // concat launches one kernel per ne[3] slice, so the old concat over the [2,half,nh,L] pair tensor
 // fired L (token-count) dispatches per call -> ~30M concat launches over a flow. q/k are F32 here
-// (mul_mat output), which ggml_set_rows requires. Even/odd row indices come from ggml_arange.
-static T* apply_rope(ggml_context* c, T* x, T* cos, T* sin) {
+// (mul_mat output), which ggml_set_rows requires. Even/odd row indices come from `rope_idx`
+// (host-built I32 [hd] = evens|odds, see dit_rope_index) when the caller supplies one, else
+// from ggml_arange -- identical integers either way; the input form exists because the ggml
+// WebGPU backend has no ARANGE kernel (docs/PIXAL3D_WEBGPU_OP_GAP.md C2).
+static T* apply_rope(ggml_context* c, T* x, T* cos, T* sin, T* rope_idx) {
     const int64_t hd = x->ne[0], nh = x->ne[1], L = x->ne[2];
     const int64_t half = hd / 2;
     T* x5 = ggml_reshape_4d(c, x, 2, half, nh, L);              // [2, half, nh, L]
@@ -54,8 +75,14 @@ static T* apply_rope(ggml_context* c, T* x, T* cos, T* sin) {
     T* x1 = ggml_cont(c, ggml_view_4d(c, x5, 1, half, nh, L, x5->nb[1], x5->nb[2], x5->nb[3], x5->nb[0])); // odd
     T* ev = ggml_sub(c, ggml_mul(c, x0, cos), ggml_mul(c, x1, sin));   // [1,half,nh,L] rotated even
     T* od = ggml_add(c, ggml_mul(c, x1, cos), ggml_mul(c, x0, sin));   // [1,half,nh,L] rotated odd
-    T* ce = ggml_cast(c, ggml_arange(c, 0.0f, (float)hd, 2.0f), GGML_TYPE_I32);  // [0,2,..,hd-2]
-    T* co = ggml_cast(c, ggml_arange(c, 1.0f, (float)hd, 2.0f), GGML_TYPE_I32);  // [1,3,..,hd-1]
+    T *ce, *co;
+    if (rope_idx) {
+        ce = ggml_view_1d(c, rope_idx, half, 0);                                       // [0,2,..,hd-2]
+        co = ggml_view_1d(c, rope_idx, half, (size_t)half * ggml_element_size(rope_idx)); // [1,3,..,hd-1]
+    } else {
+        ce = ggml_cast(c, ggml_arange(c, 0.0f, (float)hd, 2.0f), GGML_TYPE_I32);
+        co = ggml_cast(c, ggml_arange(c, 1.0f, (float)hd, 2.0f), GGML_TYPE_I32);
+    }
     T* out = ggml_scale(c, ggml_reshape_4d(c, x, 1, hd, nh, L), 0.0f);  // allocated [1,hd,nh,L] scratch
     out = ggml_set_rows(c, out, ev, ce);
     out = ggml_set_rows(c, out, od, co);
@@ -163,7 +190,15 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     // attentions per block is built as ONE graph, so an unbounded chunk count exhausts the
     // ggml context (ggml_new_object: not enough space). Hitting this cap costs memory, not
     // correctness -- query chunking is bit-exact either way (no reduction crosses queries).
-    constexpr int64_t kMaxAttnChunks = 32;
+    // 上限は「1 グラフに入るテンソル数」から来る制約で、正しさとは無関係（クエリ分割は
+    // どちらでもビット完全）。ブラウザでは活性化バッファが WebGPU の予算に収まるかどうかが
+    // 死活問題なので、flow_runner.cpp のメタデータ枠を広げたうえでここも上げてある。
+    // 実測（tex flow, N=17690, n_heads=12）: 上限 32 だと 1 チャンク 553 クエリ =
+    // スコア 470 MB で頭打ちになり、活性化バッファは 1316 MB より下がらなかった。
+    static const int64_t kMaxAttnChunks = []{
+        if (const char* e = getenv("TRELLIS_ATTN_MAX_CHUNKS")) return atoll(e);
+        return (int64_t)256;
+    }();
     if (nq * kMaxAttnChunks < Lq) nq = (Lq + kMaxAttnChunks - 1) / kMaxAttnChunks;
     if (nq >= Lq) nq = Lq;                                      // small attn: single chunk, no concat
 
@@ -188,7 +223,7 @@ static T* gamma32(ggml_context* c, const Model& m, const std::string& key) {
 }
 
 static T* self_attn(ggml_context* c, const Model& m, const std::string& pre, T* h,
-                    T* cos, T* sin, const DiTParams& p, T* mask = nullptr) {
+                    T* cos, T* sin, const DiTParams& p, T* mask = nullptr, T* rope_idx = nullptr) {
     const int hd = p.head_dim, nh = p.n_heads;
     const int64_t L = h->ne[1];
     T* qkv = lin(c, m, pre + ".to_qkv", h);                     // [3*d_model, L]
@@ -200,8 +235,8 @@ static T* self_attn(ggml_context* c, const Model& m, const std::string& pre, T* 
     T* q = pick(0); T* k = pick(1); T* v = pick(2);
     q = rms_gamma(c, q, gamma32(c, m, pre + ".q_rms_norm.gamma"), p.rms_eps);
     k = rms_gamma(c, k, gamma32(c, m, pre + ".k_rms_norm.gamma"), p.rms_eps);
-    q = apply_rope(c, q, cos, sin);
-    k = apply_rope(c, k, cos, sin);
+    q = apply_rope(c, q, cos, sin, rope_idx);
+    k = apply_rope(c, k, cos, sin, rope_idx);
     return lin(c, m, pre + ".to_out", sdpa(c, q, k, v, p.d_model, mask));
 }
 
@@ -230,7 +265,8 @@ static T* modulate(ggml_context* c, T* x, T* scale, T* shift) {
 
 static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
                 T* cos, T* sin, const DiTParams& p, std::map<std::string, T*>* inter = nullptr,
-                T* self_mask = nullptr, T* cross_mask = nullptr, T* proj = nullptr) {
+                T* self_mask = nullptr, T* cross_mask = nullptr, T* proj = nullptr,
+                T* rope_idx = nullptr) {
     const std::string b = "blocks." + std::to_string(i);
     const int dm = p.d_model;
     // Block 0 keeps the historical "blk0_*" names; block 15 is exposed too as a mid-depth probe.
@@ -248,7 +284,7 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
 
     T* hh = layernorm(c, h, p.ln_eps);
     hh = modulate(c, hh, scale_msa, shift_msa);
-    hh = self_attn(c, m, b + ".self_attn", hh, cos, sin, p, self_mask);
+    hh = self_attn(c, m, b + ".self_attn", hh, cos, sin, p, self_mask, rope_idx);
     dbg("blk0_msa", hh);
     h = ggml_add(c, h, ggml_mul(c, hh, gate_msa));
 
@@ -286,9 +322,15 @@ bool dit_detect_proj_attn(const Model& m, DiTParams& p) {
     return true;
 }
 
+void dit_rope_index(int head_dim, std::vector<int32_t>& out) {
+    out.resize(head_dim);
+    const int half = head_dim / 2;
+    for (int i = 0; i < half; ++i) { out[i] = 2 * i; out[half + i] = 2 * i + 1; }
+}
+
 ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p,
                              T* h0, T* tfreq, T* cond, T* cos, T* sin,
-                             std::map<std::string, T*>* inter, T* proj) {
+                             std::map<std::string, T*>* inter, T* proj, T* rope_idx) {
     g_cast_f32 = p.cast_f32;
     auto keep = [&](const char* n, T* t) { if (inter) (*inter)[n] = t; ggml_set_name(t, n); return t; };
 
@@ -307,7 +349,7 @@ ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p
     T* self_mask  = build_pad_mask(c, h0->ne[1], h0->ne[1]);
     T* cross_mask = build_pad_mask(c, cond->ne[1], h0->ne[1]);
     for (int i = 0; i < p.n_blocks; ++i) {
-        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask, proj);
+        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask, proj, rope_idx);
         keep(("after_block" + std::to_string(i)).c_str(), h);
     }
     h = layernorm(c, h, p.final_ln_eps);
