@@ -27,6 +27,10 @@ ROCM_GFX="gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 gfx1103 gfx1150 gfx115
 DEST="${XDG_DATA_HOME:-$HOME/.local/share}/trellis-studio"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/trellis-studio"
 BACKEND=""; GPU=0; PORT=8080; MODELS_DIR=""; SKIP_MODELS=0; SKIP_APP=0; ASSUME_YES=0; QUANT=""
+# Pixal3D model set (#34): a manifest fixes the exact bytes of every model file.
+MODEL_MANIFEST=""     # path, URL, or "release" (an asset of the resolved release)
+MODEL_BASE_URL=""     # where the model files themselves live
+VERIFY_ONLY=0         # verify an existing models dir and exit
 
 usage() {
   cat <<EOF
@@ -48,6 +52,16 @@ Trellis Studio installer (Linux)
   --quant q8|q4                download quantized weights instead of f16:
                                  q8 ~9.5 GB (near-lossless), q4 ~6 GB (smaller,
                                  slight quality loss). Default: f16 (~16.5 GB).
+  --model-manifest PATH|URL|release
+                               install the Pixal3D model set described by this
+                               manifest (pixal3d-models.json) and verify every
+                               file's exact size and SHA256. "release" takes the
+                               manifest from the resolved GitHub release.
+  --model-base-url URL         where the model files listed in the manifest live
+                               (required with --model-manifest unless every file
+                               is already present and only needs verifying)
+  --verify-models              verify the existing models dir against its
+                               manifest and exit; no downloads, no config writes
   --skip-models                don't download the weights
   --skip-app                   don't download the desktop app
   -y, --yes                    don't prompt for confirmation
@@ -64,6 +78,9 @@ while [ $# -gt 0 ]; do
     --dest) DEST="$2"; shift 2;;
     --models-dir) MODELS_DIR="$2"; shift 2;;
     --quant) QUANT="$2"; shift 2;;
+    --model-manifest) MODEL_MANIFEST="$2"; shift 2;;
+    --model-base-url) MODEL_BASE_URL="$2"; shift 2;;
+    --verify-models) VERIFY_ONLY=1; shift;;
     --skip-models) SKIP_MODELS=1; shift;;
     --skip-app) SKIP_APP=1; shift;;
     -y|--yes) ASSUME_YES=1; shift;;
@@ -307,6 +324,130 @@ download_asset() {
   mv -f "$dest.part" "$dest"
 }
 
+
+# ---- Pixal3D model set (manifest-verified) ---------------------------------
+# The manifest is the model-set identity (#34): exact byte size and SHA256 for
+# each of the required roles. Nothing here trusts a filename or a length alone.
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1
+  else die "need sha256sum or shasum to verify the model set"; fi
+}
+
+# Manifest entries are read as one line per file so a malformed manifest cannot
+# silently produce fewer files than it lists.
+manifest_entries() {
+  tr -d '\n' <"$1" | tr '{' '\n' | grep -F '"sha256"' | while IFS= read -r obj; do
+    local name size digest
+    name="$(json_str "$obj" name)"; size="$(json_num "$obj" size_bytes)"; digest="$(json_str "$obj" sha256)"
+    [ -n "$name" ] && [ -n "$size" ] && [ -n "$digest" ] || continue
+    printf '%s\t%s\t%s\n' "$name" "$size" "$digest"
+  done
+}
+
+check_manifest() {
+  local mf="$1" sv ms mv count
+  sv="$(json_num "$(cat "$mf")" schema_version)"
+  [ "$sv" = "1" ] || die "unsupported model manifest schema_version: ${sv:-missing}"
+  ms="$(json_str "$(cat "$mf")" model_set)"; mv="$(json_str "$(cat "$mf")" version)"
+  [ -n "$ms" ] && [ -n "$mv" ] || die "model manifest is missing model_set/version"
+  count="$(manifest_entries "$mf" | grep -c . || true)"
+  [ "${count:-0}" -gt 0 ] || die "model manifest lists no files"
+  MODEL_SET_NAME="$ms"; MODEL_SET_VERSION="$mv"; MODEL_FILE_COUNT="$count"
+  info "model set: ${ms} ${mv} (${count} files, manifest sha256 $(sha256_of "$mf"))"
+}
+
+# Verifies one file against the manifest. Returns 0 = matches, 1 = differs.
+verify_one() {
+  local path="$1" size="$2" digest="$3" actual_size
+  [ -f "$path" ] || return 1
+  actual_size="$(wc -c <"$path" | tr -d ' ')"
+  [ "$actual_size" = "$size" ] || return 1
+  [ "$(sha256_of "$path")" = "$digest" ] || return 1
+}
+
+install_model_set() {
+  local mf="$1" ok=0 fetched=0 failed=""
+  check_manifest "$mf"
+  mkdir -p "$MODELS_DIR"
+  while IFS="$(printf '\t')" read -r name size digest; do
+    # A manifest comes from the network, so its names must never escape the
+    # models directory.
+    case "$name" in ""|.|..|*/*|*\\*) die "unsafe file name in model manifest: '$name'";; esac
+    local dest="$MODELS_DIR/$name"
+    if verify_one "$dest" "$size" "$digest"; then
+      info "ok $name (already present, verified)"
+      ok=$((ok+1)); continue
+    fi
+    if [ "$VERIFY_ONLY" = 1 ]; then failed="${failed} $name"; continue; fi
+    [ -n "$MODEL_BASE_URL" ] || die "$name is missing or does not match the manifest, and --model-base-url was not given"
+    rm -f "$dest.part"
+    info "↓ $name ($size bytes)"
+    curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$dest.part" "${MODEL_BASE_URL%/}/$name" \
+      || { rm -f "$dest.part"; die "download failed: ${MODEL_BASE_URL%/}/$name"; }
+    mv -f "$dest.part" "$dest"
+    if verify_one "$dest" "$size" "$digest"; then
+      ok=$((ok+1)); fetched=$((fetched+1))
+    else
+      # Keep the bad file out of the models dir: a wrong-but-plausible model
+      # file is worse than a missing one.
+      local got_size got_sha
+      got_size="$(wc -c <"$dest" | tr -d ' ')"; got_sha="$(sha256_of "$dest")"
+      rm -f "$dest"
+      die "model file does not match the manifest: $name
+       expected size $size sha256 $digest
+       got      size $got_size sha256 $got_sha
+       the downloaded file was removed."
+    fi
+  done < <(manifest_entries "$mf")
+
+  if [ -n "$failed" ]; then
+    die "model set ${MODEL_SET_NAME} ${MODEL_SET_VERSION} does not verify:${failed}
+       ($ok of $MODEL_FILE_COUNT files match the manifest)"
+  fi
+  [ "$ok" = "$MODEL_FILE_COUNT" ] || die "only $ok of $MODEL_FILE_COUNT model files verified"
+
+  # The manifest lands in the models dir only after every file verified, so its
+  # presence means "this directory is a complete, verified model set" — which is
+  # what the Studio model cache and the Web store both read it as.
+  if [ "$VERIFY_ONLY" != 1 ]; then
+    cp "$mf" "$MODELS_DIR/pixal3d-models.json"
+  fi
+  MODEL_MANIFEST_SHA="$(sha256_of "$MODELS_DIR/pixal3d-models.json" 2>/dev/null || sha256_of "$mf")"
+  log "model set verified: ${c_b}${MODEL_SET_NAME} ${MODEL_SET_VERSION}${c_0} ($ok files, $fetched newly downloaded)"
+}
+
+# Resolves --model-manifest to a local file.
+fetch_manifest() {
+  local src="$1" out="$2"
+  case "$src" in
+    release)
+      resolve_release
+      require_assets pixal3d-models.json
+      download_asset pixal3d-models.json "$out"
+      ;;
+    http://*|https://*) download "$src" "$out";;
+    *) [ -f "$src" ] || die "model manifest not found: $src"; cp "$src" "$out";;
+  esac
+}
+
+# ---- 0. verify-only --------------------------------------------------------
+# Verify an existing models dir and stop. No release resolution, no downloads,
+# no config writes — this is the gate a clean-install E2E (#18) can run before
+# and after an install to prove the model set on disk is the released one.
+if [ "$VERIFY_ONLY" = 1 ]; then
+  MF="${MODEL_MANIFEST:-$MODELS_DIR/pixal3d-models.json}"
+  case "$MF" in
+    release|http://*|https://*)
+      MF_TMP="$(mktemp)"; fetch_manifest "$MF" "$MF_TMP"; MF="$MF_TMP";;
+    *) [ -f "$MF" ] || die "no manifest to verify against: $MF";;
+  esac
+  install_model_set "$MF"
+  log "${c_g}model set OK${c_0} — ${MODEL_SET_NAME} ${MODEL_SET_VERSION} in $MODELS_DIR"
+  exit 0
+fi
+
 # ---- 1. server runtime bundle ---------------------------------------------
 resolve_release
 BUNDLE="trellis-${BACKEND}-linux-x64.tar.gz"
@@ -332,7 +473,13 @@ if [ "$BACKEND" = "rocm" ]; then
 fi
 
 # ---- 2. weights ------------------------------------------------------------
-if [ "$SKIP_MODELS" = 1 ]; then
+if [ -n "$MODEL_MANIFEST" ]; then
+  log "installing the Pixal3D model set from the manifest -> $MODELS_DIR"
+  MF_TMP="$(mktemp)"
+  fetch_manifest "$MODEL_MANIFEST" "$MF_TMP"
+  install_model_set "$MF_TMP"
+  rm -f "$MF_TMP"
+elif [ "$SKIP_MODELS" = 1 ]; then
   warn "skipping model download (--skip-models); set them in the app's Settings."
 else
   log "downloading TRELLIS.2 weights [$WEIGHTS_LABEL, resumable] -> $MODELS_DIR"
@@ -341,15 +488,15 @@ else
   for m in "${MODELS[@]}"; do download "${HF_BASE}/${QUANT:+$QUANT/}${m}" "$MODELS_DIR/${m}"; done
 fi
 
-# The manifest (#34) is the model-set identity; record it in the receipt when the
-# models directory already carries one.
+# The manifest (#34) is the model-set identity. "verified" is only true when this
+# run actually checked every file's size and SHA256 against it.
 MODEL_SET_JSON="null"
-if [ -f "$MODELS_DIR/pixal3d-models.json" ]; then
-  MODEL_SET_JSON="$(sed -n 's/.*"model_set"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$MODELS_DIR/pixal3d-models.json" | head -1)"
-  MS_VER="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$MODELS_DIR/pixal3d-models.json" | head -1)"
-  MODEL_SET_JSON="{\"model_set\": \"$MODEL_SET_JSON\", \"version\": \"$MS_VER\"}"
+if [ -n "${MODEL_SET_NAME:-}" ]; then
+  MODEL_SET_JSON="{\"model_set\": \"$MODEL_SET_NAME\", \"version\": \"$MODEL_SET_VERSION\", \"manifest_sha256\": \"${MODEL_MANIFEST_SHA:-}\", \"verified\": true}"
+elif [ -f "$MODELS_DIR/pixal3d-models.json" ]; then
+  MS_NAME="$(json_str "$(cat "$MODELS_DIR/pixal3d-models.json")" model_set)"
+  MS_VER="$(json_str "$(cat "$MODELS_DIR/pixal3d-models.json")" version)"
+  MODEL_SET_JSON="{\"model_set\": \"$MS_NAME\", \"version\": \"$MS_VER\", \"manifest_sha256\": \"$(sha256_of "$MODELS_DIR/pixal3d-models.json")\", \"verified\": false}"
 fi
 
 # ---- 3. desktop app --------------------------------------------------------
@@ -402,4 +549,10 @@ info "release receipt: $CONFIG_DIR/release.json"
 
 echo
 log "${c_g}done${c_0} — launch Trellis Studio${SKIP_MODELS:+ (add your models dir in Settings)}."
-[ -f "$DEST/Trellis Studio.AppImage" ] && info "run: \"$DEST/Trellis Studio.AppImage\""
+# `cmd && info ...` as the last statement would make a successful install exit 1
+# whenever the AppImage is absent (e.g. --skip-app), which now matters because
+# callers gate on the exit code.
+if [ -f "$DEST/Trellis Studio.AppImage" ]; then
+  info "run: \"$DEST/Trellis Studio.AppImage\""
+fi
+exit 0
