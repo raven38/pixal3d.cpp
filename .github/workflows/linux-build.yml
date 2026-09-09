@@ -1,0 +1,69 @@
+name: Linux C++ build
+
+# src/ の C++ が Linux/GCC で壊れていないかを見る。macOS の clang は int64_t が
+# long long、Linux/GCC は long なので、型推論まわりは macOS で通っても Linux で
+# 落ちることがある（2026-09-09 に src/dit.cpp のラムダ戻り型で実際に起きた。
+# CUDA pod でビルドするまで誰も気付かなかった）。GPU は要らない —— あの不具合は
+# ホストコンパイラだけで検出できる。
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - 'thirdparty/**'
+      - '.gitmodules'
+      - '.github/workflows/linux-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - 'thirdparty/**'
+      - '.gitmodules'
+      - '.github/workflows/linux-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: linux-cpp-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-cpu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+
+      # ccache が無いと webp / ggml を PR ごとに全ビルドする（configure が
+      # "Warning: ccache not found" を出していた）。
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-cpu
+          max-size: 500M
+
+      - name: Configure (CPU backend only)
+        # GPU backend は付けない。目的はホストコンパイラでの移植性チェックで、
+        # CUDA/Vulkan SDK を入れるとビルド時間が数倍になる。
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cc --version | head -1
+          c++ --version | head -1
+
+      - name: Build everything configured
+        # CLI・server・src/test_*.cpp の全ターゲット。CPU 構成で configure された
+        # ものだけが対象なので、CUDA 専用テスト（trellis-test-fa-* 等）は含まれない。
+        # -k 0 で最初のエラーで止めず、移植エラーを 1 回のログで棚卸しできるようにする。
+        # `-- -k 0` は Ninja 固有の書式。ジェネレータを Make に変えるならここも変える。
+        # 重みが要るので実行はしない（ビルドが通ることだけを見る）。
+        run: cmake --build build -j "$(nproc)" -- -k 0
+
+      - name: Show binaries
+        if: always()
+        run: ls -la build/trellis-cli build/trellis-server build/trellis-test-* 2>/dev/null | head -30
