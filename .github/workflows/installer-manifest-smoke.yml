@@ -1,0 +1,83 @@
+name: Installer manifest smoke
+
+on:
+  pull_request:
+    paths:
+      - 'install/install.sh'
+      - 'install/install.ps1'
+      - '.github/workflows/installer-manifest-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'install/install.sh'
+      - 'install/install.ps1'
+      - '.github/workflows/installer-manifest-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: installer-manifest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-models:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Create tiny nine-file model set
+        shell: python
+        run: |
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'pixal3d-models'
+          root.mkdir(parents=True, exist_ok=True)
+          roles = [
+              ('dinov3.gguf', 'image_encoder'),
+              ('pixal3d_naf.gguf', 'naf'),
+              ('pixal3d_ss_flow_mv.gguf', 'ss_flow'),
+              ('ss_dec.gguf', 'ss_decoder'),
+              ('pixal3d_shape_flow_512_mv.gguf', 'shape_flow_512'),
+              ('shape_dec.gguf', 'shape_decoder'),
+              ('pixal3d_shape_flow_1024_mv.gguf', 'shape_flow_1024'),
+              ('pixal3d_tex_flow_1024_mv.gguf', 'texture_flow_1024'),
+              ('tex_dec.gguf', 'texture_decoder'),
+          ]
+          files = []
+          for i, (name, role) in enumerate(roles):
+              data = f'installer-smoke-{i}-{role}'.encode()
+              (root / name).write_bytes(data)
+              files.append({'name': name, 'role': role, 'required': True,
+                            'size_bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+          manifest = {'schema_version': 1, 'model_set': 'pixal3d-installer-smoke', 'version': 'v1', 'files': files}
+          (root / 'pixal3d-models.json').write_text(json.dumps(manifest, indent=2) + '\n')
+      - name: Linux verify-only accepts intact set and rejects corruption
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/pixal3d-models"
+          bash install/install.sh --verify-models --models-dir "$ROOT" --model-manifest "$ROOT/pixal3d-models.json"
+          printf 'corrupt' >> "$ROOT/tex_dec.gguf"
+          if bash install/install.sh --verify-models --models-dir "$ROOT" --model-manifest "$ROOT/pixal3d-models.json"; then
+            echo 'corrupt model set was incorrectly accepted'
+            exit 1
+          fi
+          echo INSTALLER_MANIFEST_LINUX_OK
+      - name: Windows verify-only accepts intact set and rejects corruption
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'pixal3d-models'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
+          if ($LASTEXITCODE -ne 0) { throw "intact model set failed verification: rc=$LASTEXITCODE" }
+          [System.IO.File]::AppendAllText((Join-Path $root 'tex_dec.gguf'), 'corrupt')
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
+          if ($LASTEXITCODE -eq 0) { throw 'corrupt model set was incorrectly accepted' }
+          Write-Host 'INSTALLER_MANIFEST_WINDOWS_OK'
