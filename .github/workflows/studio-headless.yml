@@ -26,9 +26,11 @@ jobs:
         run: |
           npm ci
           npm run build
-      - name: Rust shell check
+      - name: Rust shell check and cache safety tests
         working-directory: app/src-tauri
-        run: cargo check
+        run: |
+          cargo check
+          cargo test model_cache::tests
       - name: Install Playwright Chromium
         working-directory: app
         run: |
