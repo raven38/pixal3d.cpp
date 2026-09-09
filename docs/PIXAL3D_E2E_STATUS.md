@@ -422,17 +422,60 @@ PyTorch のカーネルと加算順序を一致させない限り消えない差
 判定基準（`src/test_dinov3.cpp` の `max|d|/gmax < 5e-2`）に対して約 700 倍の余裕がある。
 **実害のある差ではないと判断する。**
 
-## 5c. CUDA での `check_graph_supported`（2026-09-09、静的検証）
+## 5c. CUDA での `check_graph_supported`（2026-09-09、**実機確認済み**）
 
-`src/ss_decoder.cpp` に足した guard が CUDA を壊さないことを、vendored ggml の
+`src/ss_decoder.cpp` に足した guard が CUDA を壊さないことを、まず vendored ggml の
 ソースに対して静的に確認した。SS decoder が組む op は
 ADD / CONT / MUL / NORM / PERMUTE / RESHAPE / MUL_MAT / UNARY(SILU) と、
 非 Apple では `ggml_conv_3d` が展開する IM2COL_3D。
 `thirdparty/ggml/src/ggml-cuda/ggml-cuda.cu` の `supports_op` はこのすべてに true を返す
 （IM2COL_3D は 3078 行と 5435 行、SILU は 2900 行）。
 
-**CUDA 実機での実行ではない。** 手元に CUDA が無く、`#ifdef __APPLE__` は
-コンパイル時分岐なので macOS では im2col 経路をそもそも踏めない。
+その後 CUDA 実機で実行して確認した（issue #11）。
+
+### 実機の条件
+
+| 項目 | 値 |
+|---|---|
+| GPU | NVIDIA L4 23034 MiB（compute capability 8.9） |
+| driver | 580.178.04 |
+| CUDA | 12.4.131（host compiler GNU 11.4.0） |
+| ビルド | `-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89` |
+| 入力 | 決定的な合成 SS latent `[1,8,16,16,16]`（`np.random.default_rng(20260909).standard_normal()`、sha256 `f603ca83…`） |
+| 重み | `ss_dec.gguf` sha256 `2790b5ee…`（macOS 側と同一バイト、転送後に照合） |
+
+### 結果
+
+同一マシン・同一バイナリで CPU backend（`gpu=-1`）と CUDA（`gpu=0`）を突き合わせた
+（`trellis-test-ss-dec` の `[dump_npy]` 引数）。
+
+| backend | logits 範囲 | nonfinite |
+|---|---|---|
+| CPU backend | [-215.3739, -60.5349] | **0** |
+| CUDA | [-215.2002, -60.9502] | **0** |
+
+```
+CPU vs CUDA: max|d|=1.5023e+00  rel=6.9753e-03      （しきい値 5e-2）
+SS_DEC_CUDA_RESULT: OK
+```
+
+`check_graph_supported` は例外を投げず、IM2COL_3D 経路が CUDA で実行された。
+参考までに macOS 側の同一入力では CPU backend vs Metal が rel 9.8e-4 で、CUDA の
+6.98e-3 はそれより大きいが、いずれも f16 重みの丸めの範囲内でしきい値を大きく下回る。
+
+**この入力では occupancy が全ボクセル非アクティブになる**（logits が全て負）。合成 latent は
+SS flow の出力分布から外れており、スケールを 0.3 / 0.1 / 0.03 と振っても出力レンジは
+[-175, -75] からほとんど動かなかった。つまりこの検証は「IM2COL_3D 経路が CUDA で完走し、
+CPU backend と一致する」ことを示すもので、実データの occupancy を通した確認ではない。
+実 latent での確認は real-e2e 側（重み一式 ~10 GB の転送が要る）に残っている。
+
+### Linux ビルドの副産物
+
+この検証の 1 回目のビルドで、`src/dit.cpp` が Linux/GCC でコンパイルできないことが判明した
+（`kMaxAttnChunks` のラムダが `atoll()`（`long long`）と `(int64_t)256`（Linux では `long`）を
+混ぜており、"inconsistent types deduced for lambda return type"）。macOS clang は `int64_t` が
+`long long` なので通ってしまい、Linux でだけ露見する。修正後、`ninja -k 0` で全体を通しても
+他の移植エラーは無かった。issue #18（Linux desktop E2E）の前提。
 
 ## 7. 実測（2026-09-08, M4 Max / Chrome WebGPU vs Metal）
 
