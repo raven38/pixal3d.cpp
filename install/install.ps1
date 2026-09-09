@@ -32,6 +32,11 @@ param(
   [string]$ModelsDir = "",
   # Quantized weights: "q8" (~9.5 GB, near-lossless) or "q4" (~6 GB). Default f16.
   [string]$Quant = "",
+  # Pixal3D model set (#34): a manifest fixes the exact bytes of every model file.
+  # A path, a URL, or "release" (an asset of the resolved release).
+  [string]$ModelManifest = "",
+  [string]$ModelBaseUrl = "",
+  [switch]$VerifyModels,
   [switch]$SkipModels,
   [switch]$SkipApp,
   [switch]$Yes
@@ -248,6 +253,102 @@ function Download-Asset($name, $dest) {
   Move-Item $part $dest -Force
 }
 
+
+# ---- Pixal3D model set (manifest-verified) ---------------------------------
+# The manifest is the model-set identity (#34): exact byte size and SHA256 for
+# each required role. Nothing here trusts a filename or a length alone.
+$script:ModelSet = $null
+
+function Read-Manifest($path) {
+  $m = Get-Content -Raw $path | ConvertFrom-Json
+  if ($m.schema_version -ne 1) { Die "unsupported model manifest schema_version: $($m.schema_version)" }
+  if (-not $m.model_set -or -not $m.version) { Die "model manifest is missing model_set/version" }
+  if (-not $m.files -or @($m.files).Count -eq 0) { Die "model manifest lists no files" }
+  Info "model set: $($m.model_set) $($m.version) ($(@($m.files).Count) files, manifest sha256 $((Get-FileHash $path -Algorithm SHA256).Hash.ToLower()))"
+  return $m
+}
+
+function Verify-One($path, $size, $digest) {
+  if (-not (Test-Path $path)) { return $false }
+  if ((Get-Item $path).Length -ne $size) { return $false }
+  return [string]::Equals((Get-FileHash $path -Algorithm SHA256).Hash.ToLower(), $digest.ToLower(),
+                          [System.StringComparison]::Ordinal)
+}
+
+function Install-ModelSet($manifestPath) {
+  $m = Read-Manifest $manifestPath
+  New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
+  $ok = 0; $fetched = 0; $failed = @()
+  foreach ($f in $m.files) {
+    # A manifest comes from the network, so its names must never escape the
+    # models directory.
+    if (-not $f.name -or $f.name -match '[\\/]' -or $f.name -eq "." -or $f.name -eq "..") {
+      Die "unsafe file name in model manifest: '$($f.name)'"
+    }
+    $dest = Join-Path $ModelsDir $f.name
+    if (Verify-One $dest $f.size_bytes $f.sha256) { Info "ok $($f.name) (already present, verified)"; $ok++; continue }
+    if ($VerifyModels) { $failed += $f.name; continue }
+    if (-not $ModelBaseUrl) { Die "$($f.name) is missing or does not match the manifest, and -ModelBaseUrl was not given" }
+    $part = "$dest.part"
+    Remove-Item $part -Force -ErrorAction SilentlyContinue
+    Info "down $($f.name) ($($f.size_bytes) bytes)"
+    Download "$($ModelBaseUrl.TrimEnd('/'))/$($f.name)" $part
+    Move-Item $part $dest -Force
+    if (Verify-One $dest $f.size_bytes $f.sha256) { $ok++; $fetched++ }
+    else {
+      # Keep the bad file out of the models dir: a wrong-but-plausible model file
+      # is worse than a missing one.
+      $gotSize = (Get-Item $dest).Length
+      $gotSha = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
+      Remove-Item $dest -Force
+      Die @"
+model file does not match the manifest: $($f.name)
+       expected size $($f.size_bytes) sha256 $($f.sha256)
+       got      size $gotSize sha256 $gotSha
+       the downloaded file was removed.
+"@
+    }
+  }
+  if ($failed.Count -gt 0) {
+    Die "model set $($m.model_set) $($m.version) does not verify: $($failed -join ' ')`n       ($ok of $(@($m.files).Count) files match the manifest)"
+  }
+  # The manifest lands in the models dir only after every file verified, so its
+  # presence means "complete, verified model set" — which is how the Studio model
+  # cache and the Web store read it.
+  if (-not $VerifyModels) { Copy-Item $manifestPath (Join-Path $ModelsDir "pixal3d-models.json") -Force }
+  $script:ModelSet = [ordered]@{
+    model_set       = $m.model_set
+    version         = $m.version
+    manifest_sha256 = (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLower()
+    verified        = $true
+  }
+  Log "model set verified: $($m.model_set) $($m.version) ($ok files, $fetched newly downloaded)"
+}
+
+function Fetch-Manifest($src, $out) {
+  switch -Regex ($src) {
+    '^release$' { Resolve-Release; Require-Assets @("pixal3d-models.json"); Download-Asset "pixal3d-models.json" $out }
+    '^https?://' { Download $src $out }
+    default { if (-not (Test-Path $src)) { Die "model manifest not found: $src" }; Copy-Item $src $out -Force }
+  }
+}
+
+# ---- 0. verify-only --------------------------------------------------------
+# Verify an existing models dir and stop: no release resolution, no downloads, no
+# config writes. This is the gate a clean-install E2E (#18) can run before and
+# after an install to prove the model set on disk is the released one.
+if ($VerifyModels) {
+  $mf = if ($ModelManifest) { $ModelManifest } else { Join-Path $ModelsDir "pixal3d-models.json" }
+  if ($mf -eq "release" -or $mf -match '^https?://') {
+    $tmp = Join-Path $env:TEMP "pixal3d-models.json"
+    Fetch-Manifest $mf $tmp
+    $mf = $tmp
+  } elseif (-not (Test-Path $mf)) { Die "no manifest to verify against: $mf" }
+  Install-ModelSet $mf
+  Log "model set OK - $($script:ModelSet.model_set) $($script:ModelSet.version) in $ModelsDir"
+  exit 0
+}
+
 # ---- 1. server runtime bundle ---------------------------------------------
 Resolve-Release
 $bundle = "trellis-$Backend-windows-x64.zip"
@@ -271,7 +372,12 @@ if ($Backend -eq "rocm") {
 }
 
 # ---- 2. weights ------------------------------------------------------------
-if ($SkipModels) {
+if ($ModelManifest) {
+  Log "installing the Pixal3D model set from the manifest -> $ModelsDir"
+  $mfTmp = Join-Path $env:TEMP "pixal3d-models.json"
+  Fetch-Manifest $ModelManifest $mfTmp
+  Install-ModelSet $mfTmp
+} elseif ($SkipModels) {
   Warn "skipping model download (-SkipModels); set the models dir in the app's Settings."
 } else {
   Log "downloading TRELLIS.2 weights [$WeightsLabel, resumable] -> $ModelsDir"
@@ -297,12 +403,19 @@ if ($SkipApp) {
 
 # The manifest (#34) is the model-set identity; record it in the receipt when the
 # models directory already carries one.
-$modelSet = $null
+# "verified" is only true when this run actually checked every file's size and
+# SHA256 against the manifest.
+$modelSet = $script:ModelSet
 $manifestPath = Join-Path $ModelsDir "pixal3d-models.json"
-if (Test-Path $manifestPath) {
+if (-not $modelSet -and (Test-Path $manifestPath)) {
   try {
     $m = Get-Content -Raw $manifestPath | ConvertFrom-Json
-    $modelSet = [ordered]@{ model_set = $m.model_set; version = $m.version }
+    $modelSet = [ordered]@{
+      model_set       = $m.model_set
+      version         = $m.version
+      manifest_sha256 = (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLower()
+      verified        = $false
+    }
   } catch { Warn "could not read $manifestPath : $($_.Exception.Message)" }
 }
 
