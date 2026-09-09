@@ -110,6 +110,87 @@ static T* build_pad_mask(ggml_context* c, int64_t Lk_real, int64_t Lq) {
     return ggml_repeat(c, colh, ggml_new_tensor_2d(c, GGML_TYPE_F16, Lk_pad, Lq_pad)); // [Lk_pad,Lq_pad] F16
 }
 
+// DiT ブロックの MLP（fc1 -> GELU -> fc2）をトークン方向に分割する。x: [d_model, N]。
+// 中間 [4*d_model, N] は N に比例する最大級の活性化で、tex flow (d_model=1536, N=17489) では
+// 24 KiB/token = 410 MiB になる。MLP はトークンごとに完全に独立（fc1/fc2 は列方向に独立、
+// GELU は要素ごと、トークンをまたぐ縮約が無い）なので、数学的には分割しても同値。
+//
+// ただし**ビット一致は保証されない**: 列数を変えると行列積のカーネル選択が変わる。Metal は
+// 列数 2〜8 で専用カーネル・9 以上で matrix-matrix 経路、WebGPU は列数 1 で別経路を選ぶ。
+// 末尾チャンクが小さいとこの分岐を踏む。docs/design/2026-09-09-texture-flow-mlp-chunking.md 参照。
+//
+// 既定は sdpa のクエリ分割と揃える（native 1024 MiB / wasm 128 MiB）。native 既定では
+// N が 4 万程度まで 1 チャンクのままなので、実質ブラウザ経路のための分割である。
+// 分割しても数値が変わらない最小のチャンク幅。これを下回ると行列積のカーネル選択が
+// 変わり、結果がビット一致しなくなる。実測（2026-09-09, Metal, f16, tex flow N=17489、
+// 分割前との max|d|）: 末尾 1 -> 6.15e-04 / 2 -> 5.81e-04 / 8 -> 8.89e-04 / 9 -> 0 /
+// 2180 -> 0。Metal は列数 2〜8 に専用カーネル、9 以上で matrix-matrix 経路を選ぶ
+// （thirdparty/ggml/src/ggml-metal/ggml-metal-ops.cpp:2057-2078, 2164-2167）。
+static constexpr int64_t kMinMlpChunkTokens = 9;
+
+static T* mlp_chunked(ggml_context* c, const Model& m, const std::string& pre, T* x) {
+    const int64_t d_model = x->ne[0], N = x->ne[1];
+    // 既定は分割しない。ブラウザ（WebGPU / NOFA 経路）では分割しても活性化バッファが
+    // 1 バイトも減らないことを実測で確認しているので、既定で有効にすると benefit 0 に
+    // 対してグラフだけが変わる。実測（N=12083 / 17489、attn 8〜1024 MiB × MLP 32〜1024
+    // MiB のすべての組で 705.1 / 1020.5 MiB から動かない）。効くのは FlashAttention 経路
+    // だけで、そこでは N=17489 で 1850.9 -> 1663.1 MiB。診断・native 最適化用の opt-in と
+    // して置く。docs/design/2026-09-09-texture-flow-mlp-chunking.md 参照。
+    const char* env_mb  = getenv("TRELLIS_MLP_CHUNK_MB");
+    const char* env_tok = getenv("TRELLIS_MLP_CHUNK_TOKENS");
+    int64_t nt = N;                                             // = 分割しない
+    if (env_mb) {
+        const int64_t budget = std::max<int64_t>(1, atoll(env_mb)) * 1024 * 1024;
+        const int64_t per_token = 4 * d_model * 4;              // 中間 [4*d_model, 1] の f32 バイト数
+        nt = std::max<int64_t>(1, budget / std::max<int64_t>(per_token, 1));
+        // sdpa と同じ理由でチャンク数に上限を置く（1 チャンク約 8 ノード、30 ブロックが 1 グラフ）。
+        // atoll は 0 や負値も返すので clamp する（そのまま割ると 0 除算になる）。
+        static const int64_t kMaxMlpChunks = []() -> int64_t {
+            if (const char* e = getenv("TRELLIS_MLP_MAX_CHUNKS")) return std::max<int64_t>(1, atoll(e));
+            return 256;
+        }();
+        if (nt * kMaxMlpChunks < N) nt = (N + kMaxMlpChunks - 1) / kMaxMlpChunks;
+        if (nt < N) {                                           // チャンク幅を均す
+            const int64_t k = (N + nt - 1) / nt;
+            nt = (N + k - 1) / k;
+            if (N >= kMinMlpChunkTokens) nt = std::max(nt, kMinMlpChunkTokens);
+        }
+    }
+    // 検証用のみ: チャンク幅をトークン数で直接指定し、均し処理も下限も迂回する。
+    // 末尾を狙って 1 / 2 / 8 / 9 トークンにしてカーネル分岐を再現するために使う
+    // （＝意図的にビット不一致を作れる）。無言で挙動が変わらないよう一度だけログに出す。
+    if (env_tok) {
+        nt = std::max<int64_t>(1, atoll(env_tok));
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            fprintf(stderr, "[dit] TRELLIS_MLP_CHUNK_TOKENS=%s -- 検証専用。チャンク幅の均しと "
+                            "最小幅 %lld を迂回するので、結果が分割前とビット一致しなくなりうる\n",
+                    env_tok, (long long)kMinMlpChunkTokens);
+        }
+    }
+    if (nt >= N) {                                              // 1 チャンク: 分割前と同じグラフ
+        T* y = lin(c, m, pre + ".0", x);
+        y = ggml_gelu(c, y);                                    // GELU(approximate=tanh)
+        return lin(c, m, pre + ".2", y);
+    }
+    T* out = nullptr;
+    for (int64_t t0 = 0; t0 < N; ) {
+        int64_t n = std::min(nt, N - t0);
+        // 均しだけでは末尾が最小幅を割ることがある（総当たりで N=1436 / 1 MiB -> 末尾 8 など
+        // 8820 組）。ceil(N/k) は既に不動点なので均しを繰り返しても消えない。残りが最小幅に
+        // 満たないならこのチャンクに吸収して、どのチャンクも下限を割らないようにする。
+        if (!env_tok && N - t0 - n > 0 && N - t0 - n < kMinMlpChunkTokens) n = N - t0;
+        T* xc = ggml_cont(c, ggml_view_2d(c, x, d_model, n, x->nb[1], (size_t)t0 * x->nb[1]));
+        T* y = lin(c, m, pre + ".0", xc);                       // [4*d_model, n]
+        y = ggml_gelu(c, y);
+        y = lin(c, m, pre + ".2", y);                           // [d_model, n]
+        out = out ? ggml_concat(c, out, y, 1) : y;
+        t0 += n;
+    }
+    return out;                                                 // [d_model, N]
+}
+
 // SDPA over heads. q:[hd,nh,Lq]  k,v:[hd,nh,Lk] -> [d_model, Lq].  `mask`: optional [Lk_pad,Lq] F16.
 static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr) {
     const float scale = 1.0f / std::sqrt((float)q->ne[0]);
@@ -183,7 +264,7 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     const int64_t hd = q2->ne[0], Lq = q2->ne[1], nh = q2->ne[2], Lk = k2->ne[1];
 
     int64_t budget = kAttnChunkBytes;
-    if (const char* e = getenv("TRELLIS_ATTN_CHUNK_MB")) budget = atoll(e) * 1024 * 1024;
+    if (const char* e = getenv("TRELLIS_ATTN_CHUNK_MB")) budget = std::max<int64_t>(1, atoll(e)) * 1024 * 1024;
     const int64_t per_q = Lk * nh * 4;                          // one query's score column
     int64_t nq = std::max<int64_t>(1, budget / std::max<int64_t>(per_q, 1));
     // Floor on the chunk size: each chunk adds ~8 nodes and a whole 30-block DiT with two
@@ -195,9 +276,13 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     // 死活問題なので、flow_runner.cpp のメタデータ枠を広げたうえでここも上げてある。
     // 実測（tex flow, N=17690, n_heads=12）: 上限 32 だと 1 チャンク 553 クエリ =
     // スコア 470 MB で頭打ちになり、活性化バッファは 1316 MB より下がらなかった。
-    static const int64_t kMaxAttnChunks = []{
-        if (const char* e = getenv("TRELLIS_ATTN_MAX_CHUNKS")) return atoll(e);
-        return (int64_t)256;
+    // 戻り型は明示する。atoll() は long long、(int64_t)256 は Linux/GCC では long なので
+    // 推論に任せると "inconsistent types deduced for lambda return type" で落ちる（macOS
+    // clang は int64_t が long long なので通ってしまい、Linux ビルドでだけ露見する）。
+    static const int64_t kMaxAttnChunks = []() -> int64_t {
+        // atoll は 0 や負値も返す。そのまま割ると 0 除算になるので clamp する。
+        if (const char* e = getenv("TRELLIS_ATTN_MAX_CHUNKS")) return std::max<int64_t>(1, atoll(e));
+        return 256;
     }();
     if (nq * kMaxAttnChunks < Lq) nq = (Lq + kMaxAttnChunks - 1) / kMaxAttnChunks;
     if (nq >= Lq) nq = Lq;                                      // small attn: single chunk, no concat
@@ -306,9 +391,7 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
 
     hh = layernorm(c, h, p.ln_eps);
     hh = modulate(c, hh, scale_mlp, shift_mlp);
-    hh = lin(c, m, b + ".mlp.mlp.0", hh);
-    hh = ggml_gelu(c, hh);                                      // GELU(approximate=tanh)
-    hh = lin(c, m, b + ".mlp.mlp.2", hh);
+    hh = mlp_chunked(c, m, b + ".mlp.mlp", hh);
     dbg("blk0_mlp", hh);
     h = ggml_add(c, h, ggml_mul(c, hh, gate_mlp));
     return h;
