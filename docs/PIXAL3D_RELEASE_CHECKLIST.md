@@ -8,7 +8,16 @@ Status baseline: `main` after PR #24/#25/#26/#27/#28/#29/#31/#33. This file is t
 - Web: `v0.9.0-web-alpha`
 - Model set: Desktop `pixal3d-f16` / `v1`, Web `pixal3d-q8_0` / `v1` (see "Fixed initial release model sets" below)
 
-Before publishing a `v0.9.0-*` Desktop artifact, synchronize the Tauri/npm package version (currently 0.6.0) with the release version. Installer paths that rely on `releases/latest` must also be verified for prerelease/tag-specific assets instead of assuming the latest stable release.
+Desktop artifact metadata carries the **numeric** version `0.9.0` (`app/package.json`,
+`app/package-lock.json`, `app/src-tauri/tauri.conf.json`, `app/src-tauri/Cargo.toml`,
+`app/src-tauri/Cargo.lock` — all four in agreement, was 0.6.0). The `-desktop-alpha` prerelease
+marker lives only in the git tag, because Tauri's Windows bundler rejects a version containing a
+prerelease identifier (`app version cannot have build metadata or pre-release identifier`,
+tauri-apps/tauri#5286, closed as not planned). So the mapping is: tag `v0.9.0-desktop-alpha` →
+artifact metadata `0.9.0`, and a release note must state both. Rust is not installed on the
+reference machine, so `cargo`/`tauri build` was not run locally for this change; `npm run build`
+(tsc --noEmit + vite) passes, and the Linux `tauri build --no-bundle` gate in
+`.github/workflows/studio-tauri-xvfb.yml` covers the Rust side. Installer paths that rely on `releases/latest` must also be verified for prerelease/tag-specific assets instead of assuming the latest stable release.
 
 Every release note must record runtime commit, model-set/version, manifest SHA256, validated hardware/browser surfaces, and known issues.
 
@@ -148,7 +157,7 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Installer downloads/verifies the exact release manifest/model set | ⬜ | clean-install release candidate |
-| Package/Tauri version matches `v0.9.0-desktop-alpha` | ⬜ | packaging |
+| Package/Tauri version matches `v0.9.0-desktop-alpha` | ✅ | #35: metadata `0.9.0` in all four files; tag carries `-desktop-alpha` (see above) |
 
 Desktop alpha deliberately requires an explicit positive `mesh_scale`. Automatic estimation from PR #5 is not part of the release path because the real calibration datasets produced large errors (cyclops expected ~1.0 → 1.261568; views4 expected ~0.206 → 0.381288).
 
