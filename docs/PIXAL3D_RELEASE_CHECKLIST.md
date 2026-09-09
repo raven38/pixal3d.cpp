@@ -29,6 +29,32 @@ stops with the resolved tag and the actual asset list. A receipt is written to
 `/commits/<tag>`, because `target_commitish` may be a branch name), requested tag, runtime bundle,
 backend and model set.
 
+### Manifest-verified model set install
+
+`--model-manifest PATH|URL|release` (`-ModelManifest`) installs the model set a manifest describes
+and verifies **every file's exact size and SHA256** before the install is allowed to succeed;
+`--model-base-url` (`-ModelBaseUrl`) says where the files live. `--verify-models`
+(`-VerifyModels`) verifies an existing models directory against its manifest and exits without
+downloading anything or writing any config — that is the gate a clean-install E2E (#18) can run
+before and after installing.
+
+Fail-closed properties, each verified (2026-09-10, macOS):
+
+| case | result |
+|---|---|
+| real `pixal3d-q8_0 v1`, 9 files / 7.54 GiB, all present | `model set OK — pixal3d-q8_0 v1`, rc 0, 4.7 s |
+| one file corrupted | `does not verify: tex_dec.gguf` + `(8 of 9 files match the manifest)`, rc 1 |
+| one file missing | `does not verify: ss_dec.gguf`, rc 1 |
+| manifest names `../escape.gguf` | `unsafe file name in model manifest`, rc 1 |
+| `schema_version: 2` | `unsupported model manifest schema_version: 2`, rc 1 |
+| served file tampered mid-download | prints expected vs. got size/SHA256, **deletes the bad file**, rc 1 |
+| download into an empty dir | 9 files fetched, verified, manifest copied in last, rc 0 |
+
+The manifest is copied into the models directory only after every file verifies, so its presence
+means "complete, verified model set" — which is exactly how `app/src-tauri/src/model_cache.rs` and
+`web/app/model_store.js` read it. The receipt records `manifest_sha256` and a `verified` flag that
+is true only when this run actually hashed the files.
+
 Behaviour change: the desktop app asset is now required. Previously a missing AppImage / setup.exe
 only warned and left a runtime-only install; now the install stops before downloading anything.
 Pass `--skip-app` / `-SkipApp` for a runtime-only install. A prerelease Desktop alpha is therefore installed as:
@@ -57,6 +83,10 @@ using the consumer-mandated filename `pixal3d-models.json` (hardcoded in
 | Manifest | `models/pixal3d-f16-v1/pixal3d-models.json` | `models/pixal3d-q8_0-v1/pixal3d-models.json` |
 | Manifest SHA256 | `722f94c360da5e0dad2651a070489cd8c3de9e00c616b5f88607db41bb0588cd` | `5648ee78259808ff2b664574a666cd880c2c2b584ab8cd225bf80480e17d669f` |
 | Total model bytes | 13,660,816,128 (12.72 GiB) | 8,091,975,360 (7.54 GiB) |
+
+The F16 files themselves no longer live on the reference machine (they were moved to shared storage
+after verifying all nine SHA256 digests); the manifest is what makes them recoverable and
+identifiable. The Q8_0 set stays local because it is the Web release identity.
 
 **This deviates from #34's original acceptance condition** ("Desktop/Web consume the same
 manifest"). Both frontends consume the same *contract* — one schema, one filename, one generator,
@@ -117,8 +147,25 @@ shape-quality regression; it does not show Q8_0 is better. Runtime was 744–778
 (SS ~126 s, shape ~150 s, shape decode ~10 s at ~1.73 M voxels, texture 92–236 s, postprocess the
 remainder).
 
-Still open: the official `cyclops` sample has not been run against these manifests, and no Chrome
-/WebGPU run has been done at all — the rows below stay ⬜.
+### Official `cyclops` sample (2026-09-10, same machine)
+
+`assets/mv_images/example` from `TencentARC/Pixal3D` (4 RGBA views at 1024², `mesh_scale: 1.0`
+declared), seed 1, res 1024:
+
+| | `pixal3d-q8_0 v1` | `pixal3d-f16 v1` |
+|---|---:|---:|
+| mean silhouette IoU | 0.9801 | 0.9805 |
+| scale_error | 0.0031 | 0.0032 |
+| final GLB | V=639,713 F=950,170 | V=629,701 F=955,022 |
+| runtime | 1443.7 s | 1559.6 s |
+| gate | PASS | PASS |
+
+Both match the 0.9785 recorded for this sample in `docs/PIXAL3D_E2E_STATUS.md`, and the two model
+sets differ by 0.0004 — again no detectable quality difference, on a second subject class (a large,
+bulky subject vs. the thin-limbed figure of the views4-style input above), which is what makes the
+Q8_0-for-the-browser decision safe to state.
+
+Still open: no Chrome/WebGPU run has been done at all — those rows stay ⬜.
 
 ### Regenerate / verify
 
@@ -166,7 +213,7 @@ consume these manifests but are tracked in their own rows.
 | Linux/GCC C++ build gate on `main` | ✅ | PR #33 |
 | Explicit `mesh_scale`; no silent production fallback | ✅ | #19 / PR #27 |
 | Release model directory gets a real generated manifest | ✅ | #34: `models/pixal3d-f16-v1/` + `models/pixal3d-q8_0-v1/` |
-| Official cyclops + views4 result recorded for exact runtime/model set | 🔶 | views4-style input re-run against both manifests (E2E table above, 4 runs, all PASS); official `cyclops` sample still not run |
+| Official cyclops + views4 result recorded for exact runtime/model set | ✅ | both manifests, both inputs: views4-style at seeds 1/2 and the official cyclops sample — 6 runs, all PASS (tables above) |
 
 ## Desktop alpha
 
@@ -181,7 +228,7 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` is unverified beyond static checks — no PowerShell on the reference machine |
-| Installer downloads/verifies the exact model set against its manifest | ⬜ | still open: the installers fetch the inherited TRELLIS.2 weights from HF and only record `model_set`/`version` from an existing `pixal3d-models.json`; they do not download or SHA256-verify the Pixal3D set |
+| Installer downloads/verifies the exact model set against its manifest | ✅ | `--model-manifest` / `--verify-models` (see below); verified against the real `pixal3d-q8_0 v1` set and five fail-closed cases |
 | Package/Tauri version matches `v0.9.0-desktop-alpha` | ✅ | #35: metadata `0.9.0` in all four files; tag carries `-desktop-alpha` (see above) |
 
 Desktop alpha deliberately requires an explicit positive `mesh_scale`. Automatic estimation from PR #5 is not part of the release path because the real calibration datasets produced large errors (cyclops expected ~1.0 → 1.261568; views4 expected ~0.206 → 0.381288).
