@@ -1,7 +1,9 @@
 // Shared TRELLIS.2 flow-DiT graph builder (dense path, B=1).
 #pragma once
+#include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 struct ggml_context;
 struct ggml_tensor;
@@ -43,11 +45,18 @@ bool dit_detect_proj_attn(const Model& m, DiTParams& p);
 //   cos/sin: [1, head_dim/2, 1, L]  precomputed 3D-RoPE tables
 //   proj : [d_proj, L]         Pixal3D proj_cond, one token per latent position (optional;
 //                              only used when p.proj_attn); ignored/unused otherwise.
+//   rope_idx: I32 [head_dim]   even|odd pair indices from dit_rope_index (optional). When given,
+//                              the RoPE scatter reads its set_rows indices from this input instead
+//                              of building them with ggml_arange (same integers; needed on the ggml
+//                              WebGPU backend, which has no ARANGE kernel).
 // Returns the [out_ch, L] velocity; `inter` (optional) collects named intermediates.
 ggml_tensor* build_dit_dense(ggml_context* gctx, const Model& m, const DiTParams& p,
                              ggml_tensor* h0, ggml_tensor* tfreq, ggml_tensor* cond,
                              ggml_tensor* cos, ggml_tensor* sin,
                              std::map<std::string, ggml_tensor*>* inter = nullptr,
-                             ggml_tensor* proj = nullptr);
+                             ggml_tensor* proj = nullptr, ggml_tensor* rope_idx = nullptr);
+
+// Host contents of the `rope_idx` input: [0,2,..,head_dim-2, 1,3,..,head_dim-1].
+void dit_rope_index(int head_dim, std::vector<int32_t>& out);
 
 } // namespace trellis

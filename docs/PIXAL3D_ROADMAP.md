@@ -54,30 +54,36 @@
 
 ## M6 — ggml WebGPU
 
-- [ ] choose ggml integration strategy
-- [ ] WASM/Emscripten build
-- [ ] backend op inventory against Pixal3D graph
-- [ ] automated WebGPU backend tests
+- [x] choose ggml integration strategy (vendored fork's own `ggml-webgpu`, unchanged pin + `patches/ggml-webgpu/`; `docs/spec/31-webgpu-bringup.md` §3/§7)
+- [x] WASM/Emscripten build (`scripts/build_wasm_smoke.sh`, `scripts/build_wasm_ss.sh`)
+- [x] backend op inventory against Pixal3D graph (`docs/PIXAL3D_WEBGPU_OP_GAP.md`; §8 = validated set)
+- [x] automated WebGPU backend tests (`trellis-webgpu-smoke`; the `trellis-test-pixal3d-{cond-ss,ss-flow,ss-sample}` / `trellis-test-proj-grid` binaries run unchanged on the WebGPU device, spec 31 §9)
 
 ## M7 — Missing WebGPU kernels
 
-- [ ] 3D RoPE
-- [ ] projection
-- [ ] MV accumulation
-- [ ] dense Conv3D
-- [ ] sparse gather/scatter
-- [ ] SparseConv3D
-- [ ] NAF neighborhood attention
+- [x] 3D RoPE (no kernel needed: host-built even/odd index input replaces `ggml_arange`, `dit_rope_index`)
+- [x] projection (no kernel needed: `get_rows` x4 + weighted sum on the device, `pixal3d_cond_ss_gpu`; bit-level parity with the host path)
+- [x] MV accumulation (device-resident running average, `pixal3d_cond_ss_gpu`; peak memory flat in V)
+- [ ] dense Conv3D (SS decoder still runs on the CPU backend after a WebGPU flow)
+- [x] large-dispatch ops (`patches/ggml-webgpu/0003`: 2D dispatch for soft_max/sum_rows/norm/get_rows/concat/pad/repeat, cpy `gid.y` fix; `trellis-webgpu-ops`)
+- [x] sparse gather/scatter (no kernel needed: the shared `build_neighbor_table` / C2S index maps stay on the host, `get_rows` gathers on the device; I32 `cont` of index slices needed `patches/ggml-webgpu/0005`; spec 31 §11)
+- [x] SparseConv3D (the validated 27-tap gather + `mul_mat` submanifold conv runs unchanged on WebGPU; shape decoder on the Shape-1024 real SLAT matches the PyTorch reference mesh to 0.001 voxel natively and in Chrome, `docs/PIXAL3D_WEBGPU_MEMORY.md` §9)
+- [x] sparse texture / PBR decoder (same runtime, mask-driven C2S + 6-channel head: per-voxel PBR attributes on the Texture-1024 real SLAT match the PyTorch reference to mean|d| 2e-4 on every channel natively and in Chrome, spec 31 §12; no new kernel)
+- [x] NAF neighborhood attention (no kernel needed: block-window formulation as `get_rows` + batched `mul_mat` + `soft_max`, `naf_build`; GroupNorm/reflect-pad/avg-pool lowered to `norm`/`concat`/`sum_rows`; spec 31 §10.3)
 
 ## M8 — Browser end-to-end
 
-- [ ] image loading
-- [ ] camera loading
-- [ ] stage weight load/unload
+- [x] SS stage in the browser: DINOv3 -> projection -> MV fusion -> ProjectAttention SS flow -> 12-step sampler, one WASM module on ggml WebGPU (`web/ss/`, spec 31 §9); JS only mounts files and prints
+- [x] Shape-512 stage in the browser: DINOv3 -> NAF -> lr/hr projections -> MV fusion -> sparse ProjectAttention shape flow -> 12-step sampler, same module (`pixal3d_shape512_run`, `web/shape512/`, spec 31 §10.7)
+- [x] Shape decoder in the browser: real Shape-1024 SLAT fixture -> sparse decoder (from_latent, 4 x ConvNeXt + C2S, output_layer) -> dual-grid mesh, same module (`pixal3d_shape_decode_run`, `web/shape_decode/`, spec 31 §11); raw mesh returned to JS as .npy downloads and scored natively
+- [x] Texture decoder in the browser: real Texture-1024 SLAT fixture -> shape decoder (masks) -> texture decoder -> per-voxel PBR attributes, same module (`pixal3d_tex_decode_run`, `web/tex_decode/`, spec 31 §12); raw attributes returned to JS as .npy downloads and scored natively (`--ext-attrs`); UV bake / GLB not in the browser yet
+- [ ] image loading (fixture `.npy` views today; PNG + BiRefNet/RMBG cutout not ported)
+- [ ] camera loading (fixture `transform_matrix` today; `transforms.json` parsing not wired)
+- [x] stage weight load/unload (SS stage: DINOv3 freed before the flow weights load, WORKERFS-backed GGUF streaming)
 - [ ] full generation
 - [ ] GLB returned to JS
-- [ ] memory profiling
-- [ ] numerical comparison against CUDA
+- [x] memory profiling (SS stage, buffer-allocation accounting: `docs/PIXAL3D_WEBGPU_MEMORY.md` §6; Shape-512 stage §7)
+- [x] numerical comparison against CUDA (SS stage: spec 31 §9 -- voxel IoU 1.000 vs the CUDA production run; Shape-512 stage: spec 31 §10.6/10.7)
 
 ## M9 — Apps
 

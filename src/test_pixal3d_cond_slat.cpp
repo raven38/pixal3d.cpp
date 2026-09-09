@@ -2,11 +2,15 @@
 // (DINOv3 + ProjGridMV average fusion + NAF high-res upsample, proj = [lr || hr])
 // against PyTorch golden tensors dumped by tools/ref_pixal3d_cond_slat.py.
 //
-//   trellis-test-pixal3d-cond-slat <dinov3.gguf> <pixal3d_naf.gguf> <fixture_dir> [gpu] [--full]
+//   trellis-test-pixal3d-cond-slat <dinov3.gguf> <pixal3d_naf.gguf> <fixture_dir> [gpu] [--full] [--stage host|gpu|all]
 //
 // Default run: s512 stage (V=4 and V=1). --full additionally runs the s1024 stage
 // (DINO tokens at S=1024, full cond, gather at sparse coords) -- its fixtures are
 // ~1GB and the NAF/DINO passes at S=1024 take a few minutes on CPU/Metal.
+// --stage gpu runs only the device-resident s512 path (pixal3d_cond_slat_gpu: one graph per
+// view, DINOv3 -> NAF -> both projections -> MV average, V=4 and V=1) against the fixture and
+// against the host path on the same backend, with memory/timing stats; `all` (default) runs
+// both, `host` the original stages only.
 //
 // Reference: pixal3d/trainers/flow_matching/mixins/image_conditioned_proj.py
 // (DinoV3ProjMultiViewFeatureExtractor, "shape_512"/"shape_1024" IMAGE_COND_CONFIGS
@@ -52,6 +56,17 @@ static bool try_load(const string& path, npy::Array& out) {
     try { out = npy::load(path); return true; } catch (...) { return false; }
 }
 
+static void print_stats(const char* tag, const Pixal3dCondStats& st) {
+    printf("  [%s] V=%d weights=%.1f MB cond=%.1f MB view_alloc=%.1f MB peak=%.1f MB  total=%.0f ms  slowest view=%.0f ms\n",
+           tag, st.views, st.weight_bytes / 1048576.0, st.cond_bytes / 1048576.0, st.view_alloc_bytes / 1048576.0,
+           st.peak_bytes / 1048576.0, st.total_ms, st.view_ms_max);
+}
+
+static bool compare_vec(const char* name, const vector<float>& mine, const vector<float>& ref, double tol) {
+    npy::Array a; a.shape = {(int64_t)ref.size()}; a.data = ref;
+    return compare(name, mine, a, tol);
+}
+
 // Same reshape pixal3d_cond.cpp's internal patch_tokens_to_chw does: dinov3_encode's
 // token-major [Ntok, D] patch tokens (indices NPREFIX..Ntok-1, row-major token=h*Wp+w)
 // -> channel-major [D, Hp, Wp], the fmap layout proj_grid_sample/naf_upsample expect.
@@ -74,6 +89,47 @@ static vector<float> proj_half(const vector<float>& proj2048, size_t Ntok, bool 
     for (size_t i = 0; i < Ntok; ++i)
         std::memcpy(&out[i * D], &proj2048[i * 2 * D + off], D * sizeof(float));
     return out;
+}
+
+static bool run_s512_gpu(const Model& dinov3, const Model& naf, const string& dir,
+                          const vector<Pixal3dView>& views, float mesh_scale, bool with_host) {
+    const int S = 512, R = 32, T = 512;
+    const size_t NtokR = (size_t)R * R * R;
+    bool all_ok = true;
+    npy::Array z_global    = npy::load(dir + "/s512_z_global.npy");      // [1,5,1024]
+    npy::Array z_proj      = npy::load(dir + "/s512_z_proj.npy");        // [1,32768,2048]
+    npy::Array v1_z_global = npy::load(dir + "/s512_v1_z_global.npy");
+    npy::Array v1_z_proj   = npy::load(dir + "/s512_v1_z_proj.npy");
+    Pixal3dSlatCondParams prm{S, R, T, mesh_scale};
+    const int Vs[2] = { (int)views.size(), 1 };
+    for (int vi = 0; vi < 2; ++vi) {
+        const int n = Vs[vi];
+        if (vi == 1 && (int)views.size() == 1) break;
+        vector<Pixal3dView> vs(views.begin(), views.begin() + n);
+        printf("\n=== s512 stage 5: pixal3d_cond_slat_gpu V=%d (device-resident DINOv3 -> NAF -> projections -> average) ===\n", n);
+        Pixal3dCondStats st;
+        Pixal3dCond g = pixal3d_cond_slat_gpu(dinov3, naf, vs, prm, &st);
+        print_stats("gpu", st);
+        const npy::Array& zg = (n == (int)views.size()) ? z_global : v1_z_global;
+        const npy::Array& zp = (n == (int)views.size()) ? z_proj : v1_z_proj;
+        char nm[96];
+        snprintf(nm, sizeof nm, "gpu V=%d z_global vs ref", n); all_ok &= compare(nm, g.global, zg);
+        npy::Array lr_ref, hr_ref;
+        lr_ref.shape = {(int64_t)NtokR, D}; lr_ref.data = proj_half(zp.data, NtokR, false);
+        hr_ref.shape = {(int64_t)NtokR, D}; hr_ref.data = proj_half(zp.data, NtokR, true);
+        snprintf(nm, sizeof nm, "gpu V=%d z_proj_lr vs ref", n); all_ok &= compare(nm, proj_half(g.proj, NtokR, false), lr_ref);
+        snprintf(nm, sizeof nm, "gpu V=%d z_proj_hr vs ref", n); all_ok &= compare(nm, proj_half(g.proj, NtokR, true), hr_ref);
+        if (with_host) {
+            auto t0 = std::chrono::steady_clock::now();
+            Pixal3dCond h = pixal3d_cond_slat(dinov3, naf, vs, prm);
+            printf("  pixal3d_cond_slat(V=%d, host path, same backend) runtime: %.2fs\n", n,
+                   std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+            snprintf(nm, sizeof nm, "gpu V=%d z_global vs host", n);  all_ok &= compare_vec(nm, g.global, h.global, 1e-3);
+            snprintf(nm, sizeof nm, "gpu V=%d z_proj_lr vs host", n); all_ok &= compare_vec(nm, proj_half(g.proj, NtokR, false), proj_half(h.proj, NtokR, false), 1e-3);
+            snprintf(nm, sizeof nm, "gpu V=%d z_proj_hr vs host", n); all_ok &= compare_vec(nm, proj_half(g.proj, NtokR, true), proj_half(h.proj, NtokR, true), 1e-2);
+        }
+    }
+    return all_ok;
 }
 
 static bool run_s512(const Model& dinov3, const Model& naf, const string& dir,
@@ -212,14 +268,17 @@ static bool run_s1024(const Model& dinov3, const Model& naf, const string& dir,
 int main(int argc, char** argv) {
     vector<string> pos;
     bool full = false;
+    string stage = "all";
     for (int i = 1; i < argc; ++i) {
         if (string(argv[i]) == "--full") full = true;
+        else if (string(argv[i]) == "--stage" && i + 1 < argc) stage = argv[++i];
         else pos.push_back(argv[i]);
     }
-    if (pos.size() < 3) {
-        fprintf(stderr, "usage: %s <dinov3.gguf> <pixal3d_naf.gguf> <fixture_dir> [gpu] [--full]\n", argv[0]);
+    if (pos.size() < 3 || (stage != "all" && stage != "host" && stage != "gpu")) {
+        fprintf(stderr, "usage: %s <dinov3.gguf> <pixal3d_naf.gguf> <fixture_dir> [gpu] [--full] [--stage host|gpu|all]\n", argv[0]);
         return 1;
     }
+    const bool do_host = stage != "gpu", do_gpu = stage != "host";
     const string dinov3_gguf = pos[0], naf_gguf = pos[1], dir = pos[2];
     const int gpu = pos.size() > 3 ? atoi(pos[3].c_str()) : 0;
 
@@ -256,7 +315,8 @@ int main(int argc, char** argv) {
             views[v].fov_x = views_meta[v].fov_x;
             std::memcpy(views[v].c2w, views_meta[v].c2w, 16 * sizeof(float));
         }
-        all_ok &= run_s512(dinov3, naf, dir, views, mesh_scale);
+        if (do_host) all_ok &= run_s512(dinov3, naf, dir, views, mesh_scale);
+        if (do_gpu) all_ok &= run_s512_gpu(dinov3, naf, dir, views, mesh_scale, /*with_host=*/ stage == "gpu");
     } else {
         printf("s512_images.npy not found under %s -- s512 stage UNVERIFIED\n", dir.c_str());
         all_ok = false;

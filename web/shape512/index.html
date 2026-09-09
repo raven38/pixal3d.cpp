@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pixal3D Shape-512 on WebGPU (WASM)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5em; }
+  label { display: block; margin: 0.4em 0; }
+  pre { background: #f4f4f4; padding: 1em; overflow: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<h2>Pixal3D Shape-512 path on WebGPU (pixal3d_ss.wasm, pixal3d_shape512_run)</h2>
+<p>Hand the module the three GGUFs and the two fixture directories; everything else (DINOv3, NAF,
+both projections, multiview fusion, the sparse ProjectAttention shape flow, the Euler sampler)
+runs inside the WASM module on the ggml WebGPU backend. JavaScript only mounts the files and
+prints the report.</p>
+<label>Models (dinov3.gguf, pixal3d_naf.gguf, pixal3d_shape_flow_512_mv.gguf): <input id="models" type="file" multiple></label>
+<label>cond_slat fixture files (s512_*, camera, mesh_scale, transform_matrix): <input id="cond" type="file" multiple></label>
+<label>slat_sample fixture files: <input id="sample" type="file" multiple></label>
+<label>Views (0 = all): <input id="views" type="number" value="0" min="0" max="4"></label>
+<label><input id="own" type="checkbox"> sample with the computed condition instead of the fixture's</label>
+<button id="run">Run</button>
+<pre id="out"></pre>
+<script src="main.js"></script>
+</body>
+</html>

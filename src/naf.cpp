@@ -30,6 +30,9 @@ namespace {
 template <typename Fn>
 static void naf_parallel_for(int n, Fn&& fn) {
     if (n <= 0) return;
+#ifdef __EMSCRIPTEN__
+    fn(0, n);   // pthread 無しでリンクしているので std::thread は生成できない
+#else
     unsigned hw = std::thread::hardware_concurrency();
     if (hw == 0) hw = 4;
     int nthreads = (int)std::min<unsigned>(hw, (unsigned)n);
@@ -44,6 +47,7 @@ static void naf_parallel_for(int n, Fn&& fn) {
         pool.emplace_back([&fn, begin, end]() { fn(begin, end); });
     }
     for (auto& th : pool) th.join();
+#endif
 }
 
 struct ConvW { int Co = 0, Ci = 0, K = 0; std::vector<float> w, b; };
@@ -431,6 +435,15 @@ std::vector<float> naf_upsample(const Model& naf, const float* image, int S,
             return naf_upsample_gpu(naf, image, S, lr, C, h, w, T, dbg);
     }
 #endif
+    // Every other GPU backend (WebGPU, Metal, Vulkan): the all-ggml graph path
+    // (src/naf_gpu.cpp, naf_upsample_ggml). The CPU backend keeps the reference
+    // loops below (trellis-test-naf --ggml drives the graph path on it directly).
+    {
+        const char* force_cpu = std::getenv("TRELLIS_NAF_CPU");
+        const bool cpu_forced = force_cpu && *force_cpu && *force_cpu != '0';
+        if (!cpu_forced && naf_ggml_available(naf, S, T, h, w))
+            return naf_upsample_ggml(naf, image, S, lr, C, h, w, T, dbg);
+    }
     // 1. ImageEncoder input: bilinear-downsample only if S > 4T (not hit for
     // S=512, T in {128,512}; implemented per spec anyway).
     int Sp = S;

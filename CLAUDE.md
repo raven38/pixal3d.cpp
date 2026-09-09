@@ -32,10 +32,15 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_VULKAN=ON   # or -DGGM
 cmake --build build -j
 ```
 
-macOS/Apple Silicon needs no backend flag — Metal is enabled automatically. A local, gitignored
+macOS/Apple Silicon needs no backend flag — Metal is enabled automatically. WebGPU (native Dawn):
+`-DGGML_WEBGPU=ON -DGGML_METAL=OFF -DCMAKE_PREFIX_PATH=<prebuilt Dawn>`; the configure step then
+applies `patches/ggml-webgpu/*.patch` to the submodule working tree (`docs/GGML_FORK_DIFF.md`
+"Local patches" — never commit the resulting submodule diff). Browser SS path: `scripts/build_wasm_ss.sh`
+→ `web/ss/` (Worker + WORKERFS + JSPI; `web/ss/run_playwright.js` drives Chrome). A local, gitignored
 `build-baseline-metal/` may exist from the Phase 1 baseline build; don't assume it's current.
-`GGML_WEBGPU` doesn't exist yet on this fork's vendored `thirdparty/ggml` (branch `trellis-patches`
-of `pwilkin/ggml`) — WebGPU is future work (porting plan Phase 8/9).
+The vendored `thirdparty/ggml` (branch `trellis-patches` of `pwilkin/ggml`, v0.15.1+10) already
+ships the upstream `ggml-webgpu` backend (`-DGGML_WEBGPU=ON`, needs Dawn natively or emdawnwebgpu under
+Emscripten); see `docs/spec/31-webgpu-bringup.md` for its state, gaps and build paths.
 
 Studio (desktop/web frontend, `app/`):
 
@@ -59,7 +64,13 @@ Available: `trellis-test-ss-flow`, `trellis-test-shape-flow`, `trellis-test-ss-s
 `trellis-test-birefnet`, `trellis-test-preprocess`, `trellis-test-deform`, `trellis-test-ss-dec`,
 `trellis-test-slat-shape`, `trellis-test-dinov3`, `trellis-test-sparse-conv`, `trellis-test-bigop`,
 `trellis-test-c2s`, `trellis-test-sparse-degenerate`, `trellis-test-shape-dec`, `trellis-test-ss-full`,
-plus CUDA-only `trellis-test-fa-mask-overflow` / `trellis-test-fa-bf16-range`.
+plus CUDA-only `trellis-test-fa-mask-overflow` / `trellis-test-fa-bf16-range`. Pixal3D stages:
+`trellis-test-proj-grid`, `trellis-test-pixal3d-{cond-ss,cond-slat,cond-tex,ss-flow,ss-sample,slat-flow,slat-sample,shape-decode,tex-decode}`,
+plus `trellis-test-pixal3d-real-e2e` (the browser real-input E2E's shared C++ driven natively —
+`PIXAL3D_DUMP_FIXTURE=<dir>` writes the Shape-1024 fixture the browser partial E2E consumes)
+(`[gpu]` arg: -1 = CPU backend, 0 = the build's GPU device; on WebGPU pass `TRELLIS_NOFA=1` to the
+flow tests — the backend has no BF16 FlashAttention — and `dec_gpu=-1` to `ss-sample`, whose SS
+decoder needs Conv3D). `trellis-webgpu-smoke` / `web/smoke` are the backend smoke tests.
 
 `trellis-smoke` exercises the broader pipeline. Most neural parity tests need reference tensors
 dumped by the matching `tools/ref_*.py` script (run via the `uv` venv — numpy, safetensors, gguf,

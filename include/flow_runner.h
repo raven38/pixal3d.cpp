@@ -1,5 +1,6 @@
 // Flow-DiT runner (dense grid or sparse voxel) + FlowEuler guidance-interval sampler.
 #pragma once
+#include <cstdint>
 #include <vector>
 #include <array>
 #include <functional>
@@ -38,11 +39,19 @@ public:
     std::vector<float> forward(const std::vector<float>& xt, float t_scaled, const float* cond,
                                const float* proj = nullptr);
     int N() const { return N_; }
+    // Bytes of the gallocr-owned activation/temporary buffer for one forward (weights excluded).
+    size_t alloc_bytes() const { return alloc_bytes_; }
 private:
+    // 組んだグラフがこのデバイスの予算に収まるかを確保直後に判定し、超えていたら投げる。
+    // 超えたまま走らせるとユニファイドメモリ上でスラッシングしてマシンごと固まるため、
+    // 「走らせてから固まる」のではなく走らせる前に落とす。TRELLIS_ALLOW_OVER_BUDGET=1 で無効化。
+    void check_device_budget() const;
     const Model& m_; DiTParams p_; int N_, Lc_;
     ggml_context* ctx_ = nullptr; ggml_cgraph* g_ = nullptr; ggml_gallocr_t alloc_ = nullptr;
-    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr;
+    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr, *gidx_ = nullptr;
     std::vector<float> rcos_, rsin_;   // re-uploaded each forward (gallocr may reuse input buffers)
+    std::vector<int32_t> ridx_;        // RoPE even|odd index input (dit_rope_index)
+    size_t alloc_bytes_ = 0;
     std::map<std::string, ggml_tensor*> inter_;   // [dbg] named intermediates for NaN localization
     bool dbg_nan_ = false, dbg_done_ = false;
 };

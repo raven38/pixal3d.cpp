@@ -1,6 +1,45 @@
 cmake_minimum_required(VERSION 3.18)
 project(trellis_cpp VERSION 0.6.0 LANGUAGES CXX C)
 
+# Browser WebGPU smoke test (docs/spec/31-webgpu-bringup.md §8): scripts/build_wasm_smoke.sh
+# configures this whole repo with -DTRELLIS_WASM_SMOKE=ON under Emscripten, but only needs
+# ggml + src/test_webgpu_smoke.cpp -- trellis_core/the CLI aren't buildable under Emscripten
+# yet and pulling them in isn't this test's job. web/smoke/CMakeLists.txt is a small standalone
+# project that vendors thirdparty/ggml itself; skip the rest of this file in this mode.
+# Local patches to the vendored ggml (patches/ggml-webgpu/*.patch, see
+# docs/GGML_FORK_DIFF.md "Local patches"). Applied to the submodule working tree at configure
+# time, idempotently: a patch that already applies in reverse is skipped. The submodule pin is
+# unchanged; `git -C thirdparty/ggml checkout .` reverts them.
+option(PIXAL3D_GGML_PATCHES "Apply patches/ggml-webgpu/*.patch to thirdparty/ggml at configure time" ON)
+if(PIXAL3D_GGML_PATCHES AND GGML_WEBGPU)
+  file(GLOB _pixal3d_ggml_patches ${CMAKE_SOURCE_DIR}/patches/ggml-webgpu/*.patch)
+  foreach(_p ${_pixal3d_ggml_patches})
+    execute_process(COMMAND git apply --check --reverse ${_p} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/thirdparty/ggml
+                    RESULT_VARIABLE _rev OUTPUT_QUIET ERROR_QUIET)
+    if(_rev EQUAL 0)
+      message(STATUS "ggml patch already applied: ${_p}")
+    else()
+      execute_process(COMMAND git apply ${_p} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/thirdparty/ggml RESULT_VARIABLE _fwd)
+      if(NOT _fwd EQUAL 0)
+        message(FATAL_ERROR "failed to apply ggml patch ${_p} (set -DPIXAL3D_GGML_PATCHES=OFF to skip)")
+      endif()
+      message(STATUS "ggml patch applied: ${_p}")
+    endif()
+  endforeach()
+endif()
+option(TRELLIS_WASM_SMOKE "Build only the browser WebGPU smoke test (Emscripten only)" OFF)
+if(EMSCRIPTEN AND TRELLIS_WASM_SMOKE)
+  add_subdirectory(web/smoke)
+  return()
+endif()
+# Browser Pixal3D SS path (docs/spec/31-webgpu-bringup.md §9): scripts/build_wasm_ss.sh.
+# web/ss/CMakeLists.txt compiles only the SS-path sources of trellis_core on top of ggml.
+option(TRELLIS_WASM_SS "Build only the browser Pixal3D SS path (Emscripten only)" OFF)
+if(EMSCRIPTEN AND TRELLIS_WASM_SS)
+  add_subdirectory(web/ss)
+  return()
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -71,6 +110,18 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 add_subdirectory(thirdparty/ggml)
 set(GGML_RPATH "$ORIGIN")
+# ggml-webgpu's subgroup-matrix mul_mat/flash_attn shaders accumulate in f16 and overflow on
+# DINOv3's attention scores (NaN) -- docs/spec/31-webgpu-bringup.md §9. Pixal3D builds take the
+# f32-accumulating reg_tile path unless this is switched on for an A/B measurement.
+option(PIXAL3D_WEBGPU_SUBGROUP_MATRIX "Let ggml-webgpu use the f16-accumulating subgroup-matrix shaders" OFF)
+if(TARGET ggml-webgpu AND NOT PIXAL3D_WEBGPU_SUBGROUP_MATRIX)
+  target_compile_definitions(ggml-webgpu PRIVATE GGML_WEBGPU_SUBGROUP_MATRIX=0)
+endif()
+# One DiT forward is a single graph submission; upstream's 30 s queue-wait ceiling aborts it on
+# slow adapters (patches/ggml-webgpu/0002). 10 minutes.
+if(TARGET ggml-webgpu)
+  target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=600000u)
+endif()
 set(CMAKE_INSTALL_RPATH "$ORIGIN")
 
 # --- CUDA language (for the custom deformable-conv kernel) ------------------
@@ -108,8 +159,13 @@ add_library(trellis_core STATIC
   src/decimate_qem.cpp
   src/proj_grid.cpp
   src/pixal3d_cond.cpp
+  src/pixal3d_cond_gpu.cpp
   src/naf.cpp
+  src/naf_gpu.cpp
   src/transforms_json.cpp
+  src/pixal3d_input.cpp
+  src/pixal3d_postprocess.cpp
+  src/graph_dump.cpp
 )
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)
 target_compile_definitions(trellis_core PRIVATE TRELLIS_GIT_COMMIT="${TRELLIS_GIT_COMMIT}" TRELLIS_GIT_DIRTY=${TRELLIS_GIT_DIRTY} TRELLIS_BUILD_TIMESTAMP="${TRELLIS_BUILD_TIMESTAMP_UTC}" TRELLIS_APP_VERSION="${TRELLIS_APP_VERSION}")
@@ -148,12 +204,12 @@ if(TARGET ggml-cuda)
   target_sources(trellis_core PRIVATE src/deform_conv.cu)
   # Self-contained CUDA QEM decimation (mirrors the CPU port; uses cub for scan/sort/RLE).
   target_sources(trellis_core PRIVATE src/decimate_qem.cu)
-  # NAF (valeoai/NAF feature upsampler) GPU path: ggml-graph encoder (naf_gpu.cpp,
-  # plain C++/ggml, no CUDA-specific syntax) + a custom neighborhood-attention
-  # kernel (naf_attn.cu). naf_upsample() in naf.cpp dispatches to these only when
-  # compiled here (TRELLIS_USE_CUDA, set below) and the loaded Model is on a CUDA
-  # backend; every other build keeps the original CPU-only naf.cpp path unchanged.
-  target_sources(trellis_core PRIVATE src/naf_gpu.cpp src/naf_attn.cu)
+  # NAF (valeoai/NAF feature upsampler) CUDA path: the ggml-graph encoder in
+  # naf_gpu.cpp + a custom neighborhood-attention kernel (naf_attn.cu).
+  # naf_upsample() in naf.cpp dispatches to it only when compiled here
+  # (TRELLIS_USE_CUDA, set below) and the loaded Model is on a CUDA backend; other
+  # GPU backends take naf_gpu.cpp's all-ggml graph path (naf_upsample_ggml).
+  target_sources(trellis_core PRIVATE src/naf_attn.cu)
   if(MSVC)
     # CUDA 13.3 CCCL requires MSVC's conforming preprocessor for host compilation.
     target_compile_options(trellis_core PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>")
@@ -286,6 +342,12 @@ add_executable(trellis-decode-replay src/decode_replay.cpp)
 target_link_libraries(trellis-decode-replay PRIVATE trellis_core)
 set_target_properties(trellis-decode-replay PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# Debug-only allocation trace of the sparse shape decoder (docs/PIXAL3D_WEBGPU_MEMORY.md):
+# runs shape_decode on a coords/latent pair with TRELLIS_DBG_ALLOC_TRACE set.
+add_executable(trellis-shape-dec-alloc-trace src/shape_dec_alloc_trace.cpp)
+target_link_libraries(trellis-shape-dec-alloc-trace PRIVATE trellis_core)
+set_target_properties(trellis-shape-dec-alloc-trace PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-ss-flow src/test_ss_flow.cpp)
 target_link_libraries(trellis-test-ss-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")
@@ -400,6 +462,32 @@ add_executable(trellis-test-pixal3d-cond-slat src/test_pixal3d_cond_slat.cpp)
 target_link_libraries(trellis-test-pixal3d-cond-slat PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-cond-slat PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+add_executable(trellis-test-pixal3d-real-e2e src/pixal3d_real_geometry_wasm.cpp)
+target_link_libraries(trellis-test-pixal3d-real-e2e PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-real-e2e PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-pixal3d-cond-tex src/test_pixal3d_cond_tex.cpp)
+target_link_libraries(trellis-test-pixal3d-cond-tex PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-cond-tex PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# Native build of the browser SS entry point (src/pixal3d_wasm.cpp) -- same C ABI and stages
+# as web/ss, runnable on any backend for debugging the browser path outside a browser.
+add_executable(pixal3d-ss-run src/pixal3d_wasm.cpp)
+target_link_libraries(pixal3d-ss-run PRIVATE trellis_core)
+set_target_properties(pixal3d-ss-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# Native build of the browser texture entry point (src/pixal3d_texture_wasm.cpp) -- lets the
+# same Texture Flow / Shape-512 stages run outside a browser, and dumps per-step latents
+# (last CLI arg) so browser-vs-native parity can be measured with the same fixture.
+add_executable(pixal3d-texture-run src/pixal3d_texture_wasm.cpp)
+target_link_libraries(pixal3d-texture-run PRIVATE trellis_core)
+# partial 経路（Texture Flow -> decode -> postprocess -> GLB）を native で回すドライバ。
+# 重みの量子化や分割の A/B をブラウザ抜きで完結させるために使う。
+add_executable(pixal3d-partial-run src/pixal3d_partial_e2e_wasm.cpp)
+target_link_libraries(pixal3d-partial-run PRIVATE trellis_core)
+set_target_properties(pixal3d-partial-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+set_target_properties(pixal3d-texture-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-pixal3d-ss-sample src/test_pixal3d_ss_sample.cpp)
 target_link_libraries(trellis-test-pixal3d-ss-sample PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-ss-sample PROPERTIES BUILD_RPATH "${GGML_RPATH}")
@@ -415,3 +503,27 @@ set_target_properties(trellis-test-pixal3d-shape-decode PROPERTIES BUILD_RPATH "
 add_executable(trellis-test-pixal3d-tex-decode src/test_pixal3d_tex_decode.cpp)
 target_link_libraries(trellis-test-pixal3d-tex-decode PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-tex-decode PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# Native WebGPU (Dawn) backend infrastructure smoke test (docs/spec/31-webgpu-bringup.md
+# §7). Self-contained (no Model/GGUF) -- only depends on ggml/ggml-backend/ggml-webgpu,
+# so it links the ggml libs directly rather than the whole trellis_core.
+if(GGML_WEBGPU)
+  add_executable(trellis-webgpu-smoke src/test_webgpu_smoke.cpp)
+  target_include_directories(trellis-webgpu-smoke PRIVATE ${GGML_DIR}/include)
+  target_link_libraries(trellis-webgpu-smoke PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+  set_target_properties(trellis-webgpu-smoke PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+  if(NOT EMSCRIPTEN)
+    # test_webgpu_smoke.cpp's webgpu_smoke_limits() calls the wgpu C++ API directly (the
+    # ggml-webgpu backend keeps its own wgpu::Adapter/Device private, no public accessor) --
+    # re-resolve the same Dawn package ggml-webgpu/CMakeLists.txt already found via
+    # CMAKE_PREFIX_PATH so this target gets <webgpu/webgpu_cpp.h> too.
+    find_package(Dawn REQUIRED)
+    target_link_libraries(trellis-webgpu-smoke PRIVATE dawn::webgpu_dawn)
+  endif()
+  # Op regression for patches/ggml-webgpu/0003 (2D dispatch of row-parallel ops) and the batched
+  # mul_mat shapes of the NAF attention graph: WebGPU vs ggml-cpu on identical inputs.
+  add_executable(trellis-webgpu-ops src/test_webgpu_ops.cpp)
+  target_include_directories(trellis-webgpu-ops PRIVATE ${GGML_DIR}/include)
+  target_link_libraries(trellis-webgpu-ops PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
+  set_target_properties(trellis-webgpu-ops PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+endif()

@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>Pixal3D partial E2E</title>
+<style>body{font:14px system-ui;margin:24px;max-width:900px}label{display:block;margin:10px 0}pre{white-space:pre-wrap;background:#111;color:#ddd;padding:12px;min-height:240px}button{padding:8px 16px}</style>
+<h1>Pixal3D partial E2E</h1>
+<p>Shape-1024 fixture → Texture Flow → Shape Decode → Texture Decode → GLB. This is fixture-injected; it is not v0.9/full image→GLB.</p>
+<label>Texture Flow GGUF <input id="flow" type="file"></label>
+<label>Shape decoder GGUF <input id="shape" type="file"></label>
+<label>Texture decoder GGUF <input id="tex" type="file"></label>
+<label>Fixture files <input id="fixture" type="file" multiple></label>
+<label>External Shape1024 x_final / concat condition (optional) <input id="concat" type="file"></label>
+<label>Decode resolution <input id="res" type="number" value="1024"></label>
+<button id="run">Run partial E2E</button>
+<a id="download" hidden>Download GLB</a>
+<pre id="log"></pre>
+<script src="main.js"></script>

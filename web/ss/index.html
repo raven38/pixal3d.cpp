@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pixal3D SS on WebGPU (WASM)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5em; }
+  label { display: block; margin: 0.4em 0; }
+  pre { background: #f4f4f4; padding: 1em; overflow: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<h2>Pixal3D sparse-structure path on WebGPU (pixal3d_ss.wasm)</h2>
+<p>Hand the module the two GGUFs and the two fixture directories; everything else (DINOv3,
+projection, multiview fusion, the ProjectAttention flow, the Euler sampler) runs inside the
+WASM module on the ggml WebGPU backend. JavaScript only mounts the files and prints the report.</p>
+<label>Models (dinov3.gguf, pixal3d_ss_flow_mv.gguf): <input id="models" type="file" multiple></label>
+<label>cond_ss fixture files: <input id="cond" type="file" multiple></label>
+<label>ss_sample fixture files: <input id="sample" type="file" multiple></label>
+<label>Views (0 = all): <input id="views" type="number" value="0" min="0" max="4"></label>
+<button id="run">Run</button>
+<pre id="out"></pre>
+<script src="main.js"></script>
+</body>
+</html>

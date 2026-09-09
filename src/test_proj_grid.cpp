@@ -39,6 +39,28 @@ static bool compare(const char* name, const vector<float>& mine, const npy::Arra
     return ok;
 }
 
+// proj_grid_bilinear_taps must reproduce proj_grid_sample (host, f64 accumulation) up to the
+// f32 rounding of the four products it hands the device: max|d| ~1e-6 on O(1) features.
+static bool check_taps(const char* name, const float* fmap, int C, int H, int W, int R, int S, const Camera& cam,
+                       const vector<float>& z_host) {
+    vector<int32_t> idx[4]; vector<float> w[4];
+    proj_grid_bilinear_taps(H, W, R, S, cam, idx, w);
+    const size_t N = idx[0].size();
+    vector<float> z(N * (size_t)C);
+    for (size_t k = 0; k < N; ++k)
+        for (int c = 0; c < C; ++c) {
+            const float* plane = fmap + (size_t)c * H * W;
+            float acc = 0.f;
+            for (int t = 0; t < 4; ++t) acc += plane[idx[t][k]] * w[t][k];
+            z[k * (size_t)C + c] = acc;
+        }
+    bool ok = true;
+    for (size_t k = 0; k < N; ++k) for (int t = 0; t < 4; ++t) if (idx[t][k] < 0 || idx[t][k] >= H * W) ok = false;
+    printf("  %-24s idx in [0,%d): %s\n", name, H * W, ok ? "PASS" : "FAIL");
+    npy::Array ref; ref.shape = {(int64_t)z_host.size()}; ref.data = z_host;
+    return compare(name, z, ref, 1e-5) && ok;
+}
+
 static bool try_load(const string& path, npy::Array& out) {
     try { out = npy::load(path); return true; } catch (...) { return false; }
 }
@@ -111,6 +133,12 @@ static int run_selftest() {
     for (float v : out) if (std::fabs(v - 7.0f) > 1e-5f) const_ok = false;
     printf("  constant-fmap sample: all==7.0 %s\n", const_ok ? "PASS" : "FAIL");
     all_ok &= const_ok;
+    {   // taps decomposition on a non-constant map
+        vector<float> ramp((size_t)H * W);
+        for (int h = 0; h < H; ++h) for (int w = 0; w < W; ++w) ramp[(size_t)h * W + w] = 0.1f * h - 0.07f * w + 0.5f;
+        vector<float> zh = proj_grid_sample(ramp.data(), 1, H, W, R, S, cam);
+        all_ok &= check_taps("taps(ramp) vs sample", ramp.data(), 1, H, W, R, S, cam, zh);
+    }
 
     printf("=== selftest %s ===\n", all_ok ? "PASS" : "FAIL");
     return all_ok ? 0 : 1;
@@ -175,6 +203,7 @@ static int run_fixture(const string& dir) {
     int H, W, C; vector<float> chw = bhwc_to_chw(fmap_bhwc, H, W, C);
     vector<float> z = proj_grid_sample(chw.data(), C, H, W, R, S, cam);
     all_ok &= compare("z_proj", z, z_proj);
+    all_ok &= check_taps("taps vs z_proj(host)", chw.data(), C, H, W, R, S, cam, z);
 
     // --- R=32 variant (same camera; its own fmap if the fixture provides one) ---
     npy::Array r32_z;
@@ -258,6 +287,10 @@ static int run_fixture(const string& dir) {
 
                 zviews[vi] = proj_grid_sample(chwv.data(), mC, mH, mW, R, S, cmv);
                 for (size_t i = 0; i < zviews[vi].size(); ++i) sum[i] += zviews[vi][i];
+                {
+                    string tn = "mv taps v" + std::to_string(vi);
+                    all_ok &= check_taps(tn.c_str(), chwv.data(), mC, mH, mW, R, S, cmv, zviews[vi]);
+                }
 
                 npy::Array vref;
                 string vname = "mv_z_proj_v" + std::to_string(vi);
