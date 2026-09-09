@@ -3,6 +3,7 @@ import { cacheStatus, MODEL_MANIFEST_NAME } from './model_store.js';
 import { storagePreflight } from './preflight.js';
 
 const ROOT = 'pixal3d-models-v1';
+const PENDING_MANIFEST_NAME = '.pixal3d-pending.json';
 export const DEFAULT_MANIFEST_URL = '/models/pixal3d-q8_0-v1/pixal3d-models.json';
 
 function safeName(name) {
@@ -28,20 +29,41 @@ export function validateReleaseManifest(m) {
   return m;
 }
 
+function manifestIdentity(m) {
+  return m ? `${m.model_set}\n${m.version}\n${m.files.map((f) => `${f.name}:${f.sha256}:${f.size_bytes}`).join('\n')}` : '';
+}
+
 async function originRoot() {
   if (!navigator.storage?.getDirectory) throw new Error('OPFS is unavailable in this browser');
   return navigator.storage.getDirectory();
 }
-
 async function modelDir(create = true) {
   const root = await originRoot();
   return root.getDirectoryHandle(ROOT, { create });
 }
-
 async function removeRootIfPresent() {
   const root = await originRoot();
   try { await root.removeEntry(ROOT, { recursive: true }); }
   catch (e) { if (e?.name !== 'NotFoundError') throw e; }
+}
+async function removeIfPresent(d, name) {
+  try { await d.removeEntry(name); }
+  catch (e) { if (e?.name !== 'NotFoundError') throw e; }
+}
+async function readJsonIfPresent(d, name) {
+  try {
+    const f = await (await d.getFileHandle(name)).getFile();
+    return JSON.parse(await f.text());
+  } catch (e) {
+    if (e?.name === 'NotFoundError') return null;
+    return null;
+  }
+}
+async function writeJson(d, name, value) {
+  const h = await d.getFileHandle(name, { create: true });
+  const w = await h.createWritable({ keepExistingData: false });
+  await w.write(JSON.stringify(value, null, 2) + '\n');
+  await w.close();
 }
 
 export async function deleteCachedModels() {
@@ -61,21 +83,39 @@ export function resolveModelSource() {
   const modelBaseUrl = q.get('model_base_url') || window.PIXAL3D_MODEL_BASE_URL || localStorage.getItem('pixal3d.modelBaseUrl') || '';
   return { manifestUrl, modelBaseUrl };
 }
-
 export function saveModelBaseUrl(url) {
   const v = String(url || '').trim();
   if (v) localStorage.setItem('pixal3d.modelBaseUrl', v);
   else localStorage.removeItem('pixal3d.modelBaseUrl');
 }
 
-async function writeManifestLast(d, manifest) {
-  const h = await d.getFileHandle(MODEL_MANIFEST_NAME, { create: true });
-  const w = await h.createWritable({ keepExistingData: false });
-  await w.write(JSON.stringify(manifest, null, 2) + '\n');
-  await w.close();
+async function verifyExisting(d, ent, signal) {
+  let f;
+  try { f = await (await d.getFileHandle(ent.name)).getFile(); }
+  catch { return false; }
+  if (f.size !== ent.size_bytes) return false;
+  const reader = f.stream().getReader();
+  const hash = new Sha256();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      hash.update(value);
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+  return hash.hex() === ent.sha256;
 }
 
 async function downloadOne(d, ent, url, onProgress, aggregate, signal) {
+  if (await verifyExisting(d, ent, signal)) {
+    aggregate.done += ent.size_bytes;
+    onProgress({ name: ent.name, fileDone: ent.size_bytes, fileTotal: ent.size_bytes, done: aggregate.done, total: aggregate.total, phase: 'cached-verified' });
+    return;
+  }
+  await removeIfPresent(d, ent.name);
   const res = await fetch(url, { cache: 'no-store', signal });
   if (!res.ok || !res.body) throw new Error(`Download failed for ${ent.name} (HTTP ${res.status})`);
   const h = await d.getFileHandle(ent.name, { create: true });
@@ -88,21 +128,19 @@ async function downloadOne(d, ent, url, onProgress, aggregate, signal) {
       const { value, done } = await reader.read();
       if (done) break;
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      hash.update(value);
-      await w.write(value);
-      bytes += value.byteLength;
+      hash.update(value); await w.write(value); bytes += value.byteLength;
       onProgress({ name: ent.name, fileDone: bytes, fileTotal: ent.size_bytes, done: aggregate.done + bytes, total: aggregate.total, phase: 'download' });
     }
     await w.close();
   } catch (e) {
     try { await reader.cancel(); } catch {}
     try { await w.abort(); } catch {}
-    try { await d.removeEntry(ent.name); } catch {}
+    await removeIfPresent(d, ent.name);
     throw e;
   }
   const digest = hash.hex();
   if (bytes !== ent.size_bytes || digest !== ent.sha256) {
-    try { await d.removeEntry(ent.name); } catch {}
+    await removeIfPresent(d, ent.name);
     throw new Error(`Downloaded model failed verification: ${ent.name} (size ${bytes}/${ent.size_bytes}, sha256 ${digest}/${ent.sha256})`);
   }
   aggregate.done += bytes;
@@ -111,27 +149,40 @@ async function downloadOne(d, ent, url, onProgress, aggregate, signal) {
 export async function installReleaseModels({ manifestUrl, modelBaseUrl, onProgress = () => {}, signal } = {}) {
   const manifest = await fetchReleaseManifest(manifestUrl || DEFAULT_MANIFEST_URL, signal);
   const current = await cacheStatus();
-  if (current.ready && current.modelSet === manifest.model_set && current.version === manifest.version) return current;
-
-  if (!modelBaseUrl) {
-    throw new Error('Model download base URL is not configured. Set PIXAL3D_MODEL_BASE_URL, ?model_base_url=..., or use local verified install.');
-  }
+  if (current.ready && manifestIdentity(current.manifest) === manifestIdentity(manifest)) return current;
+  if (!modelBaseUrl) throw new Error('Model download base URL is not configured. Set PIXAL3D_MODEL_BASE_URL, ?model_base_url=..., or use local verified install.');
 
   const storage = await storagePreflight(manifest, current);
   if (!storage.ok) throw new Error(storage.message);
 
-  // A different or incomplete set is never mixed with the release set. The namespace
-  // is origin-owned and contains only Pixal3D-managed files, so recursive removal is safe.
-  await removeRootIfPresent();
-  const d = await modelDir(true);
-  const aggregate = {
-    done: 0,
-    total: manifest.files.reduce((s, f) => s + f.size_bytes, 0),
-  };
+  let d;
+  try { d = await modelDir(false); } catch { d = await modelDir(true); }
+  const pendingRaw = await readJsonIfPresent(d, PENDING_MANIFEST_NAME);
+  let pending = null;
+  try { if (pendingRaw) pending = validateReleaseManifest(pendingRaw); } catch {}
+
+  const stored = await readJsonIfPresent(d, MODEL_MANIFEST_NAME);
+  let storedManifest = null;
+  try { if (stored) storedManifest = validateReleaseManifest(stored); } catch {}
+  const targetId = manifestIdentity(manifest);
+  const resumable = (pending && manifestIdentity(pending) === targetId) || (storedManifest && manifestIdentity(storedManifest) === targetId);
+  if (!resumable && (pending || storedManifest)) {
+    await removeRootIfPresent();
+    d = await modelDir(true);
+  }
+
+  // Pending manifest identifies the only set allowed in this namespace. It is not
+  // consumed by cacheStatus(), so an interrupted download never becomes Ready.
+  await writeJson(d, PENDING_MANIFEST_NAME, manifest);
+  await removeIfPresent(d, MODEL_MANIFEST_NAME);
+
+  const aggregate = { done: 0, total: manifest.files.reduce((s, f) => s + f.size_bytes, 0) };
   for (const ent of manifest.files) {
     const url = `${String(modelBaseUrl).replace(/\/$/, '')}/${encodeURIComponent(ent.name)}`;
     await downloadOne(d, ent, url, onProgress, aggregate, signal);
   }
-  await writeManifestLast(d, manifest);
+
+  await writeJson(d, MODEL_MANIFEST_NAME, manifest);
+  await removeIfPresent(d, PENDING_MANIFEST_NAME);
   return cacheStatus();
 }
