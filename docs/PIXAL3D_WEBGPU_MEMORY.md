@@ -711,3 +711,52 @@ latent の 2.7e-02 は最終的な色では 1 画素単位の max 7/255 にし�
 **ブラウザを起動せずに「この入力はブラウザで通るか」を判定できる**。
 `TRELLIS_DBG_BUDGET=1` で内訳表示、`TRELLIS_ALLOW_OVER_BUDGET=1` で意図的に踏める。
 
+## 13. モデル一式の Q8_0 化（2026-09-09）
+
+`tools/quantize_gguf.py` で全モデルを Q8_0 にした。**13 GB -> 7.8 GB（40% 減）**。
+
+| モデル | f16 | Q8_0 | 量子化した / 全テンソル |
+|---|---|---|---|
+| `pixal3d_ss_flow_mv` | 2557 MB | **1360 MB** | 244 / 700 |
+| `pixal3d_shape_flow_512_mv` | 2647 MB | **1408 MB** | 245 / 700 |
+| `pixal3d_shape_flow_1024_mv` | 2647 MB | **1408 MB** | 245 / 700 |
+| `pixal3d_tex_flow_1024_mv` | 2647 MB | **1408 MB** | 245 / 700 |
+| `shape_dec` | 905 MB | 841 MB | 70 / 292 |
+| `tex_dec` | 905 MB | 841 MB | 66 / 284 |
+| `dinov3` | 579 MB | 579 MB | 対象外 |
+| `ss_dec` / `pixal3d_naf` | 142 MB | 142 MB | 対象外 |
+
+decoder がほとんど減らないのは、Conv3D の重みが 4D/5D で
+「2D かつ ne0 がブロック整列」という対象条件から外れるため。さらに削るなら conv 重みの
+扱いを別途決める必要があるが、そこは形状に直接効くので慎重にやること。
+
+### 形状に効くモデルまで量子化して壊れないか
+
+texture flow は色にしか効かないが、ss / shape flow と decoder は形状に効く。
+全 Q8 と全 f16 で native E2E を回して `tools/silhouette_iou.py` で判定した
+（views4_fixed、seed 1）:
+
+| | 全 Q8 | f16 |
+|---|---|---|
+| mean silhouette IoU | **0.9105** | 0.9089 |
+| scale_error | 0.0060 | 0.0030 |
+| 最終 GLB | V=699 770 F=980 016 | V=694 278 F=945 776 |
+| bbox | (0.6378, 0.9925, 0.3091) | (0.6320, 0.9858, 0.3115) |
+| Shape-1024 tokens | 4 758 | 4 750 |
+| ゲート判定 | **PASS** | PASS |
+
+IoU は f16 と同等（差 0.0016 は SS decode の閾値が離散判定であることによる token 数の
+ゆらぎ（4 758 対 4 750）の範囲で、Q8 が優れているという意味ではない）。
+
+### 数値の実体は W8A16 + F32 蓄積
+
+`Q8_0` は int8 + 32 要素ごとの f16 スケール。行列積では両バックエンドとも
+**重みを f16 へ展開し、活性化も f16 タイルに落とし、積和は f32** で行う。
+
+- Metal `kernel_mul_mm_q8_0_f32`: 重み・活性化とも `simdgroup_half8x8`、蓄積 `simdgroup_float8x8`
+- WebGPU `mul_mat_reg_tile.wgsl`: `QUANT_OUT_TYPE f16`、`shmem: array<f16>`、`acc: array<f32>`
+
+**活性化が f16 なのは量子化とは無関係**で、f16 の重みでも同じ経路（`kernel_mul_mm_f16_f32`
+も活性化を half に落とす）。Q8_0 が変えたのは W16 -> W8 だけ。
+なお小さい行列で選ばれる Metal の `mul_mv` は活性化を f32 のまま読むので W8A32 になる。
+
