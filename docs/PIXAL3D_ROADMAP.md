@@ -1,100 +1,132 @@
 # Pixal3D Roadmap
 
+> Current release acceptance criteria live in [`PIXAL3D_RELEASE_CHECKLIST.md`](PIXAL3D_RELEASE_CHECKLIST.md).
+> Refreshed after PR #24/#25/#26/#27/#28/#29/#31/#33.
+
 ## M0 — Repository/bootstrap
 
-- [x] Create private `raven38/pixal3d.cpp`
-- [x] Preserve full `pwilkin/trellis.cpp` Git history on `main`
-- [x] Configure local remotes as `origin=raven38/pixal3d.cpp`, `upstream=pwilkin/trellis.cpp`
-- [x] Add Pixal3D planning documents
-- [x] Record exact trellis.cpp and ggml baseline SHAs (see `PIXAL3D_UPSTREAM_POLICY.md`)
-- [x] Keep upstream MIT notices (`LICENSE` retained)
+- [x] Private `raven38/pixal3d.cpp` with preserved trellis.cpp history
+- [x] Upstream policy / baseline SHAs / MIT notices
+- [x] ggml WebGPU patch strategy documented
 
 ## M1 — Native baseline
 
-- [x] Build inherited trellis.cpp unchanged (Metal on macOS; clean `2516c48` CUDA build on RTX 4090 at `/mnt/hdd1/pixal3d/pixal3d.cpp-baseline`)
-- [x] Validate CUDA on RTX 4090 (trellis-cli, fa-mask-overflow / fa-bf16-range PASS)
-- [x] Run available component tests (CUDA: c2s/sparse-conv/dinov3/ss-dec OK; the shape-dec FAIL on a random-latent stand-in fixture was an artifact — `trellis-test-pixal3d-shape-decode` matches the real-SLAT reference mesh to 0.001 voxel)
-- [ ] Generate known-good TRELLIS.2 output
-- [ ] Document ggml fork/patch delta
+- [x] Native Metal/CUDA builds and component tests
+- [x] CUDA RTX 4090 validation
+- [x] Linux/GCC build gate on `main` (#33)
+- [ ] Known-good generic TRELLIS.2 product output (non-Pixal3D follow-up)
 
 ## M2 — Pixal3D single-view
 
-- [x] model/config loading (`pixal3d_*` converter components, `dit_detect_proj_attn`)
-- [x] projected conditioning tensor layout (spec 30 §1)
-- [x] ProjectAttention (`trellis-test-pixal3d-{ss,slat}-flow`; see spec 30 §5 for precision limits)
-- [x] camera-aware projection (`proj_grid`, `trellis-test-proj-grid`)
-- [x] single-view golden tensor parity (`trellis-test-pixal3d-cond-ss` V=1)
-- [ ] end-to-end shape parity
+- [x] model/config loading
+- [x] projected conditioning + ProjectAttention
+- [x] camera-aware projection
+- [x] single-view golden tensor parity
+- [ ] productized single-view Pixal3D path (MV is release focus)
 
 ## M3 — NAF
 
-- [ ] DINO-only fallback for bring-up
-- [x] exact NAF feature extraction (`naf.cpp`, T=128/512 parity)
-- [x] neighborhood attention implementation (CPU, NATTEN clamped-window semantics)
-- [x] high-resolution conditioning parity (`pixal3d_cond_slat`, shape_512 fixture rel <=3e-4)
+- [x] exact NAF feature extraction
+- [x] neighborhood attention
+- [x] high-resolution conditioning parity
+- [ ] optional DINO-only debug fallback
 
-## M4 — Pixal3D MV
+## M4 — Pixal3D multiview
 
-- [x] transforms.json parser (`include/transforms_json.h`/`src/transforms_json.cpp`, wired into `trellis-cli --views`)
-- [x] camera convention tests (calc_mat exact vs reference)
-- [x] per-view projection
-- [x] average fusion (`pixal3d_cond_ss`, 4-view parity rel 2.5e-4)
-- [x] sequential-view memory path (views accumulated one at a time)
-- [x] MV end-to-end parity (per-stage: SS voxel IoU 0.998, shape-512/HR and texture latents, shape/tex decoders; `trellis-cli --views` GLB matches the reference GLB's bbox axis-for-axis, 946k vs 976k faces; the flat metallic channel matches 2 of 3 reference seeds — the seed-42 reference's small metallic region is a sampling outlier)
+- [x] `transforms.json` parser / camera convention tests
+- [x] per-view projection / average fusion / sequential-view memory path
+- [x] MV end-to-end parity
+- [x] `/generate-mv`
+- [x] fail-closed explicit positive `mesh_scale`
+- [x] Desktop client refuses missing `mesh_scale` before request (#19 / PR #27)
+- [ ] automatic `mesh_scale` estimator: **not in release path**; PR #5 failed real calibration and is closed
 
-## M5 — Native release candidate
+## M5 — Native cascade / release candidate
 
-- [x] SS (`trellis-test-pixal3d-ss-sample`)
-- [x] Shape 512 (`trellis-test-pixal3d-slat-sample`)
-- [x] Shape 1024 (`trellis-test-pixal3d-slat-sample --stage shape_hr`)
-- [x] Texture 1024 (`trellis-test-pixal3d-slat-sample --stage tex`)
-- [x] mesh/GLB (`trellis-cli --views`, reference postprocess defaults: 1M faces, 4096 atlas, band 1)
-- [x] `pixal3d-cli generate` → implemented as `trellis-cli --views DIR out.glb` (single shared pipeline binary)
-- [x] benchmark native CUDA: RTX 4090, 4 views, 1024 cascade = 11.5 min wall / 9.9 GB host RSS with the GPU NAF (reference PyTorch low_vram: 5.2 min); HR shape 236 s and texture 171 s dominate
+- [x] SS / Shape-512 / Shape-1024 / Texture-1024
+- [x] shape + texture decode
+- [x] textured GLB export
+- [x] native CUDA benchmark
+- [x] CUDA `ss_decode` graph-support path exercised on NVIDIA L4 (#11)
+- [ ] clean-install Windows release-candidate E2E (#18)
+- [ ] clean-install Linux release-candidate E2E (#18)
 
 ## M6 — ggml WebGPU
 
-- [x] choose ggml integration strategy (vendored fork's own `ggml-webgpu`, unchanged pin + `patches/ggml-webgpu/`; `docs/spec/31-webgpu-bringup.md` §3/§7)
-- [x] WASM/Emscripten build (`scripts/build_wasm_smoke.sh`, `scripts/build_wasm_ss.sh`)
-- [x] backend op inventory against Pixal3D graph (`docs/PIXAL3D_WEBGPU_OP_GAP.md`; §8 = validated set)
-- [x] automated WebGPU backend tests (`trellis-webgpu-smoke`; the `trellis-test-pixal3d-{cond-ss,ss-flow,ss-sample}` / `trellis-test-proj-grid` binaries run unchanged on the WebGPU device, spec 31 §9)
+- [x] WASM/Emscripten build
+- [x] WebGPU op inventory and smoke tests
+- [x] projection/MV accumulation
+- [x] sparse gather/scatter / SparseConv3D
+- [x] sparse texture/PBR decoder
+- [x] NAF neighborhood attention
+- [x] SS decoder routed to CPU in wasm because WebGPU Conv3D path was unsafe
 
-## M7 — Missing WebGPU kernels
+## M7 — Browser memory/correctness hardening
 
-- [x] 3D RoPE (no kernel needed: host-built even/odd index input replaces `ggml_arange`, `dit_rope_index`)
-- [x] projection (no kernel needed: `get_rows` x4 + weighted sum on the device, `pixal3d_cond_ss_gpu`; bit-level parity with the host path)
-- [x] MV accumulation (device-resident running average, `pixal3d_cond_ss_gpu`; peak memory flat in V)
-- [ ] dense Conv3D (SS decoder still runs on the CPU backend after a WebGPU flow)
-- [x] large-dispatch ops (`patches/ggml-webgpu/0003`: 2D dispatch for soft_max/sum_rows/norm/get_rows/concat/pad/repeat, cpy `gid.y` fix; `trellis-webgpu-ops`)
-- [x] sparse gather/scatter (no kernel needed: the shared `build_neighbor_table` / C2S index maps stay on the host, `get_rows` gathers on the device; I32 `cont` of index slices needed `patches/ggml-webgpu/0005`; spec 31 §11)
-- [x] SparseConv3D (the validated 27-tap gather + `mul_mat` submanifold conv runs unchanged on WebGPU; shape decoder on the Shape-1024 real SLAT matches the PyTorch reference mesh to 0.001 voxel natively and in Chrome, `docs/PIXAL3D_WEBGPU_MEMORY.md` §9)
-- [x] sparse texture / PBR decoder (same runtime, mask-driven C2S + 6-channel head: per-voxel PBR attributes on the Texture-1024 real SLAT match the PyTorch reference to mean|d| 2e-4 on every channel natively and in Chrome, spec 31 §12; no new kernel)
-- [x] NAF neighborhood attention (no kernel needed: block-window formulation as `get_rows` + batched `mul_mat` + `soft_max`, `naf_build`; GroupNorm/reflect-pad/avg-pool lowered to `norm`/`concat`/`sum_rows`; spec 31 §10.3)
+- [x] sparse/chunked Texture-1024 conditioning
+- [x] SS decoder silent-corruption workaround / support guard
+- [x] output-head fusion / attention chunking / device-budget gate
+- [x] DINO precision and Q8_0 fixes
+- [x] MLP chunking implemented as **opt-in** (#12); measured WebGPU/NOFA peak did not improve, so it is not a release blocker
+- [ ] native Dawn/WebGPU issue #2 remains under investigation; Chrome/browser path is separate
 
 ## M8 — Browser end-to-end
 
-- [x] SS stage in the browser: DINOv3 -> projection -> MV fusion -> ProjectAttention SS flow -> 12-step sampler, one WASM module on ggml WebGPU (`web/ss/`, spec 31 §9); JS only mounts files and prints
-- [x] Shape-512 stage in the browser: DINOv3 -> NAF -> lr/hr projections -> MV fusion -> sparse ProjectAttention shape flow -> 12-step sampler, same module (`pixal3d_shape512_run`, `web/shape512/`, spec 31 §10.7)
-- [x] Shape decoder in the browser: real Shape-1024 SLAT fixture -> sparse decoder (from_latent, 4 x ConvNeXt + C2S, output_layer) -> dual-grid mesh, same module (`pixal3d_shape_decode_run`, `web/shape_decode/`, spec 31 §11); raw mesh returned to JS as .npy downloads and scored natively
-- [x] Texture decoder in the browser: real Texture-1024 SLAT fixture -> shape decoder (masks) -> texture decoder -> per-voxel PBR attributes, same module (`pixal3d_tex_decode_run`, `web/tex_decode/`, spec 31 §12); raw attributes returned to JS as .npy downloads and scored natively (`--ext-attrs`); UV bake / GLB not in the browser yet
-- [ ] image loading (fixture `.npy` views today; PNG + BiRefNet/RMBG cutout not ported)
-- [ ] camera loading (fixture `transform_matrix` today; `transforms.json` parsing not wired)
-- [x] stage weight load/unload (SS stage: DINOv3 freed before the flow weights load, WORKERFS-backed GGUF streaming)
-- [ ] full generation
-- [ ] GLB returned to JS
-- [x] memory profiling (SS stage, buffer-allocation accounting: `docs/PIXAL3D_WEBGPU_MEMORY.md` §6; Shape-512 stage §7)
-- [x] numerical comparison against CUDA (SS stage: spec 31 §9 -- voxel IoU 1.000 vs the CUDA production run; Shape-512 stage: spec 31 §10.6/10.7)
+- [x] real RGBA image loading
+- [x] `transforms.json` loading
+- [x] SS → Shape-512 → Shape-1024 → Texture-1024
+- [x] shape + texture decode
+- [x] production postprocess
+- [x] textured GLB returned to JS
+- [x] official cyclops-class browser full E2E
+- [x] browser-safe `remesh_res=512`
+- [ ] browser 1536: explicitly outside initial Web alpha scope
 
 ## M9 — Apps
 
-### Web
-- [ ] input UI
-- [ ] MV UI
-- [ ] progress/stage UI
-- [ ] Three.js viewer
-- [ ] GLB export
+### Desktop / Trellis Studio
 
-### Desktop
-- [ ] native backend binding
-- [ ] CUDA/Vulkan selector
-- [ ] same core UX
+- [x] resident native `trellis-server` integration
+- [x] single-image UI / viewer / gallery / GLB export
+- [x] Pixal3D MV input / matching / reorder
+- [x] explicit `mesh_scale` UI
+- [x] 1024 / 1536 control
+- [x] progress / cancel
+- [x] managed model cache + safe delete (#16 / PR #25)
+- [x] real Tauri/WebKitGTK Xvfb lifecycle smoke (#17 / PR #26)
+- [x] MV preflight gate (#19 / PR #27)
+- [ ] clean-install Windows/Linux E2E (#18)
+
+### Web
+
+- [x] production app shell + viewer/download (#20 / PR #28)
+- [x] verified manifest/size/SHA256 OPFS installation (#15 / PR #28)
+- [x] fast production browser UI/OPFS gate (#22 / PR #29)
+- [ ] automatic persistent model delivery/version invalidation/safe delete (#9)
+- [ ] storage quota + WebGPU/device-budget preflight UI (#21)
+- [ ] real Chrome second-launch/no-retransfer/cache-delete release smoke
+
+## M10 — Initial releases
+
+### Desktop alpha
+
+- [x] shared model manifest contract (#15 / PR #24)
+- [x] safe managed model cache (#16 / PR #25)
+- [x] Tauri Xvfb/WebKitGTK smoke (#17 / PR #26)
+- [x] MV preflight (#19 / PR #27)
+- [x] CUDA graph-support hardware validation (#11)
+- [ ] generate final manifest from exact release model directory
+- [ ] clean-install Windows/Linux E2E (#18)
+- [ ] synchronize package/Tauri version with `v0.9.0-desktop-alpha`
+- [ ] verify installer asset lookup for prerelease/tag-specific release
+- [ ] tag `v0.9.0-desktop-alpha`
+
+### Web alpha
+
+- [x] production UI (#20 / PR #28)
+- [x] verified local OPFS model install (#15 / PR #28)
+- [x] production UI CI (#22 / PR #29)
+- [ ] automatic persistence/version lifecycle (#9)
+- [ ] storage/WebGPU preflight (#21)
+- [ ] real Chrome/WebGPU full generation + cache reuse/delete release gate
+- [ ] tag `v0.9.0-web-alpha`
