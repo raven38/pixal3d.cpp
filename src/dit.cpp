@@ -110,6 +110,59 @@ static T* build_pad_mask(ggml_context* c, int64_t Lk_real, int64_t Lq) {
     return ggml_repeat(c, colh, ggml_new_tensor_2d(c, GGML_TYPE_F16, Lk_pad, Lq_pad)); // [Lk_pad,Lq_pad] F16
 }
 
+// DiT ブロックの MLP（fc1 -> GELU -> fc2）をトークン方向に分割する。x: [d_model, N]。
+// 中間 [4*d_model, N] は N に比例する最大級の活性化で、tex flow (d_model=1536, N=17489) では
+// 24 KiB/token = 410 MiB になる。MLP はトークンごとに完全に独立（fc1/fc2 は列方向に独立、
+// GELU は要素ごと、トークンをまたぐ縮約が無い）なので、数学的には分割しても同値。
+//
+// ただし**ビット一致は保証されない**: 列数を変えると行列積のカーネル選択が変わる。Metal は
+// 列数 2〜8 で専用カーネル・9 以上で matrix-matrix 経路、WebGPU は列数 1 で別経路を選ぶ。
+// 末尾チャンクが小さいとこの分岐を踏む。docs/design/2026-09-09-texture-flow-mlp-chunking.md 参照。
+//
+// 既定は sdpa のクエリ分割と揃える（native 1024 MiB / wasm 128 MiB）。native 既定では
+// N が 4 万程度まで 1 チャンクのままなので、実質ブラウザ経路のための分割である。
+static T* mlp_chunked(ggml_context* c, const Model& m, const std::string& pre, T* x) {
+    const int64_t d_model = x->ne[0], N = x->ne[1];
+    int64_t budget = kAttnChunkBytes;
+    if (const char* e = getenv("TRELLIS_MLP_CHUNK_MB")) budget = atoll(e) * 1024 * 1024;
+    const int64_t per_token = 4 * d_model * 4;                  // 中間 [4*d_model, 1] の f32 バイト数
+    int64_t nt = std::max<int64_t>(1, budget / std::max<int64_t>(per_token, 1));
+    // sdpa と同じ理由でチャンク数に上限を置く（1 チャンク約 8 ノード、30 ブロックが 1 グラフ）。
+    static const int64_t kMaxMlpChunks = []() -> int64_t {
+        if (const char* e = getenv("TRELLIS_MLP_MAX_CHUNKS")) return atoll(e);
+        return 256;
+    }();
+    if (nt * kMaxMlpChunks < N) nt = (N + kMaxMlpChunks - 1) / kMaxMlpChunks;
+    // チャンク幅を均す。端数の末尾チャンクが小さいと行列積のカーネル選択が変わって
+    // 結果がビット一致しなくなる（実測 2026-09-09, Metal, tex flow N=17489, 分割前との
+    // max|d|）: 末尾 1 -> 6.15e-04 / 2 -> 5.81e-04 / 8 -> 8.89e-04 / 9 -> 0 / 2180 -> 0。
+    // Metal は列数 2〜8 に専用カーネル、9 以上で matrix-matrix 経路を選ぶ
+    // （ggml-metal-ops.cpp:2057-2078, 2164-2167）。チャンク数を先に決めてから幅を
+    // 割り直すと末尾は他チャンクと最大 1 しか違わなくなり、この分岐を踏まない。
+    if (nt < N) {
+        const int64_t k = (N + nt - 1) / nt;
+        nt = (N + k - 1) / k;
+    }
+    // 検証用のみ: チャンク幅をトークン数で直接指定し、上の均し処理を迂回する。
+    // 末尾を狙って 1 / 2 / 8 / 9 トークンにしてカーネル分岐を再現するために使う。
+    if (const char* e = getenv("TRELLIS_MLP_CHUNK_TOKENS")) nt = std::max<int64_t>(1, atoll(e));
+    if (nt >= N) {                                              // 1 チャンク: 分割前と同じグラフ
+        T* y = lin(c, m, pre + ".0", x);
+        y = ggml_gelu(c, y);                                    // GELU(approximate=tanh)
+        return lin(c, m, pre + ".2", y);
+    }
+    T* out = nullptr;
+    for (int64_t t0 = 0; t0 < N; t0 += nt) {
+        const int64_t n = std::min(nt, N - t0);
+        T* xc = ggml_cont(c, ggml_view_2d(c, x, d_model, n, x->nb[1], (size_t)t0 * x->nb[1]));
+        T* y = lin(c, m, pre + ".0", xc);                       // [4*d_model, n]
+        y = ggml_gelu(c, y);
+        y = lin(c, m, pre + ".2", y);                           // [d_model, n]
+        out = out ? ggml_concat(c, out, y, 1) : y;
+    }
+    return out;                                                 // [d_model, N]
+}
+
 // SDPA over heads. q:[hd,nh,Lq]  k,v:[hd,nh,Lk] -> [d_model, Lq].  `mask`: optional [Lk_pad,Lq] F16.
 static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr) {
     const float scale = 1.0f / std::sqrt((float)q->ne[0]);
@@ -309,9 +362,7 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
 
     hh = layernorm(c, h, p.ln_eps);
     hh = modulate(c, hh, scale_mlp, shift_mlp);
-    hh = lin(c, m, b + ".mlp.mlp.0", hh);
-    hh = ggml_gelu(c, hh);                                      // GELU(approximate=tanh)
-    hh = lin(c, m, b + ".mlp.mlp.2", hh);
+    hh = mlp_chunked(c, m, b + ".mlp.mlp", hh);
     dbg("blk0_mlp", hh);
     h = ggml_add(c, h, ggml_mul(c, hh, gate_mlp));
     return h;
