@@ -121,44 +121,72 @@ static T* build_pad_mask(ggml_context* c, int64_t Lk_real, int64_t Lq) {
 //
 // 既定は sdpa のクエリ分割と揃える（native 1024 MiB / wasm 128 MiB）。native 既定では
 // N が 4 万程度まで 1 チャンクのままなので、実質ブラウザ経路のための分割である。
+// 分割しても数値が変わらない最小のチャンク幅。これを下回ると行列積のカーネル選択が
+// 変わり、結果がビット一致しなくなる。実測（2026-09-09, Metal, f16, tex flow N=17489、
+// 分割前との max|d|）: 末尾 1 -> 6.15e-04 / 2 -> 5.81e-04 / 8 -> 8.89e-04 / 9 -> 0 /
+// 2180 -> 0。Metal は列数 2〜8 に専用カーネル、9 以上で matrix-matrix 経路を選ぶ
+// （thirdparty/ggml/src/ggml-metal/ggml-metal-ops.cpp:2057-2078, 2164-2167）。
+static constexpr int64_t kMinMlpChunkTokens = 9;
+
 static T* mlp_chunked(ggml_context* c, const Model& m, const std::string& pre, T* x) {
     const int64_t d_model = x->ne[0], N = x->ne[1];
-    int64_t budget = kAttnChunkBytes;
-    if (const char* e = getenv("TRELLIS_MLP_CHUNK_MB")) budget = atoll(e) * 1024 * 1024;
-    const int64_t per_token = 4 * d_model * 4;                  // 中間 [4*d_model, 1] の f32 バイト数
-    int64_t nt = std::max<int64_t>(1, budget / std::max<int64_t>(per_token, 1));
-    // sdpa と同じ理由でチャンク数に上限を置く（1 チャンク約 8 ノード、30 ブロックが 1 グラフ）。
-    static const int64_t kMaxMlpChunks = []() -> int64_t {
-        if (const char* e = getenv("TRELLIS_MLP_MAX_CHUNKS")) return atoll(e);
-        return 256;
-    }();
-    if (nt * kMaxMlpChunks < N) nt = (N + kMaxMlpChunks - 1) / kMaxMlpChunks;
-    // チャンク幅を均す。端数の末尾チャンクが小さいと行列積のカーネル選択が変わって
-    // 結果がビット一致しなくなる（実測 2026-09-09, Metal, tex flow N=17489, 分割前との
-    // max|d|）: 末尾 1 -> 6.15e-04 / 2 -> 5.81e-04 / 8 -> 8.89e-04 / 9 -> 0 / 2180 -> 0。
-    // Metal は列数 2〜8 に専用カーネル、9 以上で matrix-matrix 経路を選ぶ
-    // （ggml-metal-ops.cpp:2057-2078, 2164-2167）。チャンク数を先に決めてから幅を
-    // 割り直すと末尾は他チャンクと最大 1 しか違わなくなり、この分岐を踏まない。
-    if (nt < N) {
-        const int64_t k = (N + nt - 1) / nt;
-        nt = (N + k - 1) / k;
+    // 既定は分割しない。ブラウザ（WebGPU / NOFA 経路）では分割しても活性化バッファが
+    // 1 バイトも減らないことを実測で確認しているので、既定で有効にすると benefit 0 に
+    // 対してグラフだけが変わる。実測（N=12083 / 17489、attn 8〜1024 MiB × MLP 32〜1024
+    // MiB のすべての組で 705.1 / 1020.5 MiB から動かない）。効くのは FlashAttention 経路
+    // だけで、そこでは N=17489 で 1850.9 -> 1663.1 MiB。診断・native 最適化用の opt-in と
+    // して置く。docs/design/2026-09-09-texture-flow-mlp-chunking.md 参照。
+    const char* env_mb  = getenv("TRELLIS_MLP_CHUNK_MB");
+    const char* env_tok = getenv("TRELLIS_MLP_CHUNK_TOKENS");
+    int64_t nt = N;                                             // = 分割しない
+    if (env_mb) {
+        const int64_t budget = std::max<int64_t>(1, atoll(env_mb)) * 1024 * 1024;
+        const int64_t per_token = 4 * d_model * 4;              // 中間 [4*d_model, 1] の f32 バイト数
+        nt = std::max<int64_t>(1, budget / std::max<int64_t>(per_token, 1));
+        // sdpa と同じ理由でチャンク数に上限を置く（1 チャンク約 8 ノード、30 ブロックが 1 グラフ）。
+        // atoll は 0 や負値も返すので clamp する（そのまま割ると 0 除算になる）。
+        static const int64_t kMaxMlpChunks = []() -> int64_t {
+            if (const char* e = getenv("TRELLIS_MLP_MAX_CHUNKS")) return std::max<int64_t>(1, atoll(e));
+            return 256;
+        }();
+        if (nt * kMaxMlpChunks < N) nt = (N + kMaxMlpChunks - 1) / kMaxMlpChunks;
+        if (nt < N) {                                           // チャンク幅を均す
+            const int64_t k = (N + nt - 1) / nt;
+            nt = (N + k - 1) / k;
+            if (N >= kMinMlpChunkTokens) nt = std::max(nt, kMinMlpChunkTokens);
+        }
     }
-    // 検証用のみ: チャンク幅をトークン数で直接指定し、上の均し処理を迂回する。
-    // 末尾を狙って 1 / 2 / 8 / 9 トークンにしてカーネル分岐を再現するために使う。
-    if (const char* e = getenv("TRELLIS_MLP_CHUNK_TOKENS")) nt = std::max<int64_t>(1, atoll(e));
+    // 検証用のみ: チャンク幅をトークン数で直接指定し、均し処理も下限も迂回する。
+    // 末尾を狙って 1 / 2 / 8 / 9 トークンにしてカーネル分岐を再現するために使う
+    // （＝意図的にビット不一致を作れる）。無言で挙動が変わらないよう一度だけログに出す。
+    if (env_tok) {
+        nt = std::max<int64_t>(1, atoll(env_tok));
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            fprintf(stderr, "[dit] TRELLIS_MLP_CHUNK_TOKENS=%s -- 検証専用。チャンク幅の均しと "
+                            "最小幅 %lld を迂回するので、結果が分割前とビット一致しなくなりうる\n",
+                    env_tok, (long long)kMinMlpChunkTokens);
+        }
+    }
     if (nt >= N) {                                              // 1 チャンク: 分割前と同じグラフ
         T* y = lin(c, m, pre + ".0", x);
         y = ggml_gelu(c, y);                                    // GELU(approximate=tanh)
         return lin(c, m, pre + ".2", y);
     }
     T* out = nullptr;
-    for (int64_t t0 = 0; t0 < N; t0 += nt) {
-        const int64_t n = std::min(nt, N - t0);
+    for (int64_t t0 = 0; t0 < N; ) {
+        int64_t n = std::min(nt, N - t0);
+        // 均しだけでは末尾が最小幅を割ることがある（総当たりで N=1436 / 1 MiB -> 末尾 8 など
+        // 8820 組）。ceil(N/k) は既に不動点なので均しを繰り返しても消えない。残りが最小幅に
+        // 満たないならこのチャンクに吸収して、どのチャンクも下限を割らないようにする。
+        if (!env_tok && N - t0 - n > 0 && N - t0 - n < kMinMlpChunkTokens) n = N - t0;
         T* xc = ggml_cont(c, ggml_view_2d(c, x, d_model, n, x->nb[1], (size_t)t0 * x->nb[1]));
         T* y = lin(c, m, pre + ".0", xc);                       // [4*d_model, n]
         y = ggml_gelu(c, y);
         y = lin(c, m, pre + ".2", y);                           // [d_model, n]
         out = out ? ggml_concat(c, out, y, 1) : y;
+        t0 += n;
     }
     return out;                                                 // [d_model, N]
 }
@@ -236,7 +264,7 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     const int64_t hd = q2->ne[0], Lq = q2->ne[1], nh = q2->ne[2], Lk = k2->ne[1];
 
     int64_t budget = kAttnChunkBytes;
-    if (const char* e = getenv("TRELLIS_ATTN_CHUNK_MB")) budget = atoll(e) * 1024 * 1024;
+    if (const char* e = getenv("TRELLIS_ATTN_CHUNK_MB")) budget = std::max<int64_t>(1, atoll(e)) * 1024 * 1024;
     const int64_t per_q = Lk * nh * 4;                          // one query's score column
     int64_t nq = std::max<int64_t>(1, budget / std::max<int64_t>(per_q, 1));
     // Floor on the chunk size: each chunk adds ~8 nodes and a whole 30-block DiT with two
@@ -252,7 +280,8 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     // 推論に任せると "inconsistent types deduced for lambda return type" で落ちる（macOS
     // clang は int64_t が long long なので通ってしまい、Linux ビルドでだけ露見する）。
     static const int64_t kMaxAttnChunks = []() -> int64_t {
-        if (const char* e = getenv("TRELLIS_ATTN_MAX_CHUNKS")) return atoll(e);
+        // atoll は 0 や負値も返す。そのまま割ると 0 除算になるので clamp する。
+        if (const char* e = getenv("TRELLIS_ATTN_MAX_CHUNKS")) return std::max<int64_t>(1, atoll(e));
         return 256;
     }();
     if (nq * kMaxAttnChunks < Lq) nq = (Lq + kMaxAttnChunks - 1) / kMaxAttnChunks;
