@@ -69,15 +69,27 @@ jobs:
             exit 1
           fi
           echo INSTALLER_MANIFEST_LINUX_OK
-      - name: Windows verify-only accepts intact set and rejects corruption
+      - name: Windows PowerShell 7 verify-only accepts intact set and rejects corruption
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $root = Join-Path $env:RUNNER_TEMP 'pixal3d-models'
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
+          & pwsh -NoProfile -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
           if ($LASTEXITCODE -ne 0) { throw "intact model set failed verification: rc=$LASTEXITCODE" }
           [System.IO.File]::AppendAllText((Join-Path $root 'tex_dec.gguf'), 'corrupt')
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
+          & pwsh -NoProfile -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
           if ($LASTEXITCODE -eq 0) { throw 'corrupt model set was incorrectly accepted' }
-          Write-Host 'INSTALLER_MANIFEST_WINDOWS_OK'
+          Write-Host 'INSTALLER_MANIFEST_WINDOWS_PWSH_OK'
+      - name: Diagnose Windows PowerShell 5.1 UTF-8 file parsing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Windows PowerShell 5.1 reads UTF-8 files without a BOM as ANSI. Parse the
+          # same bytes after explicit UTF-8 decoding to distinguish an encoding problem
+          # from a real PowerShell syntax problem.
+          $text = [System.IO.File]::ReadAllText((Resolve-Path 'install/install.ps1'), [System.Text.Encoding]::UTF8)
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | Format-List | Out-String | Write-Host; throw 'install.ps1 has real syntax errors after explicit UTF-8 decoding' }
+          Write-Host 'INSTALLER_PS51_UTF8_PARSE_OK'
