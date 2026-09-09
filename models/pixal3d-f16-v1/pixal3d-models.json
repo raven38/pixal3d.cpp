@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "model_set": "pixal3d-f16",
+  "version": "v1",
+  "files": [
+    {
+      "name": "dinov3.gguf",
+      "role": "image_encoder",
+      "required": true,
+      "size_bytes": 606773440,
+      "sha256": "b2e84087aebeb06440da4f5970413153f7f27f71ede7bab993e82accd839d936"
+    },
+    {
+      "name": "pixal3d_naf.gguf",
+      "role": "naf",
+      "required": true,
+      "size_bytes": 1334656,
+      "sha256": "c4f6cd80e94c8d120360ba50a3633322e6ecce0163966e3b7650b24f99c18569"
+    },
+    {
+      "name": "pixal3d_ss_flow_mv.gguf",
+      "role": "ss_flow",
+      "required": true,
+      "size_bytes": 2681053184,
+      "sha256": "102cb5c95499b3adda0edb4a3a24fa09962107d9c23cd42d0d664f61fa817e78"
+    },
+    {
+      "name": "ss_dec.gguf",
+      "role": "ss_decoder",
+      "required": true,
+      "size_bytes": 147379392,
+      "sha256": "2790b5eecb261cc877d9bf175ce2bd6dd48cd65be8c042c5f5bc023dfca01cf7"
+    },
+    {
+      "name": "pixal3d_shape_flow_512_mv.gguf",
+      "role": "shape_flow_512",
+      "required": true,
+      "size_bytes": 2775572640,
+      "sha256": "8c73dcc8ed05f7cb4b4aa0f933f5945bfa19ee51de863ceded5dbbdbd9d4648f"
+    },
+    {
+      "name": "shape_dec.gguf",
+      "role": "shape_decoder",
+      "required": true,
+      "size_bytes": 948745344,
+      "sha256": "d3230b649031b55728da2d8818f092eab9ad6f1e72fd01f6cbff6bfada5d7d47"
+    },
+    {
+      "name": "pixal3d_shape_flow_1024_mv.gguf",
+      "role": "shape_flow_1024",
+      "required": true,
+      "size_bytes": 2775572640,
+      "sha256": "d2a500aacb82948978346d901c94acf9fcc69e71cd9c6195da8939c3830246fc"
+    },
+    {
+      "name": "pixal3d_tex_flow_1024_mv.gguf",
+      "role": "texture_flow_1024",
+      "required": true,
+      "size_bytes": 2775670944,
+      "sha256": "ffd8255188fc738c02fffc77a215c11ef717915866287c1a8954f2b9fb9a47f2"
+    },
+    {
+      "name": "tex_dec.gguf",
+      "role": "texture_decoder",
+      "required": true,
+      "size_bytes": 948713888,
+      "sha256": "858d1e0079254e1d1f0596d7fa3a747d21bfe80f83d810e735a1e0b9db550322"
+    }
+  ],
+  "source": "flow: TencentARC/Pixal3D ckpts/{ss_flow_img_dit_1_3B_64_bf16_mv,slat_flow_img2shape_dit_1_3B_{512,1024}_bf16_mv,slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv}.safetensors; decoders: ckpts/{shape_dec,tex_dec}_next_dc_f16c32_fp16.safetensors + ss_dec ckpt; image_encoder: timm/vit_large_patch16_dinov3.lvd1689m model.safetensors; naf: valeoai/NAF naf_release.pth converted to safetensors; all converted with tools/convert.py"
+}
