@@ -51,3 +51,6 @@ web/full_e2e/pixal3d_full_e2e.wasm
 web/real_e2e/pixal3d_real_geometry.js
 web/real_e2e/pixal3d_real_geometry.wasm
 build-wasm-ss/
+
+# macOS が自動生成する。追跡すると PR に混入する
+.DS_Store
