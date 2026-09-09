@@ -272,6 +272,38 @@ pipeline / backend の問題ではない。`mesh_scale` が transforms.json に�
 そのまま流すと既定 1.0 で静かに壊れるので、`tools/silhouette_iou.py` の推定値で
 先に確認すること。
 
+## 4b. 生成物の検収（`tools/silhouette_iou.py`）
+
+**「完走して非空の GLB が出た」は正しさの証拠にならない。** 2026-09-08 に
+`mesh_scale` 欠落で mean silhouette IoU 0.107 の壊れた GLB が、エラーも警告も無く
+47 MB の textured GLB として出ていた。パイプラインの最後に数値のゲートを噛ませる。
+
+```sh
+python3 tools/silhouette_iou.py <out.glb> <views_dir> [montage.png] \
+    --min-iou 0.85 --max-scale-error 0.05
+```
+
+入力カメラ（`transforms.json` の c2w + `camera_angle_x`）でメッシュを投影し、
+入力 alpha とのシルエット IoU を出す。閾値を渡したときだけ判定モードになり、
+割ると **終了コード 1** を返す。
+
+| 判定 | 意味 |
+|---|---|
+| `mean_iou` | 形が入力ビューと合っているか。正常な再構成で 0.90〜0.98 |
+| `scale_error` | 投影サイズ比の 1 からのずれ = `mesh_scale` の食い違い |
+
+実測:
+
+| 対象 | mean_iou | scale_error | 判定 |
+|---|---|---|---|
+| 公式 cyclops（`mesh_scale` 明示） | 0.9785 | 0.0032 | **PASS** |
+| views4 + `mesh_scale=0.206` | 0.9089 | 0.003 | PASS |
+| views4（`mesh_scale` 欠落、既定 1.0） | **0.1071** | 0.794 | **FAIL** |
+
+`mesh_scale` の欠落自体は `load_transforms_json` が fail-closed で弾くようになったが
+（PR #4）、このゲートは**値が書かれていても間違っている**場合も捕まえる。
+推定値は「入力と整合する `mesh_scale`」として出るので、そのまま修正値に使える。
+
 ## 5. 検証の位置づけ（重要）
 
 - 分割グラフ版の conditioning は、**同一 backend の単一グラフ版**（PyTorch 参照で検証済みの経路）

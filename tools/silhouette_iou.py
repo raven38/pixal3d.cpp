@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """生成した GLB を入力 multiview のカメラで投影し、入力 alpha とのシルエット IoU を出す。
 
-    python3 tools/silhouette_iou.py <mesh.glb> <views_dir> [out_montage.png] [--res 256]
+    python3 tools/silhouette_iou.py <mesh.glb> <views_dir> [out_montage.png]
+        [--res 256] [--min-iou 0.85] [--max-scale-error 0.05]
+
+検収に使うとき（--min-iou / --max-scale-error のどちらかを渡すと判定モード）は、
+閾値を割ると終了コード 1 を返す。生成が「完走した」だけでは正しさの証拠にならない
+（2026-09-08: mesh_scale の欠落で IoU 0.107 の壊れた GLB が非空で出ていた）ので、
+パイプラインの最後にこれを噛ませて数値で落とす。
 
 views_dir は transforms.json + pre-matted RGBA。カメラは近似せず、
 src/proj_grid.cpp と同じ式で投影する:
@@ -150,7 +156,8 @@ def main():
         v = float((m & ref).sum() / u) if u else 0.0
         ious.append(v); mine.append(m)
         print(f"| {fr.get('name', fr['file_path'])} | {v:.4f} | {m.mean():.3f} | {ref.mean():.3f} |")
-    print(f"\nmean silhouette IoU: {np.mean(ious):.4f}")
+    mean_iou = float(np.mean(ious))
+    print(f"\nmean silhouette IoU: {mean_iou:.4f}")
 
     # 投影サイズの比から mesh_scale を逆算する。world = grid/(2*mesh_scale) なので
     # 投影の大きさは 1/mesh_scale に比例する。transforms.json の mesh_scale が
@@ -171,7 +178,32 @@ def main():
                 for r in (refs, mine)]
         Image.fromarray(np.concatenate(rows, 0)).save(out_png)
         print(f"saved {out_png}  (上段=入力 alpha, 下段=生成 GLB を同じカメラで投影)")
-    return 0
+
+    # 判定モード: 閾値を渡されたときだけ終了コードで落とす。
+    min_iou = max_scale_err = None
+    for a in sys.argv[1:]:
+        if a.startswith("--min-iou"):
+            min_iou = float(a.split("=", 1)[1]) if "=" in a else 0.85
+        if a.startswith("--max-scale-error"):
+            max_scale_err = float(a.split("=", 1)[1]) if "=" in a else 0.05
+    if min_iou is None and max_scale_err is None:
+        return 0
+
+    ok = True
+    if min_iou is not None:
+        good = mean_iou >= min_iou
+        ok &= good
+        print(f"GATE mean_iou {mean_iou:.4f} {'>=' if good else '<'} {min_iou:.4f}  "
+              f"{'PASS' if good else 'FAIL'}")
+    if max_scale_err is not None and ratios:
+        # 投影サイズ比が 1 からどれだけ外れているか = mesh_scale の食い違い
+        err = abs(float(np.mean(ratios)) - 1.0)
+        good = err <= max_scale_err
+        ok &= good
+        print(f"GATE scale_error {err:.4f} {'<=' if good else '>'} {max_scale_err:.4f}  "
+              f"{'PASS' if good else 'FAIL'}")
+    print(f"SILHOUETTE_GATE: {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
