@@ -111,16 +111,6 @@ static bool mv_load_views(const trellis::TrellisParams& cfg,
     const int nframes = (int)tf.frames.size();
     const int use_n = (cfg.num_views > 0) ? std::min(cfg.num_views, nframes) : nframes;
     mesh_scale = tf.mesh_scale;
-    if (!tf.has_mesh_scale) {
-        // 無いまま走らせると ProjGrid が被写体を間違ったスケールでサンプリングし、
-        // エラーも警告も出さずに壊れた形状になる（2026-09-08 実測:
-        // シルエット IoU 0.909 -> 0.107）。原因がユーザーに見えないので必ず知らせる。
-        fprintf(stderr,
-                "[pixal3d] WARNING: %s/transforms.json に mesh_scale がありません。既定 1.0 で\n"
-                "          続行しますが、ビューのレンダ時のスケールと食い違うと、エラーを出さずに\n"
-                "          壊れた形状になります。tools/silhouette_iou.py で整合する値を推定できます。\n",
-                cfg.views.c_str());
-    }
     v512.clear(); v1024.clear();
     v512.reserve(use_n); v1024.reserve(use_n);
 

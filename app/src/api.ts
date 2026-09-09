@@ -1,15 +1,12 @@
 // HTTP client for the resident trellis-server (see src/trellis-server.cpp):
-//   GET  /health   -> "ok"
-//   POST /generate  multipart: image file + seed/resolution/bg_removal/uv fields
-//                   -> model/gltf-binary, or JSON {"error": "..."} on failure.
-//   POST /generate_mv multipart: transforms (transforms.json) + one views part per
-//                   frame + seed/num_views/uv fields -> model/gltf-binary.
-//
-// 推論はすべて server 側の共有 C++ にある。ここはフォームを組んで叩くだけの層で、
-// 前処理も座標変換も持たない。
+//   GET  /health        -> "ok"
+//   POST /generate      multipart: image file + seed/resolution/bg_removal/uv fields
+//                        -> model/gltf-binary, or JSON {"error": "..."} on failure.
+//   POST /generate-mv   multipart: transforms.json + N pre-matted RGBA view files +
+//                        seed/resolution/uv fields -> model/gltf-binary.
 
 import { apiBase, loadConfig } from "./config";
-import type { GenParams, MultiviewInput, MvParams } from "./types";
+import type { GenParams } from "./types";
 
 async function base(): Promise<string> {
   return apiBase(await loadConfig());
@@ -43,6 +40,22 @@ export interface GenerateResult {
   glb: Blob;
 }
 
+async function parseGenerateResponse(res: Response): Promise<GenerateResult> {
+  if (!res.ok) {
+    let msg = `generation failed (HTTP ${res.status})`;
+    try {
+      const j = await res.json();
+      if (j && typeof j.error === "string") msg = j.error;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(msg);
+  }
+  const glb = await res.blob();
+  if (glb.size === 0) throw new Error("server returned an empty model");
+  return { glb };
+}
+
 export async function generate(
   image: Blob,
   params: GenParams,
@@ -53,98 +66,76 @@ export async function generate(
     body: toForm(image, params),
     signal,
   });
-  if (!res.ok) {
-    let msg = `generation failed (HTTP ${res.status})`;
-    try {
-      const j = await res.json();
-      if (j && typeof j.error === "string") msg = j.error;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(msg);
-  }
-  const glb = await res.blob();
-  if (glb.size === 0) throw new Error("server returned an empty model");
-  return { glb };
+  return parseGenerateResponse(res);
 }
 
-/**
- * transforms.json を送る前に検証する。ここで弾かないと、推論側は既定 mesh_scale=1.0 で
- * 走って**エラーも警告もなく**壊れた形状を返す（2026-09-08 実測: シルエット IoU
- * 0.909 -> 0.107、頭部が欠けた塊になる）。原因がユーザーに見えない種類の失敗なので、
- * 送信前に落とす。
- */
-export function validateMultiview(input: MultiviewInput): string[] {
-  const errors: string[] = [];
-  let meta: any;
-  try {
-    meta = JSON.parse(input.transforms);
-  } catch (e) {
-    return [`transforms.json をパースできません: ${e}`];
-  }
-  const frames = meta?.frames;
-  if (!Array.isArray(frames) || frames.length === 0) {
-    errors.push("transforms.json に frames がありません");
-    return errors;
-  }
-  if (typeof meta.mesh_scale !== "number") {
-    errors.push(
-      "transforms.json に mesh_scale がありません。無いまま実行すると既定 1.0 で" +
-        "サンプリングされ、エラーを出さずに壊れた形状になります",
-    );
-  }
-  const have = new Set(input.views.map((f) => f.name));
-  for (const fr of frames) {
-    if (typeof fr?.file_path !== "string") {
-      errors.push("frames に file_path が無いものがあります");
-      continue;
-    }
-    if (!have.has(fr.file_path)) errors.push(`ビューが足りません: ${fr.file_path}`);
-    if (!Array.isArray(fr.transform_matrix) || fr.transform_matrix.length !== 4)
-      errors.push(`transform_matrix が 4x4 でありません: ${fr.file_path}`);
-  }
-  const hasFov =
-    typeof meta.camera_angle_x === "number" ||
-    frames.every((fr: any) => typeof fr?.camera_angle_x === "number");
-  if (!hasFov) errors.push("camera_angle_x が transforms.json にもフレームにもありません");
-  return errors;
+/** One pre-matted RGBA view used by Pixal3D multiview generation. */
+export interface MultiviewFile {
+  /** Must match a frame.file_path in transforms.json (relative paths are allowed). */
+  name: string;
+  blob: Blob;
 }
 
-function toMvForm(input: MultiviewInput, p: MvParams): FormData {
+export interface MultiviewParams {
+  seed: number;
+  /** Pixal3D multiview uses the cascade, so only 1024/1536 are accepted by the server. */
+  resolution: 1024 | 1536;
+  uv: GenParams["uv"];
+  /** Optional limit: use only the first N frames from transforms.json. */
+  numViews?: number;
+}
+
+function toMultiviewForm(
+  transforms: Blob,
+  views: MultiviewFile[],
+  p: MultiviewParams,
+): FormData {
+  if (views.length === 0) throw new Error("at least one multiview image is required");
   const fd = new FormData();
-  fd.append("transforms", new Blob([input.transforms], { type: "application/json" }), "transforms.json");
-  // server 側は filename を frames[].file_path として使うので、名前を保って送る。
-  for (const f of input.views) fd.append("views", f, f.name);
+  fd.append("transforms", transforms, "transforms.json");
+  views.forEach((view, i) => fd.append(`view${i}`, view.blob, view.name));
   fd.append("seed", String(p.seed));
+  fd.append("resolution", String(p.resolution));
   fd.append("uv", p.uv);
-  if (p.numViews > 0) fd.append("num_views", String(p.numViews));
+  if (p.numViews != null) fd.append("num_views", String(p.numViews));
   return fd;
 }
 
-/** Pixal3D multiview cascade。推論は server 側の共有 C++ が行う。 */
+async function validateMultiviewTransforms(transforms: Blob): Promise<void> {
+  let meta: unknown;
+  try {
+    meta = JSON.parse(await transforms.text());
+  } catch {
+    throw new Error("transforms.json is not valid JSON");
+  }
+  if (meta == null || typeof meta !== "object") {
+    throw new Error("transforms.json root must be an object");
+  }
+  const meshScale = (meta as { mesh_scale?: unknown }).mesh_scale;
+  if (typeof meshScale !== "number" || !Number.isFinite(meshScale) || meshScale <= 0) {
+    throw new Error(
+      "transforms.json must include a finite positive top-level mesh_scale; Pixal3D multiview generation refuses to assume 1.0 because an incorrect scale can silently corrupt geometry",
+    );
+  }
+}
+
+/**
+ * Pixal3D multiview generation. `transforms` is transforms.json and each view name must
+ * match the corresponding `frames[].file_path` entry. Views must already contain a real
+ * alpha matte, matching `trellis-cli --views DIR` semantics. `mesh_scale` is required and
+ * validated client-side before the request; the C++ parser enforces the same invariant.
+ */
 export async function generateMultiview(
-  input: MultiviewInput,
-  params: MvParams,
+  transforms: Blob,
+  views: MultiviewFile[],
+  params: MultiviewParams,
   signal?: AbortSignal,
 ): Promise<GenerateResult> {
-  const errors = validateMultiview(input);
-  if (errors.length) throw new Error(errors.join("\n"));
-  const res = await fetch(`${await base()}/generate_mv`, {
+  await validateMultiviewTransforms(transforms);
+  const res = await fetch(`${await base()}/generate-mv`, {
     method: "POST",
-    body: toMvForm(input, params),
+    body: toMultiviewForm(transforms, views, params),
     signal,
   });
-  if (!res.ok) {
-    let msg = `generation failed (HTTP ${res.status})`;
-    try {
-      const j = await res.json();
-      if (j && typeof j.error === "string") msg = j.error;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(msg);
-  }
-  const glb = await res.blob();
-  if (glb.size === 0) throw new Error("server returned an empty model");
-  return { glb };
+  return parseGenerateResponse(res);
 }
