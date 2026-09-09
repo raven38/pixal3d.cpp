@@ -50,11 +50,17 @@ static void timestep_embedding(float t, std::vector<float>& out) {
 void DitRunner::check_device_budget() const {
     ggml_backend_dev_t dev = ggml_backend_get_device(m_.backend);
     if (!dev) return;
-    size_t dev_free = 0, dev_total = 0;
-    ggml_backend_dev_memory(dev, &dev_free, &dev_total);
+    size_t dev_free_sz = 0, dev_total_sz = 0;
+    ggml_backend_dev_memory(dev, &dev_free_sz, &dev_total_sz);
+    // dev_total も 64 bit で持つ。wasm32 では size_t が 32 bit なので、下の上書きで
+    // TRELLIS_DEVICE_BUDGET_MB=4096 がちょうど 2^32 になり 0 に落ちる。0 になると
+    // 直後の early return でゲートが丸ごと無効化される（4096 超も周回して過小予算になる）。
+    // 4095 MB がブラウザの実測予算なので、この境界は実運用の値そのもの。
+    uint64_t dev_total = dev_total_sz;
+    (void)dev_free_sz;
     // ブラウザの予算（実測 4095 MB）を native から模擬してゲート自体を検証するための上書き。
     // ブラウザを起動せずに「この N はブラウザで通るか」を native で判定できる。
-    if (const char* e = getenv("TRELLIS_DEVICE_BUDGET_MB")) dev_total = (size_t)atoll(e) * 1048576;
+    if (const char* e = getenv("TRELLIS_DEVICE_BUDGET_MB")) dev_total = (uint64_t)std::max<int64_t>(0, atoll(e)) * 1048576ull;
     if (dev_total == 0) return;                       // 報告しない backend（CPU 等）は素通り
 
     // cond は forward ごとに再アップロードされ、negative 側と 2 本同時に載る。
@@ -80,9 +86,11 @@ void DitRunner::check_device_budget() const {
              "DitRunner: this token count does not fit the device memory budget. "
              "N=%d needs %.0f MB (weights %.0f + activations %.0f + cond %.0f) "
              "but the device reports %.0f MB. Running anyway thrashes unified memory and "
-             "can hang the whole machine. Options: lower TRELLIS_ATTN_CHUNK_MB and/or "
-             "TRELLIS_MLP_CHUNK_MB (activations scale with them), reduce N, quantize the flow "
-             "weights, or set TRELLIS_ALLOW_OVER_BUDGET=1 to override.",
+             "can hang the whole machine. Options: lower TRELLIS_ATTN_CHUNK_MB (activations "
+             "scale with it on the non-FlashAttention path this backend uses), reduce N, "
+             "quantize the flow weights, or set TRELLIS_ALLOW_OVER_BUDGET=1 to override. "
+             "TRELLIS_MLP_CHUNK_MB does NOT help here -- measured zero effect on the "
+             "non-FA/WebGPU path; it only lowers the peak on the FlashAttention path.",
              N_, need * MB, m_.total_bytes() * MB, alloc_bytes_ * MB, cond_bytes * MB, dev_total * MB);
     throw std::runtime_error(msg);
 }

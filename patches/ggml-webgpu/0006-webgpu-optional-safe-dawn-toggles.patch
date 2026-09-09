@@ -1,28 +1,32 @@
 --- a/src/ggml-webgpu/ggml-webgpu.cpp
 +++ b/src/ggml-webgpu/ggml-webgpu.cpp
-@@ -3901,14 +3901,38 @@
+@@ -3901,14 +3901,42 @@
      // Enable Dawn-specific toggles to increase native performance
      // TODO: Maybe WebGPU needs a "fast" mode where you can request compilers skip adding checks like these,
      //       only for native performance?
 -    const char * const          deviceEnabledToggles[]  = { "disable_robustness", "disable_workgroup_init",
 -                                                            "disable_polyfills_on_integer_div_and_mod" };
 +    //
-+    // pixal3d: two of these are native-only *safety* removals, not just speed knobs, and they are
-+    // the only structural native-vs-browser difference we have found that can produce silent wrong
-+    // results rather than an error:
-+    //   disable_robustness      - drops the out-of-bounds clamp Dawn normally injects into WGSL
-+    //                             buffer accesses. An out-of-range index then reads/writes whatever
-+    //                             is adjacent in the allocation instead of being clamped, with no
-+    //                             validation error and no device-lost callback.
-+    //   disable_workgroup_init  - leaves workgroup memory uninitialized. A shader that reads a
-+    //                             workgroup slot before writing it sees stale bytes natively and
-+    //                             zeros in the browser.
-+    // Emscripten never enables either, which matches the observed split (native Dawn shows
-+    // intermittent mid-run corruption on the same fixture the browser runs clean).
-+    // GGML_WEBGPU_NO_UNSAFE_TOGGLES=1 drops those two so the A/B can be run without rebuilding;
-+    // the default is unchanged upstream behaviour.
-+    const bool                  ggml_webgpu_safe_toggles = getenv("GGML_WEBGPU_NO_UNSAFE_TOGGLES") != nullptr &&
-+                                                           getenv("GGML_WEBGPU_NO_UNSAFE_TOGGLES")[0] == '1';
++    // pixal3d: two of these are native-only relaxations of guarantees rather than pure speed knobs.
++    //   disable_robustness      - Dawn documents this only as "Disable robust buffer access", i.e. it
++    //                             drops the WebGPU-level robustness guarantee for WGSL buffer accesses.
++    //                             What a native backend does with an out-of-range index is then
++    //                             unspecified: some still clamp in the native API, others do not.
++    //   disable_workgroup_init  - leaves workgroup memory uninitialized, so a shader that reads a
++    //                             workgroup slot before writing it sees stale bytes natively and zeros
++    //                             in the browser.
++    // Emscripten enables neither, which is CONSISTENT with the split we observe (native Dawn shows
++    // intermittent mid-run corruption on the same fixture the browser runs clean). Consistent is not
++    // confirmed: this is a HYPOTHESIS knob, not a known cause. On M4 Max both arms come out
++    // bit-identical, but the corruption does not reproduce there either, so the A/B has to be run on a
++    // machine where it does (M1 Pro). GGML_WEBGPU_NO_UNSAFE_TOGGLES=1 drops those two so that A/B needs
++    // no rebuild; the default is unchanged upstream behaviour.
++    const char * const          ggml_webgpu_safe_env     = getenv("GGML_WEBGPU_NO_UNSAFE_TOGGLES");
++    const bool                  ggml_webgpu_safe_toggles =
++        ggml_webgpu_safe_env != nullptr &&
++        (ggml_webgpu_safe_env[0] == '1' || ggml_webgpu_safe_env[0] == 't' || ggml_webgpu_safe_env[0] == 'T' ||
++         ggml_webgpu_safe_env[0] == 'y' || ggml_webgpu_safe_env[0] == 'Y' ||
++         ggml_webgpu_safe_env[0] == 'o' || ggml_webgpu_safe_env[0] == 'O');
 +    const char * const          deviceEnabledTogglesFast[] = { "disable_robustness", "disable_workgroup_init",
 +                                                               "disable_polyfills_on_integer_div_and_mod" };
 +    const char * const          deviceEnabledTogglesSafe[] = { "disable_polyfills_on_integer_div_and_mod" };
@@ -36,8 +40,8 @@
      deviceTogglesDesc.disabledToggles     = deviceDisabledToggles;
      deviceTogglesDesc.disabledToggleCount = 1;
 +    if (ggml_webgpu_safe_toggles) {
-+        GGML_LOG_INFO("ggml_webgpu: GGML_WEBGPU_NO_UNSAFE_TOGGLES=1 -- keeping Dawn's robustness "
-+                      "clamp and workgroup-memory zeroing\n");
++        GGML_LOG_INFO("ggml_webgpu: GGML_WEBGPU_NO_UNSAFE_TOGGLES=%s -- keeping Dawn's robustness "
++                      "guarantee and workgroup-memory zeroing\n", ggml_webgpu_safe_env);
 +    }
  
      dev_desc.nextInChain = &deviceTogglesDesc;
