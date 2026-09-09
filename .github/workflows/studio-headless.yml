@@ -1,0 +1,55 @@
+name: Studio headless smoke
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/studio-headless.yml'
+  workflow_dispatch:
+
+jobs:
+  linux-headless:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux Tauri deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install app deps and build
+        working-directory: app
+        run: |
+          npm ci
+          npm run build
+      - name: Rust shell check
+        working-directory: app/src-tauri
+        run: cargo check
+      - name: Install Playwright Chromium
+        working-directory: app
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Start Studio browser-mode preview
+        working-directory: app
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/studio-vite.log 2>&1 &
+          echo $! > /tmp/studio-vite.pid
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:4173 >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/studio-vite.log
+          exit 1
+      - name: Run MV UI smoke
+        working-directory: app
+        env:
+          STUDIO_URL: http://127.0.0.1:4173
+        run: node tests/headless-mv-ui.mjs
+      - name: Show preview log on failure
+        if: failure()
+        run: cat /tmp/studio-vite.log || true
