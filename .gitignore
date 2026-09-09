@@ -12,6 +12,11 @@
 *.bin
 /models/*
 !/models/.gitkeep
+# release model-set manifests are contracts, not weights: keep them tracked
+!/models/pixal3d-model-set.schema.json
+!/models/*/
+/models/*/*
+!/models/*/pixal3d-models.json
 
 # python / venv
 __pycache__/

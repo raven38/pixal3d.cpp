@@ -210,6 +210,36 @@ def schema_test(schema_path: Path) -> None:
     print("MODEL_MANIFEST_SCHEMA_TEST_OK")
 
 
+def check_committed(models_root: Path, doc: Path) -> int:
+    """Validate every committed release manifest and the digests recorded in the docs.
+
+    実重みを持たない CI 用のゲート。manifest の形状・schema・9 role の充足と、
+    release checklist に書かれた SHA256 が実ファイルと一致することだけを見る。
+    """
+    manifests = sorted(models_root.glob("*/pixal3d-models.json"))
+    if not manifests:
+        print(f"no committed manifest under {models_root}/*/pixal3d-models.json", file=sys.stderr)
+        return 2
+    failed = False
+    doc_text = doc.read_text() if doc.is_file() else ""
+    for mp in manifests:
+        m = json.loads(mp.read_text())
+        errors = validate_manifest_shape(m)
+        expected_dir = f"{m.get('model_set')}-{m.get('version')}"
+        if mp.parent.name != expected_dir:
+            errors.append(f"directory {mp.parent.name} does not match {expected_dir}")
+        digest = sha256_file(mp)
+        if doc_text and digest not in doc_text:
+            errors.append(f"sha256 {digest} is not recorded in {doc}")
+        if errors:
+            failed = True
+            for e in errors:
+                print(f"{mp}: {e}", file=sys.stderr)
+        else:
+            print(f"MODEL_MANIFEST_COMMITTED_OK {mp} {m['model_set']} {m['version']} {digest}")
+    return 2 if failed else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -222,6 +252,9 @@ def main() -> int:
     v = sub.add_parser("verify")
     v.add_argument("models_dir", type=Path)
     v.add_argument("manifest", type=Path)
+    c = sub.add_parser("check-committed")
+    c.add_argument("models_root", type=Path, nargs="?", default=Path("models"))
+    c.add_argument("--doc", type=Path, default=Path("docs/PIXAL3D_RELEASE_CHECKLIST.md"))
     sub.add_parser("self-test")
     s = sub.add_parser("schema-test")
     s.add_argument("schema", type=Path, nargs="?", default=Path("models/pixal3d-model-set.schema.json"))
@@ -230,6 +263,8 @@ def main() -> int:
     if a.cmd == "self-test":
         self_test()
         return 0
+    if a.cmd == "check-committed":
+        return check_committed(a.models_root, a.doc)
     if a.cmd == "schema-test":
         schema_test(a.schema)
         return 0
