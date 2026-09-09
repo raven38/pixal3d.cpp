@@ -1,0 +1,116 @@
+name: Studio Tauri Xvfb smoke
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/studio-tauri-xvfb.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: studio-tauri-xvfb-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tauri-window:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri/Xvfb dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb x11-utils dbus-x11 curl
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build Tauri executable
+        working-directory: app
+        run: npm run tauri build -- --no-bundle
+      - name: Prepare dummy trellis-server and config
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/models" "$HOME/.config/trellis-studio"
+          rm -f "$RUNNER_TEMP/dummy-server-started"
+          SMOKE_PORT="$(python3 - <<'PY'
+          import socket
+          with socket.socket() as s:
+              s.bind(('127.0.0.1', 0))
+              print(s.getsockname()[1])
+          PY
+          )"
+          export SMOKE_PORT
+          echo "SMOKE_PORT=$SMOKE_PORT" >> "$GITHUB_ENV"
+          cat > "$RUNNER_TEMP/trellis-server-smoke.py" <<'PY'
+          #!/usr/bin/env python3
+          import argparse, os
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          p=argparse.ArgumentParser(add_help=False)
+          p.add_argument('--models'); p.add_argument('--gpu'); p.add_argument('--host', default='127.0.0.1'); p.add_argument('--port', type=int, required=True)
+          a,_=p.parse_known_args()
+          class H(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path == '/health': self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
+                  else: self.send_response(404); self.end_headers()
+              def log_message(self, fmt, *args): pass
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'dummy-server-started'), 'w') as f:
+              f.write(str(os.getpid()))
+          print('DUMMY_TRELLIS_SERVER_READY', flush=True)
+          HTTPServer((a.host,a.port),H).serve_forever()
+          PY
+          chmod +x "$RUNNER_TEMP/trellis-server-smoke.py"
+          python3 - <<'PY'
+          import json, os
+          cfg={'serverBin':os.path.join(os.environ['RUNNER_TEMP'],'trellis-server-smoke.py'),'modelsDir':os.path.join(os.environ['RUNNER_TEMP'],'models'),'backend':'test','gpu':-1,'host':'127.0.0.1','port':int(os.environ['SMOKE_PORT']),'outputDir':''}
+          open(os.path.expanduser('~/.config/trellis-studio/config.json'),'w').write(json.dumps(cfg))
+          PY
+      - name: Launch real Tauri window under Xvfb and verify supervised child lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$PWD/app/src-tauri/target/release/trellis-studio"
+          test -x "$APP" || { echo "missing $APP"; ls -la "$PWD/app/src-tauri/target/release"; exit 1; }
+          DISPLAY_NUM=99
+          Xvfb ":$DISPLAY_NUM" -screen 0 1280x800x24 -nolisten tcp > "$RUNNER_TEMP/xvfb.log" 2>&1 &
+          XVFB_PID=$!
+          export DISPLAY=":$DISPLAY_NUM"
+          for i in $(seq 1 40); do xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break; sleep .25; done
+          xdpyinfo -display "$DISPLAY" >/dev/null
+          "$APP" > "$RUNNER_TEMP/tauri-smoke.log" 2>&1 &
+          APP_PID=$!
+          cleanup(){ kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true; kill "$XVFB_PID" 2>/dev/null || true; wait "$XVFB_PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          ok=0
+          for i in $(seq 1 60); do
+            if [ "$(curl -fsS "http://127.0.0.1:$SMOKE_PORT/health" 2>/dev/null || true)" = "ok" ]; then ok=1; break; fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; fi
+            sleep 1
+          done
+          [ "$ok" = 1 ] || { cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }
+          test -s "$RUNNER_TEMP/dummy-server-started" || { echo 'Studio did not start the configured dummy server'; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }
+          DUMMY_PID="$(cat "$RUNNER_TEMP/dummy-server-started")"
+          kill -0 "$DUMMY_PID" 2>/dev/null || { echo 'dummy server marker exists but process is not alive'; exit 1; }
+          mapped=0
+          for i in $(seq 1 40); do xwininfo -root -tree | grep -Fq 'Trellis Studio' && { mapped=1; break; }; sleep .25; done
+          [ "$mapped" = 1 ] || { xwininfo -root -tree || true; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }
+          echo TAURI_WINDOW_MAPPED_AND_SERVER_OK
+          # SIGTERM validates the Linux parent-death child cleanup path, not the UI CloseRequested handler.
+          kill "$APP_PID"
+          wait "$APP_PID" 2>/dev/null || true
+          for i in $(seq 1 40); do
+            if ! curl -fsS "http://127.0.0.1:$SMOKE_PORT/health" >/dev/null 2>&1 && ! kill -0 "$DUMMY_PID" 2>/dev/null; then
+              echo SERVER_CHILD_EXIT_OK
+              kill "$XVFB_PID" 2>/dev/null || true; wait "$XVFB_PID" 2>/dev/null || true; trap - EXIT; exit 0
+            fi
+            sleep .25
+          done
+          echo 'server still alive after Tauri process exit'; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1
+      - name: Show Tauri/Xvfb logs on failure
+        if: failure()
+        run: |
+          cat "$RUNNER_TEMP/tauri-smoke.log" || true
+          cat "$RUNNER_TEMP/xvfb.log" || true
