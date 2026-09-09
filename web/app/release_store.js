@@ -11,9 +11,7 @@ function safeName(name) {
 }
 
 export function validateReleaseManifest(m) {
-  if (!m || m.schema_version !== 1 || typeof m.model_set !== 'string' || typeof m.version !== 'string' || !Array.isArray(m.files)) {
-    throw new Error('Invalid Pixal3D release manifest');
-  }
+  if (!m || m.schema_version !== 1 || typeof m.model_set !== 'string' || typeof m.version !== 'string' || !Array.isArray(m.files)) throw new Error('Invalid Pixal3D release manifest');
   const names = new Set();
   const roles = new Set();
   for (const f of m.files) {
@@ -43,21 +41,13 @@ async function modelDir(create = true) {
 }
 async function removeRootIfPresent() {
   const root = await originRoot();
-  try { await root.removeEntry(ROOT, { recursive: true }); }
-  catch (e) { if (e?.name !== 'NotFoundError') throw e; }
+  try { await root.removeEntry(ROOT, { recursive: true }); } catch (e) { if (e?.name !== 'NotFoundError') throw e; }
 }
 async function removeIfPresent(d, name) {
-  try { await d.removeEntry(name); }
-  catch (e) { if (e?.name !== 'NotFoundError') throw e; }
+  try { await d.removeEntry(name); } catch (e) { if (e?.name !== 'NotFoundError') throw e; }
 }
 async function readJsonIfPresent(d, name) {
-  try {
-    const f = await (await d.getFileHandle(name)).getFile();
-    return JSON.parse(await f.text());
-  } catch (e) {
-    if (e?.name === 'NotFoundError') return null;
-    return null;
-  }
+  try { return JSON.parse(await (await (await d.getFileHandle(name)).getFile()).text()); } catch { return null; }
 }
 async function writeJson(d, name, value) {
   const h = await d.getFileHandle(name, { create: true });
@@ -85,14 +75,23 @@ export function resolveModelSource() {
 }
 export function saveModelBaseUrl(url) {
   const v = String(url || '').trim();
-  if (v) localStorage.setItem('pixal3d.modelBaseUrl', v);
-  else localStorage.removeItem('pixal3d.modelBaseUrl');
+  if (v) localStorage.setItem('pixal3d.modelBaseUrl', v); else localStorage.removeItem('pixal3d.modelBaseUrl');
+}
+
+async function occupiedTargetBytes(d, manifest) {
+  let bytes = 0;
+  for (const ent of manifest.files) {
+    try {
+      const f = await (await d.getFileHandle(ent.name)).getFile();
+      bytes += Math.min(f.size, ent.size_bytes);
+    } catch {}
+  }
+  return bytes;
 }
 
 async function verifyExisting(d, ent, signal) {
   let f;
-  try { f = await (await d.getFileHandle(ent.name)).getFile(); }
-  catch { return false; }
+  try { f = await (await d.getFileHandle(ent.name)).getFile(); } catch { return false; }
   if (f.size !== ent.size_bytes) return false;
   const reader = f.stream().getReader();
   const hash = new Sha256();
@@ -103,9 +102,7 @@ async function verifyExisting(d, ent, signal) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       hash.update(value);
     }
-  } finally {
-    try { reader.releaseLock(); } catch {}
-  }
+  } finally { try { reader.releaseLock(); } catch {} }
   return hash.hex() === ent.sha256;
 }
 
@@ -152,36 +149,34 @@ export async function installReleaseModels({ manifestUrl, modelBaseUrl, onProgre
   if (current.ready && manifestIdentity(current.manifest) === manifestIdentity(manifest)) return current;
   if (!modelBaseUrl) throw new Error('Model download base URL is not configured. Set PIXAL3D_MODEL_BASE_URL, ?model_base_url=..., or use local verified install.');
 
-  const storage = await storagePreflight(manifest, current);
-  if (!storage.ok) throw new Error(storage.message);
-
   let d;
   try { d = await modelDir(false); } catch { d = await modelDir(true); }
   const pendingRaw = await readJsonIfPresent(d, PENDING_MANIFEST_NAME);
-  let pending = null;
+  const storedRaw = await readJsonIfPresent(d, MODEL_MANIFEST_NAME);
+  let pending = null, storedManifest = null;
   try { if (pendingRaw) pending = validateReleaseManifest(pendingRaw); } catch {}
-
-  const stored = await readJsonIfPresent(d, MODEL_MANIFEST_NAME);
-  let storedManifest = null;
-  try { if (stored) storedManifest = validateReleaseManifest(stored); } catch {}
+  try { if (storedRaw) storedManifest = validateReleaseManifest(storedRaw); } catch {}
   const targetId = manifestIdentity(manifest);
   const resumable = (pending && manifestIdentity(pending) === targetId) || (storedManifest && manifestIdentity(storedManifest) === targetId);
-  if (!resumable && (pending || storedManifest)) {
+  if (!resumable && (pendingRaw || storedRaw)) {
     await removeRootIfPresent();
     d = await modelDir(true);
   }
 
-  // Pending manifest identifies the only set allowed in this namespace. It is not
-  // consumed by cacheStatus(), so an interrupted download never becomes Ready.
+  // Existing target files already consume quota. Credit only their occupied bytes;
+  // a corrupt/partial file is removed before replacement, so this is conservative
+  // for the net additional capacity needed to finish the set.
+  const occupied = await occupiedTargetBytes(d, manifest);
+  const storage = await storagePreflight(manifest, { manifest, bytes: occupied });
+  if (!storage.ok) throw new Error(storage.message);
+
   await writeJson(d, PENDING_MANIFEST_NAME, manifest);
   await removeIfPresent(d, MODEL_MANIFEST_NAME);
-
   const aggregate = { done: 0, total: manifest.files.reduce((s, f) => s + f.size_bytes, 0) };
   for (const ent of manifest.files) {
     const url = `${String(modelBaseUrl).replace(/\/$/, '')}/${encodeURIComponent(ent.name)}`;
     await downloadOne(d, ent, url, onProgress, aggregate, signal);
   }
-
   await writeJson(d, MODEL_MANIFEST_NAME, manifest);
   await removeIfPresent(d, PENDING_MANIFEST_NAME);
   return cacheStatus();
