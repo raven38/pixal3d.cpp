@@ -195,9 +195,12 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     // 死活問題なので、flow_runner.cpp のメタデータ枠を広げたうえでここも上げてある。
     // 実測（tex flow, N=17690, n_heads=12）: 上限 32 だと 1 チャンク 553 クエリ =
     // スコア 470 MB で頭打ちになり、活性化バッファは 1316 MB より下がらなかった。
-    static const int64_t kMaxAttnChunks = []{
+    // 戻り型は明示する。atoll() は long long、(int64_t)256 は Linux/GCC では long なので
+    // 推論に任せると "inconsistent types deduced for lambda return type" で落ちる（macOS
+    // clang は int64_t が long long なので通ってしまい、Linux ビルドでだけ露見する）。
+    static const int64_t kMaxAttnChunks = []() -> int64_t {
         if (const char* e = getenv("TRELLIS_ATTN_MAX_CHUNKS")) return atoll(e);
-        return (int64_t)256;
+        return 256;
     }();
     if (nq * kMaxAttnChunks < Lq) nq = (Lq + kMaxAttnChunks - 1) / kMaxAttnChunks;
     if (nq >= Lq) nq = Lq;                                      // small attn: single chunk, no concat
