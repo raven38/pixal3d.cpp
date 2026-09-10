@@ -69,6 +69,11 @@
           </label>
         </div>
 
+        <div role="note" aria-label="Resource usage warning" style="margin:10px 0;padding:10px 12px;border:1px solid #5a4930;border-radius:10px;background:#1a1711;color:#c9bda6;font-size:12px;line-height:1.45">
+          <strong style="color:#f0c978">⚠ Resource-intensive generation</strong>
+          <div style="margin-top:5px">The Desktop release model set is about <strong>12.72 GiB</strong>. High RAM/VRAM and CPU/GPU load are expected during generation. A 1024 run can take roughly <strong>10–30+ minutes</strong> on tested high-end hardware; 1536 can take substantially longer. Keep Trellis Studio open until the result is saved.</div>
+        </div>
+
         <button id="generate-btn" class="primary" disabled>Generate 3D</button>
 
         <div id="progress" class="progress hidden">
