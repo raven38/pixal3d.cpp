@@ -234,7 +234,10 @@ jobs:
             # Do not publish a runtime that still depends on the build machine.
             for f in dist/trellis-server dist/trellis-cli; do
               otool -l "$f" | grep -q 'path @loader_path' || { echo "ERROR: $f has no @loader_path rpath"; exit 1; }
-              otool -l "$f" | grep -Fq "$build_abs" && { echo "ERROR: $f still contains build rpath $build_abs"; exit 1; } || true
+              if otool -l "$f" | grep -Fq "$build_abs"; then
+                echo "ERROR: $f still contains build rpath $build_abs"
+                exit 1
+              fi
             done
             ASSET="trellis-${{ matrix.backend }}-macos-arm64.tar.gz"
             tar -C dist -czf "$ASSET" .
