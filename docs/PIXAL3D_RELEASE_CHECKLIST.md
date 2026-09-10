@@ -242,15 +242,72 @@ Supported target: Chrome/Chromium + WebGPU, resolution 1024 only. Inference stay
 | Production app shell + GLB viewer/download | ✅ #20 / PR #28 | Chromium |
 | Verified OPFS model-set install consumes manifest + size + SHA256 | ✅ #15 / PR #28 | Playwright fixture |
 | Fast production UI + OPFS + manifest integrity gate | ✅ #22 / PR #29 | Playwright CI |
-| Persistent automatic model delivery/version invalidation/safe cache delete | ⬜ #9 | CI + real Chrome storage |
-| Storage quota + WebGPU/device-budget preflight UI | ⬜ #21 | headless + real browser |
-| Full Chrome/WebGPU 1024 known-input generation → textured GLB | ⬜ | real Chrome release gate |
-| Second launch reuses the cached 7.54 GiB `pixal3d-q8_0 v1` set without retransferring it | ⬜ #9 | real Chrome |
-| Cache deletion frees only origin-owned Pixal3D storage | ⬜ #9 | real Chrome |
+| Persistent automatic model delivery/version invalidation/safe cache delete | ✅ #9 | PR #42 implementation + `test_cache_failure_modes.mjs` + the real-Chrome gate |
+| Storage quota + WebGPU/device-budget preflight UI | 🔶 #21 | PR #42 `preflight.js`; real Chrome values recorded. Open: a `requestDevice()` failure still passes preflight (see below) |
+| Full Chrome/WebGPU 1024 known-input generation → textured GLB | ✅ | official cyclops, Chrome 153, IoU 0.9795 PASS |
+| Second launch reuses the cached 7.54 GiB `pixal3d-q8_0 v1` set without retransferring it | ✅ | browser restart on the same profile: 0 GGUF re-transfers |
+| Cache deletion frees only origin-owned Pixal3D storage | ✅ | real Chrome: usage → 0; headless: an unrelated OPFS directory survives |
 
 The Web release model set is `pixal3d-q8_0 v1` (7.54 GiB), per §12's GPU-budget headroom finding. Its native E2E gate now passes against this exact manifest (see the E2E table above); no Chrome/WebGPU run has been done against it.
 
 Web alpha known limits: Chrome/Chromium only, WebGPU required, 1024 only, wasm32 4 GiB host address-space constraints, browser-safe 512 postprocess, and pre-matted RGBA + `transforms.json` input.
+
+### Web alpha release gate, end to end (2026-09-10)
+
+`web/app/run_release_gate.mjs` drives real Chrome with real WebGPU and the real `pixal3d-q8_0 v1`
+set: fetch 7.54 GiB over HTTP into OPFS with streaming SHA-256, generate the official cyclops sample
+at 1024, download the GLB, **restart the browser on the same profile**, and delete the cache — then
+write one JSON record (browser, adapter, commit, model_set, manifest SHA256).
+
+| step | measured |
+|---|---|
+| browser | Chrome for Testing 153.0.8010.12, headed, `--enable-unsafe-webgpu` |
+| adapter | `maxBufferSize` 4,294,967,292 · `maxStorageBufferBindingSize` 4,294,967,292 |
+| fetch + verify + store 7.54 GiB | 154–229 s across runs, **9 GGUF requests (one per file)** |
+| generation | `complete` in **3688 s (61 min)**, seed 1, res 1024 |
+| GLB | 31,020,608 bytes via the browser download |
+| acceptance | `tools/silhouette_iou.py`: **mean IoU 0.9795, scale_error 0.0066 → PASS** (V=306,258 F=494,436 — identical to the file-input run) |
+| **restart, same profile** | `Ready` immediately, **0 GGUF re-transfers** (only manifest reads) |
+| generation after restart | started from the cached set with 0 transfers, then cancelled (a second 61-minute run adds nothing) |
+| cache delete | usage 3,797,013,283 → **0**, state back to "Not ready" |
+
+Texture Flow peaked at `resident 2517 MB` against the 4095 MB budget (38 % headroom) at
+`tokens=17795` — the token scale at which §12 of `docs/PIXAL3D_WEBGPU_MEMORY.md` measured F16 at
+3.4 % headroom. This run is therefore direct evidence for shipping Q8_0 to the browser, not a
+restatement of the earlier estimate.
+
+**A measured caveat about `navigator.storage.estimate()`.** It reported `usage` 3,797,013,283 for a
+set whose files total 8,091,975,360 bytes while the app was reading that set successfully, and
+`quota` tracked `usage + 10 GiB` in both runs (14.53 GB here, 18.83 GB when usage read
+8,091,980,579). Chromium's OPFS accounting under-reported by more than 2× on one run, and delete then
+freed exactly the number it had reported. So the estimate is self-consistent but is not a measure of
+what is stored: treat `storagePreflight` as advisory and rely on `QuotaExceededError` at write time.
+
+**`WebGPU (4095 MB)` is not a memory budget.** The runtime line comes from
+`thirdparty/ggml/src/ggml-webgpu/ggml-webgpu.cpp:3772`, which returns `maxBufferSize` as both free
+and total memory with an explicit `TODO` (gpuweb/gpuweb#5505). `web/app/preflight.js` is right not to
+invent an aggregate-VRAM threshold; the per-buffer and per-binding limits are the checkable part.
+
+### Failure modes of the browser cache (`web/app/test_cache_failure_modes.mjs`)
+
+`test_headless.mjs` covers the happy path (remote lifecycle → OPFS → SHA → commit marker, delete,
+local fallback). This gate covers the other side, and the current implementation passes all of it:
+
+| case | result |
+|---|---|
+| same-size, different content served | `Downloaded model failed verification: … (size 27/27, sha256 …)`, cache stays not ready |
+| refresh interrupted (HTTP 500 mid-set) | fails loudly; **no mixed set reads as ready** |
+| role reassignment with identical hashes | not treated as the same set — all 9 files re-fetched |
+| a required file removed from OPFS | not ready |
+| delete | removes only the Pixal3D namespace; an unrelated OPFS directory survives |
+| **reload with a warm cache** | **0 GGUF re-transfers** |
+
+One real gap the gate found: **a `requestDevice()` failure passes the current preflight**, which only
+probes the adapter and its limits. A device that advertises usable limits but refuses a device (or
+refuses the backend's `shader-f16`) is therefore only discovered after the model set is installed and
+a generation starts. Acquiring a throwaway device with the backend's own feature set during preflight
+would close it; recorded here rather than silently fixed inside someone else's freshly landed
+implementation.
 
 ## Non-blockers / known issues
 
