@@ -15,6 +15,7 @@ permissions:
 
 # Standard asset names must match Lemonade's media_release_asset():
 #   trellis-<backend>-<os>-x64.<tar.gz|zip>
+# macOS/Apple Silicon uses trellis-metal-macos-arm64.tar.gz.
 # cuda12 is an additional legacy artifact selected by the standalone installer
 # for Pascal/Volta devices; it does not replace Lemonade's current-CUDA asset.
 jobs:
@@ -34,6 +35,8 @@ jobs:
           - { os: windows, backend: cuda,   release_backend: cuda,   cuda_version: "13.1.0", cuda_archs: "75;80;86;89;90;120", runner: windows-2022, experimental: true }
           - { os: windows, backend: cuda,   release_backend: cuda12, cuda_version: "12.9.1", cuda_archs: "60;61;70",          runner: windows-2022, experimental: true }
           - { os: windows, backend: rocm,   runner: windows-2022, experimental: true }
+          # macOS/Apple Silicon: Metal is enabled by CMake automatically.
+          - { os: macos,   backend: metal,  runner: macos-14 }
 
     steps:
       - uses: actions/checkout@v4
@@ -174,6 +177,7 @@ jobs:
             cuda)   FLAGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=${{ matrix.cuda_archs }}" ;;
             # Popular consumer ISAs: RDNA2 dGPUs, RDNA3 dGPUs + 780M, RDNA3.5 iGPUs, RDNA4.
             rocm)   FLAGS="-DGGML_HIP=ON -DGGML_HIP_GRAPHS=OFF -DGPU_TARGETS=gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201 -DCMAKE_C_COMPILER=$ROCM_CC -DCMAKE_CXX_COMPILER=$ROCM_CXX -DCMAKE_PREFIX_PATH=$HIP_PATH -DCMAKE_HIP_COMPILER=$ROCM_CXX" ;;
+            metal)  FLAGS="" ;;
           esac
           # Windows builds only: TheRock's Windows ROCm dist ships a minimal
           # Clang toolchain (enough to compile HIP kernels) but not the LLVM
@@ -216,6 +220,24 @@ jobs:
             fi
             ASSET="trellis-${{ matrix.release_backend || matrix.backend }}-windows-x64.zip"
             (cd dist && 7z a -y "../$ASSET" ./* >/dev/null)
+          elif [ "${{ matrix.os }}" = "macos" ]; then
+            cp build/trellis-server dist/
+            cp build/trellis-cli dist/
+            # Metal shaders are embedded; ship the dylibs referenced through @rpath.
+            find build -name 'libggml*.dylib' -exec cp -P {} dist/ \;
+            build_abs="$(cd build && pwd)"
+            for f in dist/trellis-server dist/trellis-cli; do
+              install_name_tool -delete_rpath "$build_abs" "$f" 2>/dev/null || true
+              otool -l "$f" | grep -q 'path @loader_path' \
+                || install_name_tool -add_rpath @loader_path "$f"
+            done
+            # Do not publish a runtime that still depends on the build machine.
+            for f in dist/trellis-server dist/trellis-cli; do
+              otool -l "$f" | grep -q 'path @loader_path' || { echo "ERROR: $f has no @loader_path rpath"; exit 1; }
+              otool -l "$f" | grep -Fq "$build_abs" && { echo "ERROR: $f still contains build rpath $build_abs"; exit 1; } || true
+            done
+            ASSET="trellis-${{ matrix.backend }}-macos-arm64.tar.gz"
+            tar -C dist -czf "$ASSET" .
           else
             cp build/trellis-server dist/
             cp build/trellis-cli dist/
@@ -258,7 +280,8 @@ jobs:
   # Trellis Studio desktop app (Tauri). Small, backend-agnostic installers that
   # the install/ scripts fetch by these stable, version-less names:
   #   trellis-studio-linux-x86_64.AppImage / trellis-studio-linux-amd64.deb
-  #   trellis-studio-windows-x64.msi
+  #   trellis-studio-windows-x64-setup.exe
+  #   trellis-studio-macos-arm64.dmg
   studio:
     name: ${{ matrix.os }} · Trellis Studio app
     runs-on: ${{ matrix.runner }}
@@ -268,6 +291,7 @@ jobs:
         include:
           - { os: linux,   runner: ubuntu-22.04 }
           - { os: windows, runner: windows-2022 }
+          - { os: macos,   runner: macos-14 }
 
     steps:
       - uses: actions/checkout@v4
@@ -318,9 +342,15 @@ jobs:
 
       - name: Build Trellis Studio
         working-directory: app
+        shell: bash
         run: |
           npm ci
-          npm run tauri build
+          if [ "${{ matrix.os }}" = "macos" ]; then
+            # Keep Linux/Windows bundle targets unchanged; select macOS artifacts here.
+            npm run tauri build -- --bundles dmg,app
+          else
+            npm run tauri build
+          fi
 
       - name: Resolve release tag
         id: tag
@@ -331,6 +361,21 @@ jobs:
           else
             echo "value=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Package & upload (macOS)
+        if: matrix.os == 'macos'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -e
+          base=app/src-tauri/target/release/bundle
+          dmg=$(find "$base/dmg" -name '*.dmg' | head -1)
+          test -n "$dmg" || { echo "dmg not found under $base/dmg"; ls -R "$base" || true; exit 1; }
+          cp "$dmg" trellis-studio-macos-arm64.dmg
+          # Alpha is currently ad-hoc signed/not notarized; the installer clears quarantine.
+          gh release upload "${{ steps.tag.outputs.value }}" trellis-studio-macos-arm64.dmg \
+            --clobber --repo "${{ github.repository }}"
 
       - name: Package & upload (Linux)
         if: matrix.os == 'linux'
