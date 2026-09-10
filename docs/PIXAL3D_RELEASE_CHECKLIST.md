@@ -233,6 +233,28 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 
 Desktop alpha deliberately requires an explicit positive `mesh_scale`. Automatic estimation from PR #5 is not part of the release path because the real calibration datasets produced large errors (cyclops expected ~1.0 → 1.261568; views4 expected ~0.206 → 0.381288).
 
+## macOS Desktop alpha (2026-09-10)
+
+Supported target: Trellis Studio on **macOS 26.5 / Apple Silicon**, Metal runtime, resident native
+`trellis-server`, Pixal3D MV 1024. This is the surface that is actually verified end to end on real
+hardware; Windows and Linux clean-install (#18) remain open, so they must not be advertised until a
+real machine runs them.
+
+| requirement | status | evidence |
+|---|:---:|---|
+| Studio builds on macOS | ✅ | `npx tauri build --bundles app` → `Trellis Studio.app` 3.7 MB, `CFBundleShortVersionString` 0.9.0 (matches #35), id `cpp.trellis.studio`, ad-hoc signature |
+| Real window on macOS | ✅ | one window titled "Trellis Studio", 1200×820, process alive |
+| Studio spawns + supervises the server | ✅ | reads `~/Library/Application Support/trellis-studio/config.json`, launches `trellis-server` as its child (parent pid confirmed), `GET /health` → `ok` |
+| **MV 1024 generation through the desktop server** | ✅ | `POST /generate-mv` with the official cyclops sample, seed 1: HTTP 200, 32,899,856-byte GLB in 1987 s; **mean IoU 0.9801, scale_error 0.0031 → PASS**, V=639,713 F=950,170 — identical to the native CLI run |
+| Installer path | ✅ | `install/install.sh` on Darwin: Metal-only backend, config to `~/Library/Application Support`, dmg mounted and copied to `/Applications`, quarantine attribute cleared; ran to completion (rc 0) against real assets |
+| Release artifacts | 🔶 | the workflow change is prepared and reviewed but **not applied**: `.github/workflows/*` needs GitHub's `workflow` token scope, which this token lacks, so it ships as `patches/release/macos-release-workflow.patch` (adds `macos-14` to both jobs → `trellis-metal-macos-arm64.tar.gz` + `trellis-studio-macos-arm64.dmg`). Apply it with `gh auth refresh -h github.com -s workflow` |
+| Runtime tarball is self-contained | ✅ | the binaries resolve `@rpath/libggml*.dylib` through `@loader_path`; verified by deleting the build-directory rpath and still reaching `/health` → `ok`. Packaging now strips that absolute build path and fails if `@loader_path` is missing |
+| Code signing / notarization | ⬜ | ad-hoc signature only, `TeamIdentifier=not set`. The installer clears `com.apple.quarantine`, so a scripted install works; a user double-clicking a downloaded dmg still meets Gatekeeper. Advertise as unsigned or notarize before a public release |
+| Intel macs | ⬜ | rejected explicitly by the installer (`uname -m != arm64`); only Apple Silicon is built and tested |
+
+The tag stays `v0.9.0-desktop-alpha` with artifact metadata `0.9.0` (see the versioning note above);
+the release note must say macOS/Apple Silicon only.
+
 ## Web alpha
 
 Supported target: Chrome/Chromium + WebGPU, resolution 1024 only. Inference stays in the common C++/WASM pipeline; JS is UI/file orchestration.
