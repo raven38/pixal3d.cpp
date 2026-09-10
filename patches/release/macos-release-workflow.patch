@@ -1,0 +1,94 @@
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 4fc5d0d..163d06a 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,6 +34,9 @@ jobs:
+           - { os: windows, backend: cuda,   release_backend: cuda,   cuda_version: "13.1.0", cuda_archs: "75;80;86;89;90;120", runner: windows-2022, experimental: true }
+           - { os: windows, backend: cuda,   release_backend: cuda12, cuda_version: "12.9.1", cuda_archs: "60;61;70",          runner: windows-2022, experimental: true }
+           - { os: windows, backend: rocm,   runner: windows-2022, experimental: true }
++          # macOS/Apple Silicon: Metal is enabled by CMake automatically
++          # (CMakeLists.txt:277), so there is no backend flag to pass.
++          - { os: macos,   backend: metal,  runner: macos-14 }
+ 
+     steps:
+       - uses: actions/checkout@v4
+@@ -216,6 +219,30 @@ jobs:
+             fi
+             ASSET="trellis-${{ matrix.release_backend || matrix.backend }}-windows-x64.zip"
+             (cd dist && 7z a -y "../$ASSET" ./* >/dev/null)
++          elif [ "${{ matrix.os }}" = "macos" ]; then
++            cp build/trellis-server dist/
++            cp build/trellis-cli dist/
++            # Measured on a local Metal build: the binaries reference
++            # @rpath/libggml{,-base,-cpu,-blas,-metal}.0.dylib and no separate
++            # .metallib is produced (the Metal shaders are embedded), so ship the
++            # dylibs and let an @loader_path rpath resolve them.
++            find build -name 'libggml*.dylib' -exec cp -P {} dist/ \;
++            # CMake already bakes @loader_path (verified locally: the tarball runs
++            # with the build-dir rpath removed), but it also bakes the absolute
++            # build directory. Strip that so a released binary carries no path
++            # from the build machine; add @loader_path only if it is missing.
++            for f in dist/trellis-server dist/trellis-cli; do
++              build_abs="$(cd build && pwd)"
++              install_name_tool -delete_rpath "$build_abs" "$f" 2>/dev/null || true
++              otool -l "$f" | grep -q 'path @loader_path' \
++                || install_name_tool -add_rpath @loader_path "$f"
++            done
++            # Fail loudly if the result is not self-contained.
++            for f in dist/trellis-server dist/trellis-cli; do
++              otool -l "$f" | grep -q 'path @loader_path' || { echo "ERROR: $f has no @loader_path rpath"; exit 1; }
++            done
++            ASSET="trellis-${{ matrix.backend }}-macos-arm64.tar.gz"
++            tar -C dist -czf "$ASSET" .
+           else
+             cp build/trellis-server dist/
+             cp build/trellis-cli dist/
+@@ -268,6 +295,7 @@ jobs:
+         include:
+           - { os: linux,   runner: ubuntu-22.04 }
+           - { os: windows, runner: windows-2022 }
++          - { os: macos,   runner: macos-14 }
+ 
+     steps:
+       - uses: actions/checkout@v4
+@@ -318,9 +346,17 @@ jobs:
+ 
+       - name: Build Trellis Studio
+         working-directory: app
++        shell: bash
+         run: |
+           npm ci
+-          npm run tauri build
++          if [ "${{ matrix.os }}" = "macos" ]; then
++            # tauri.conf.json の bundle.targets は deb/appimage/nsis なので、
++            # macOS ではここで dmg と .app を明示する（設定側を触ると
++            # Linux/Windows の成果物名まで変わる）。
++            npm run tauri build -- --bundles dmg,app
++          else
++            npm run tauri build
++          fi
+ 
+       - name: Resolve release tag
+         id: tag
+@@ -332,6 +368,21 @@ jobs:
+             echo "value=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+           fi
+ 
++      - name: Package & upload (macOS)
++        if: matrix.os == 'macos'
++        env:
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++        shell: bash
++        run: |
++          set -e
++          base=app/src-tauri/target/release/bundle
++          dmg=$(find "$base/dmg" -name '*.dmg' | head -1)
++          test -n "$dmg" || { echo "dmg not found under $base/dmg"; ls -R "$base" || true; exit 1; }
++          cp "$dmg" trellis-studio-macos-arm64.dmg
++          # 未署名配布なので、Gatekeeper の扱いを README で案内する前提。
++          gh release upload "${{ steps.tag.outputs.value }}" trellis-studio-macos-arm64.dmg \
++            --clobber --repo "${{ github.repository }}"
++
+       - name: Package & upload (Linux)
+         if: matrix.os == 'linux'
+         env:

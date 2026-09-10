@@ -165,7 +165,9 @@ sets differ by 0.0004 — again no detectable quality difference, on a second su
 bulky subject vs. the thin-limbed figure of the views4-style input above), which is what makes the
 Q8_0-for-the-browser decision safe to state.
 
-Still open: no Chrome/WebGPU run has been done at all — those rows stay ⬜.
+The same exact `pixal3d-q8_0 v1` manifest was then exercised in real Chrome/WebGPU by the release
+gate below: full 1024 generation passed at mean IoU 0.9795, and a browser restart reused the OPFS
+cache with zero GGUF retransfers.
 
 ### Regenerate / verify
 
@@ -192,17 +194,13 @@ python tools/model_manifest.py verify <models_dir> models/<set>-v1/pixal3d-model
 `tools/model_manifest.py self-test` / `schema-test` also pass (`MODEL_MANIFEST_SELF_TEST_OK`,
 `MODEL_MANIFEST_SCHEMA_TEST_OK`), and `tools/model_manifest.py check-committed` gates the committed
 manifests themselves in CI: shape + required roles, directory name matching `<model_set>-<version>`,
-and the SHA256 above being present in this file. **Wiring it into
-`.github/workflows/model-manifest.yml` is still pending** — the PR author's token lacks GitHub's
-`workflow` scope, so the workflow file could not be pushed. The follow-up commit adds
-`models/*/pixal3d-models.json` and `docs/PIXAL3D_RELEASE_CHECKLIST.md` to the workflow's `paths`,
-runs `python tools/model_manifest.py check-committed`, and validates every
-`models/*/pixal3d-models.json` against the schema. Note what CI cannot do: it has no access to the
-real weights, so byte/SHA256 agreement with the actual GGUFs is only the manual re-check recorded
-above. Desktop consumes the same file: `model_cache.rs` reads `version`
-and `files[].name` from `pixal3d-models.json` in the managed model directory, so a release manifest
-is copied next to the GGUFs unchanged. Installer download/verify (#18) and OPFS lifecycle (#9)
-consume these manifests but are tracked in their own rows.
+and the SHA256 above being present in this file. `.github/workflows/model-manifest.yml` is wired on
+`main` (PR #43) to run `check-committed` and validate committed `models/*/pixal3d-models.json`
+against the schema. CI does not have the real weights, so byte/SHA256 agreement with the actual
+GGUFs remains the manual re-check recorded above. Desktop consumes the same file: `model_cache.rs`
+reads `version` and `files[].name` from `pixal3d-models.json` in the managed model directory, so a
+release manifest is copied next to the GGUFs unchanged. Installer download/verify (#18) and OPFS
+lifecycle (#9) consume these manifests but are tracked in their own rows.
 
 ## Common gates
 
@@ -227,11 +225,33 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | CUDA `ss_decode` graph-support path exercised on NVIDIA hardware | ✅ #11 | NVIDIA L4 validation |
 | Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
 | Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
-| Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` is unverified beyond static checks — no PowerShell on the reference machine |
-| Installer downloads/verifies the exact model set against its manifest | ✅ | `--model-manifest` / `--verify-models` (see below); verified against the real `pixal3d-q8_0 v1` set and five fail-closed cases |
+| Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` verify-only path is now executed in Windows CI by PR #44; full clean-install remains #18 |
+| Installer downloads/verifies the exact model set against its manifest | ✅ | `--model-manifest` / `--verify-models` (see below); verified against the real `pixal3d-q8_0 v1` set and fail-closed cases, plus Linux/Windows tiny-set CI in PR #44 |
 | Package/Tauri version matches `v0.9.0-desktop-alpha` | ✅ | #35: metadata `0.9.0` in all four files; tag carries `-desktop-alpha` (see above) |
 
 Desktop alpha deliberately requires an explicit positive `mesh_scale`. Automatic estimation from PR #5 is not part of the release path because the real calibration datasets produced large errors (cyclops expected ~1.0 → 1.261568; views4 expected ~0.206 → 0.381288).
+
+## macOS Desktop alpha (2026-09-10)
+
+Supported target: Trellis Studio on **macOS 26.5 / Apple Silicon**, Metal runtime, resident native
+`trellis-server`, Pixal3D MV 1024. This is the surface that is actually verified end to end on real
+hardware; Windows and Linux clean-install (#18) remain open, so they must not be advertised until a
+real machine runs them.
+
+| requirement | status | evidence |
+|---|:---:|---|
+| Studio builds on macOS | ✅ | `npx tauri build --bundles app` → `Trellis Studio.app` 3.7 MB, `CFBundleShortVersionString` 0.9.0 (matches #35), id `cpp.trellis.studio`, ad-hoc signature |
+| Real window on macOS | ✅ | one window titled "Trellis Studio", 1200×820, process alive |
+| Studio spawns + supervises the server | ✅ | reads `~/Library/Application Support/trellis-studio/config.json`, launches `trellis-server` as its child (parent pid confirmed), `GET /health` → `ok` |
+| **MV 1024 generation through the desktop server** | ✅ | `POST /generate-mv` with the official cyclops sample, seed 1: HTTP 200, 32,899,856-byte GLB in 1987 s; **mean IoU 0.9801, scale_error 0.0031 → PASS**, V=639,713 F=950,170 — identical to the native CLI run |
+| Installer path | ✅ | `install/install.sh` on Darwin: Metal-only backend, config to `~/Library/Application Support`, dmg mounted and copied to `/Applications`, quarantine attribute cleared; ran to completion (rc 0) against real assets |
+| Release artifacts | ✅ | `.github/workflows/release.yml` includes `macos-14` in both runtime and Studio matrices, producing `trellis-metal-macos-arm64.tar.gz` and `trellis-studio-macos-arm64.dmg`; packaging rejects a missing `@loader_path` or a residual build-machine rpath |
+| Runtime tarball is self-contained | ✅ | the binaries resolve `@rpath/libggml*.dylib` through `@loader_path`; verified by deleting the build-directory rpath and still reaching `/health` → `ok`. Packaging strips that absolute build path and fails if `@loader_path` is missing |
+| Code signing / notarization | ⬜ | ad-hoc signature only, `TeamIdentifier=not set`. The installer clears `com.apple.quarantine`, so a scripted install works; a user double-clicking a downloaded dmg still meets Gatekeeper. Advertise as unsigned or notarize before a public release |
+| Intel macs | ⬜ | rejected explicitly by the installer (`uname -m != arm64`); only Apple Silicon is built and tested |
+
+The tag stays `v0.9.0-desktop-alpha` with artifact metadata `0.9.0` (see the versioning note above);
+the release note must say macOS/Apple Silicon only.
 
 ## Web alpha
 
@@ -242,15 +262,72 @@ Supported target: Chrome/Chromium + WebGPU, resolution 1024 only. Inference stay
 | Production app shell + GLB viewer/download | ✅ #20 / PR #28 | Chromium |
 | Verified OPFS model-set install consumes manifest + size + SHA256 | ✅ #15 / PR #28 | Playwright fixture |
 | Fast production UI + OPFS + manifest integrity gate | ✅ #22 / PR #29 | Playwright CI |
-| Persistent automatic model delivery/version invalidation/safe cache delete | ⬜ #9 | CI + real Chrome storage |
-| Storage quota + WebGPU/device-budget preflight UI | ⬜ #21 | headless + real browser |
-| Full Chrome/WebGPU 1024 known-input generation → textured GLB | ⬜ | real Chrome release gate |
-| Second launch reuses the cached 7.54 GiB `pixal3d-q8_0 v1` set without retransferring it | ⬜ #9 | real Chrome |
-| Cache deletion frees only origin-owned Pixal3D storage | ⬜ #9 | real Chrome |
+| Persistent automatic model delivery/version invalidation/safe cache delete | ✅ #9 | PR #42 implementation + `test_cache_failure_modes.mjs` + the real-Chrome gate |
+| Storage quota + WebGPU/device-budget preflight UI | 🔶 #21 | PR #42 `preflight.js`; real Chrome values recorded. Known limitation: a `requestDevice()` failure can still be discovered only when generation starts (see below) |
+| Full Chrome/WebGPU 1024 known-input generation → textured GLB | ✅ | official cyclops, Chrome 153, IoU 0.9795 PASS |
+| Second launch reuses the cached 7.54 GiB `pixal3d-q8_0 v1` set without retransferring it | ✅ | browser restart on the same profile: 0 GGUF re-transfers |
+| Cache deletion frees only origin-owned Pixal3D storage | ✅ | real Chrome: usage → 0; headless: an unrelated OPFS directory survives |
 
-The Web release model set is `pixal3d-q8_0 v1` (7.54 GiB), per §12's GPU-budget headroom finding. Its native E2E gate now passes against this exact manifest (see the E2E table above); no Chrome/WebGPU run has been done against it.
+The Web release model set is `pixal3d-q8_0 v1` (7.54 GiB), per §12's GPU-budget headroom finding. Its native E2E gate and the real Chrome/WebGPU release gate both pass against this exact manifest.
 
 Web alpha known limits: Chrome/Chromium only, WebGPU required, 1024 only, wasm32 4 GiB host address-space constraints, browser-safe 512 postprocess, and pre-matted RGBA + `transforms.json` input.
+
+### Web alpha release gate, end to end (2026-09-10)
+
+`web/app/run_release_gate.mjs` drives real Chrome with real WebGPU and the real `pixal3d-q8_0 v1`
+set: fetch 7.54 GiB over HTTP into OPFS with streaming SHA-256, generate the official cyclops sample
+at 1024, download the GLB, **restart the browser on the same profile**, and delete the cache — then
+write one JSON record (browser, adapter, commit, model_set, manifest SHA256).
+
+| step | measured |
+|---|---|
+| browser | Chrome for Testing 153.0.8010.12, headed, `--enable-unsafe-webgpu` |
+| adapter | `maxBufferSize` 4,294,967,292 · `maxStorageBufferBindingSize` 4,294,967,292 |
+| fetch + verify + store 7.54 GiB | 154–229 s across runs, **9 GGUF requests (one per file)** |
+| generation | `complete` in **3688 s (61 min)**, seed 1, res 1024 |
+| GLB | 31,020,608 bytes via the browser download |
+| acceptance | `tools/silhouette_iou.py`: **mean IoU 0.9795, scale_error 0.0066 → PASS** (V=306,258 F=494,436 — identical to the file-input run) |
+| **restart, same profile** | `Ready` immediately, **0 GGUF re-transfers** (only manifest reads) |
+| generation after restart | started from the cached set with 0 transfers, then cancelled (a second 61-minute run adds nothing) |
+| cache delete | usage 3,797,013,283 → **0**, state back to "Not ready" |
+
+Texture Flow peaked at `resident 2517 MB` against the 4095 MB budget (38 % headroom) at
+`tokens=17795` — the token scale at which §12 of `docs/PIXAL3D_WEBGPU_MEMORY.md` measured F16 at
+3.4 % headroom. This run is therefore direct evidence for shipping Q8_0 to the browser, not a
+restatement of the earlier estimate.
+
+**A measured caveat about `navigator.storage.estimate()`.** It reported `usage` 3,797,013,283 for a
+set whose files total 8,091,975,360 bytes while the app was reading that set successfully, and
+`quota` tracked `usage + 10 GiB` in both runs (14.53 GB here, 18.83 GB when usage read
+8,091,980,579). Chromium's OPFS accounting under-reported by more than 2× on one run, and delete then
+freed exactly the number it had reported. So the estimate is self-consistent but is not a measure of
+what is stored: treat `storagePreflight` as advisory and rely on `QuotaExceededError` at write time.
+
+**`WebGPU (4095 MB)` is not a memory budget.** The runtime line comes from
+`thirdparty/ggml/src/ggml-webgpu/ggml-webgpu.cpp:3772`, which returns `maxBufferSize` as both free
+and total memory with an explicit `TODO` (gpuweb/gpuweb#5505). `web/app/preflight.js` is right not to
+invent an aggregate-VRAM threshold; the per-buffer and per-binding limits are the checkable part.
+
+### Failure modes of the browser cache (`web/app/test_cache_failure_modes.mjs`)
+
+`test_headless.mjs` covers the happy path (remote lifecycle → OPFS → SHA → commit marker, delete,
+local fallback). This gate covers the other side, and the current implementation passes all of it:
+
+| case | result |
+|---|---|
+| same-size, different content served | `Downloaded model failed verification: … (size 27/27, sha256 …)`, cache stays not ready |
+| refresh interrupted (HTTP 500 mid-set) | fails loudly; **no mixed set reads as ready** |
+| role reassignment with identical hashes | not treated as the same set — all 9 files re-fetched |
+| a required file removed from OPFS | not ready |
+| delete | removes only the Pixal3D namespace; an unrelated OPFS directory survives |
+| **reload with a warm cache** | **0 GGUF re-transfers** |
+
+One real gap the gate found: **a `requestDevice()` failure passes the current preflight**, which only
+probes the adapter and its limits. A device that advertises usable limits but refuses a device (or
+refuses the backend's `shader-f16`) is therefore only discovered after the model set is installed and
+a generation starts. Acquiring a throwaway device with the backend's own feature set during preflight
+would close it; recorded here rather than silently fixed inside someone else's freshly landed
+implementation.
 
 ## Non-blockers / known issues
 
