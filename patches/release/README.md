@@ -1,34 +1,26 @@
-# Release-workflow patches that need `workflow` scope
+# Release-workflow patch history
 
-`.github/workflows/*` cannot be pushed by an OAuth token without GitHub's
-`workflow` scope, so a workflow change prepared here is committed as a patch
-instead of silently dropped.
+The macOS Desktop-alpha release change was originally stored here because the
+previous OAuth token could not modify `.github/workflows/*` without GitHub's
+`workflow` scope.
 
-## `macos-release-workflow.patch` — macOS artifacts for the Desktop alpha
+The change is now applied directly to `.github/workflows/release.yml` on this
+PR. `macos-release-workflow.patch` is retained only as implementation history;
+it is **not** an extra step that must be applied before release.
 
-Adds macOS to both jobs in `.github/workflows/release.yml`:
+## macOS artifacts added to `release.yml`
+
+The release workflow now adds macOS to both release jobs:
 
 - runtime: `{ os: macos, backend: metal, runner: macos-14 }`, packaged as
-  `trellis-metal-macos-arm64.tar.gz`. The packaging step strips the absolute
-  build-directory rpath that CMake bakes in and fails if `@loader_path` is
-  missing, so a released binary is self-contained and carries no path from the
-  build machine (both verified locally — see the macOS section of
-  `docs/PIXAL3D_RELEASE_CHECKLIST.md`).
+  `trellis-metal-macos-arm64.tar.gz`. Packaging strips the absolute build rpath,
+  requires `@loader_path`, and fails closed if the build-machine path remains.
 - Studio: `{ os: macos, runner: macos-14 }`, built with
   `tauri build -- --bundles dmg,app` and uploaded as
-  `trellis-studio-macos-arm64.dmg`. The bundle list is passed on the command
-  line rather than added to `bundle.targets`, which would change the
-  Linux/Windows artifact set.
+  `trellis-studio-macos-arm64.dmg`. The bundle list stays command-line-only so
+  Linux/Windows bundle targets are unchanged.
 
-Apply with:
-
-```sh
-gh auth refresh -h github.com -s workflow   # once, grants the missing scope
-git apply patches/release/macos-release-workflow.patch
-git commit -am "ci(release): build macOS artifacts for the Desktop alpha"
-```
-
-The asset names this patch produces are the ones `install/install.sh` already
-expects on Darwin (`trellis-${BACKEND}-${ASSET_OS}.tar.gz` with
-`ASSET_OS=macos-arm64`, and `trellis-studio-macos-arm64.dmg`), so the installer
-works the moment a release carries them.
+The asset names match the Darwin path in `install/install.sh`, so the installer
+can consume the release artifacts directly. The current alpha is ad-hoc signed
+and not notarized; the scripted installer clears quarantine, while direct dmg
+distribution must still be described as unsigned/unnotarized.
