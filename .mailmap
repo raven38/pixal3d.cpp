@@ -1,0 +1,7 @@
+# git log / blame / GitHub の表示を、公開して問題ない 1 つの identity に正規化する。
+# 同一人物の複数アドレス（会社ドメイン・個人 gmail）を GitHub の noreply に寄せる。
+#
+# 注意: .mailmap は「表示」だけを変える。commit オブジェクトに記録された
+# author email は書き換わらないので、過去の commit から会社ドメインのアドレスを
+# 実際に消すには履歴の書き換え（= 全ブランチの force push）が必要。
+raven <4375159+raven38@users.noreply.github.com>

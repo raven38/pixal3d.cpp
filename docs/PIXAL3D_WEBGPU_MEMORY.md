@@ -11,7 +11,7 @@ below is derived from tensor shapes in code, not profiled.
 
 ## 1. WebGPU runtime limits to query
 
-**Measured 2026-09-06** in Google Chrome 152.0.7977.82 (macOS 26.5, Build 25F71) on the Apple M1
+**Measured 2026-09-06** in Google Chrome 152.0.7977.82 (macOS 26.5) on the Apple M1
 Pro GPU (Metal 4, Dawn's Metal backend), via the browser WASM/WebGPU smoke harness
 (`docs/spec/31-webgpu-bringup.md` §8): `web/smoke/index.html` → `pixal3d_smoke.wasm`'s exported
 `webgpu_smoke_limits()` (its own independent `wgpu::Adapter`/`wgpu::Device` request, since the
