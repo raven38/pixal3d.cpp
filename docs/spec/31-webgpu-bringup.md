@@ -474,7 +474,7 @@ by guessing a third-party mirror:
 
 ```sh
 # Dawn already extracted to $DAWN_DIR (scratchpad, not the repo)
-DAWN_DIR=/private/tmp/claude-501/-Users-raven-pixal3d-cpp/ce663a4c-e452-4d12-b211-ecc3e5d81adf/scratchpad/dawn/extracted
+DAWN_DIR=<session scratchpad>/dawn/extracted   # 展開先。リポジトリ内には置かない
 
 cmake -B build-webgpu -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DGGML_WEBGPU=ON -DGGML_METAL=OFF \
@@ -506,7 +506,7 @@ pipeline). `thirdparty/ggml` itself: **unchanged** (still exactly
 ### Smoke test output (Apple M1 Pro, macOS 26.5, Metal-via-Dawn)
 
 ```
-ggml_webgpu: adapter_info: vendor_id: 4203 | vendor: apple | architecture: metal-3 | device_id: 0 | name: Apple M1 Pro | device_desc: Metal driver on macOS Version 26.5 (Build 25F71)
+ggml_webgpu: adapter_info: vendor_id: 4203 | vendor: apple | architecture: metal-3 | device_id: 0 | name: Apple M1 Pro | device_desc: Metal driver on macOS Version 26.5
 === trellis-webgpu-smoke ===
 ggml_backend_dev_count() = 3
 [0] name=WebGPU desc=WebGPU type=GPU reg=WebGPU mem_free=4295.0MB mem_total=4295.0MB
