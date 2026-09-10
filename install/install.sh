@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Trellis Studio — one-command setup for Linux (x86-64).
+# Trellis Studio — one-command setup for Linux (x86-64) and macOS (Apple Silicon).
 #
 #   curl -fsSL https://raw.githubusercontent.com/pwilkin/trellis.cpp/main/install/install.sh | bash
 #
-# Detects the GPU runtime (CUDA / ROCm / Vulkan), downloads the matching
+# On macOS the runtime is Metal (no backend choice) and the app ships as a .dmg.
+# Detects the GPU runtime (CUDA / ROCm / Vulkan / Metal), downloads the matching
 # trellis-server bundle + the TRELLIS.2 weights (~16.5 GB), installs the
 # Trellis Studio desktop app, and writes the config the app reads on launch.
 set -euo pipefail
@@ -14,6 +15,10 @@ set -euo pipefail
 # every expected asset is checked before anything is downloaded.
 REPO="${TRELLIS_REPO:-pwilkin/trellis.cpp}"
 TAG="latest"          # a tag, or "latest" (newest stable) / "latest-prerelease"
+# Verification escape hatch: install straight from a directory of release assets
+# served over HTTP, skipping GitHub release resolution. This is how the macOS
+# path is exercised before a release exists; it is not a distribution mechanism.
+ASSET_BASE_URL=""
 GH_API="https://api.github.com"
 REL_BASE=""           # set by resolve_release()
 HF_BASE="https://huggingface.co/ilintar/trellis2-gguf/resolve/main"
@@ -23,9 +28,29 @@ MODELS=(birefnet.gguf dinov3.gguf ss_flow.gguf ss_dec.gguf \
 # ROCm gfx arches covered by the published rocm bundle (see .github/workflows/release.yml).
 ROCM_GFX="gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 gfx1103 gfx1150 gfx1151 gfx1152 gfx1200 gfx1201"
 
+# ---- platform --------------------------------------------------------------
+# The app resolves its config with dirs::config_dir() (app/src-tauri/src/config.rs),
+# which is ~/Library/Application Support on macOS and $XDG_CONFIG_HOME on Linux —
+# so the installer must write config.json to the matching place per platform.
+OS="$(uname -s)"
+case "$OS" in
+  Linux)  PLATFORM=linux;  ASSET_OS="linux-x64";       APP_ASSET="trellis-studio-linux-x86_64.AppImage";;
+  Darwin) PLATFORM=macos;  ASSET_OS="macos-arm64";     APP_ASSET="trellis-studio-macos-arm64.dmg";;
+  *) echo "unsupported platform: $OS (Linux and macOS only)" >&2; exit 1;;
+esac
+if [ "$PLATFORM" = macos ] && [ "$(uname -m)" != "arm64" ]; then
+  echo "error: only Apple Silicon (arm64) is supported on macOS; this is $(uname -m)" >&2
+  exit 1
+fi
+
 # ---- defaults / args -------------------------------------------------------
-DEST="${XDG_DATA_HOME:-$HOME/.local/share}/trellis-studio"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/trellis-studio"
+if [ "$PLATFORM" = macos ]; then
+  DEST="$HOME/Library/Application Support/trellis-studio"
+  CONFIG_DIR="$HOME/Library/Application Support/trellis-studio"
+else
+  DEST="${XDG_DATA_HOME:-$HOME/.local/share}/trellis-studio"
+  CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/trellis-studio"
+fi
 BACKEND=""; GPU=0; PORT=8080; MODELS_DIR=""; SKIP_MODELS=0; SKIP_APP=0; ASSUME_YES=0; QUANT=""
 # Pixal3D model set (#34): a manifest fixes the exact bytes of every model file.
 MODEL_MANIFEST=""     # path, URL, or "release" (an asset of the resolved release)
@@ -37,6 +62,8 @@ usage() {
 Trellis Studio installer (Linux)
 
   --repo OWNER/NAME            GitHub repo to install from (default $REPO)
+  --asset-base-url URL         install assets from this base URL instead of a
+                               GitHub release (pre-release verification)
   --tag TAG                    release tag to install; "latest" = newest stable,
                                "latest-prerelease" = newest release including
                                prereleases (default: latest). Prerelease tags
@@ -71,6 +98,7 @@ EOF
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="$2"; shift 2;;
+    --asset-base-url) ASSET_BASE_URL="$2"; shift 2;;
     --tag) TAG="$2"; shift 2;;
     --backend) BACKEND="$2"; shift 2;;
     --gpu) GPU="$2"; shift 2;;
@@ -132,13 +160,22 @@ detect_backend() {
   echo vulkan
 }
 
-if [ -z "$BACKEND" ]; then
+if [ "$PLATFORM" = macos ]; then
+  # Metal is enabled unconditionally by CMake on Apple Silicon (CMakeLists.txt:277);
+  # there is no other backend to pick, so an explicit --backend is rejected rather
+  # than silently ignored.
+  if [ -n "$BACKEND" ] && [ "$BACKEND" != metal ]; then
+    die "--backend $BACKEND is not available on macOS (Metal only)"
+  fi
+  BACKEND=metal
+  log "backend: ${c_b}metal${c_0} (macOS)"
+elif [ -z "$BACKEND" ]; then
   BACKEND="$(detect_backend)"
   log "auto-detected backend: ${c_b}${BACKEND}${c_0}"
 else
   log "backend (forced): ${c_b}${BACKEND}${c_0}"
 fi
-case "$BACKEND" in cuda|cuda12|rocm|vulkan) ;; *) die "invalid backend: $BACKEND";; esac
+case "$BACKEND" in cuda|cuda12|rocm|vulkan|metal) ;; *) die "invalid backend: $BACKEND";; esac
 
 echo
 info "install dir : $DEST"
@@ -209,6 +246,16 @@ check_tag_syntax() {
 }
 
 resolve_release() {
+  if [ -n "$ASSET_BASE_URL" ]; then
+    REL_BASE="${ASSET_BASE_URL%/}"
+    RESOLVED_TAG="asset-base-url"
+    RELEASE_ID=0
+    # 資産一覧は問い合わせ先が無いので空にする。存在確認は download 時の 404 で
+    # 落ちる（require_assets を通ったふりはしない）。
+    ASSET_NAMES=""
+    log "assets: ${c_b}${REL_BASE}${c_0} (pre-release verification mode)"
+    return
+  fi
   local why release_json=""
   case "$TAG" in
     latest)
@@ -279,6 +326,10 @@ resolve_release() {
 have_asset() { printf '%s\n' "$ASSET_NAMES" | grep -Fxq -- "$1"; }
 
 require_assets() {
+  if [ -n "$ASSET_BASE_URL" ]; then
+    warn "asset presence is not pre-checked in --asset-base-url mode; a missing asset fails at download"
+    return
+  fi
   local missing=""
   for a in "$@"; do have_asset "$a" || missing="${missing} $a"; done
   if [ -n "$missing" ]; then
@@ -294,7 +345,7 @@ require_assets() {
 # turn a clear error into a confusing 404.
 download_asset() {
   local name="$1" dest="$2" id
-  if [ -n "$GH_TOKEN_VALUE" ]; then
+  if [ -n "$GH_TOKEN_VALUE" ] && [ -z "$ASSET_BASE_URL" ]; then
     local obj
     # One asset object per line, then the object naming this asset. The payload
     # is pretty-printed, so newlines are removed *before* splitting on '{' —
@@ -450,8 +501,7 @@ fi
 
 # ---- 1. server runtime bundle ---------------------------------------------
 resolve_release
-BUNDLE="trellis-${BACKEND}-linux-x64.tar.gz"
-APP_ASSET="trellis-studio-linux-x86_64.AppImage"
+BUNDLE="trellis-${BACKEND}-${ASSET_OS}.tar.gz"
 EXPECTED=("$BUNDLE")
 [ "$SKIP_APP" = 1 ] || EXPECTED+=("$APP_ASSET")
 require_assets "${EXPECTED[@]}"
@@ -466,7 +516,7 @@ SERVER_BIN="$RUNTIME_DIR/trellis-server"
 [ -f "$SERVER_BIN" ] || die "trellis-server not found after extract"
 chmod +x "$SERVER_BIN" || true
 
-if [ "$BACKEND" = "rocm" ]; then
+if [ "$BACKEND" = "rocm" ] && [ "$PLATFORM" = linux ]; then
   warn "ROCm bundle needs a TheRock ROCm runtime on LD_LIBRARY_PATH."
   warn "See docs/getting-started.md; if the server fails to start, install ROCm 7.x"
   warn "(TheRock, gfx-matched) or re-run with --backend vulkan."
@@ -504,12 +554,32 @@ if [ "$SKIP_APP" = 1 ]; then
   warn "skipping desktop app download (--skip-app)."
 else
   log "downloading Trellis Studio desktop app"
-  APP="$DEST/Trellis Studio.AppImage"
   # require_assets already proved this asset exists in the resolved release, so a
   # failure here is a real error and must not degrade into a partial install.
-  download_asset "$APP_ASSET" "$APP"
-  chmod +x "$APP"
-  info "app installed: $APP"
+  if [ "$PLATFORM" = macos ]; then
+    DMG="$(mktemp -d)/$APP_ASSET"
+    download_asset "$APP_ASSET" "$DMG"
+    MP="$(mktemp -d)"
+    hdiutil attach -nobrowse -quiet -mountpoint "$MP" "$DMG" || die "could not mount $APP_ASSET"
+    SRC_APP="$(find "$MP" -maxdepth 1 -name '*.app' -print -quit)"
+    if [ -z "$SRC_APP" ]; then hdiutil detach -quiet "$MP" || true; die "no .app inside $APP_ASSET"; fi
+    APP="/Applications/$(basename "$SRC_APP")"
+    rm -rf "$APP"
+    cp -R "$SRC_APP" /Applications/ || { hdiutil detach -quiet "$MP" || true; die "could not copy the app to /Applications"; }
+    hdiutil detach -quiet "$MP" || true
+    rm -f "$DMG"
+    # The release is not notarized, so first launch is quarantined. Clearing the
+    # attribute here is the difference between "it works" and a Gatekeeper dialog
+    # that offers no way forward.
+    xattr -dr com.apple.quarantine "$APP" 2>/dev/null || \
+      warn "could not clear the quarantine attribute; open the app once via right-click > Open"
+    info "app installed: $APP"
+  else
+    APP="$DEST/Trellis Studio.AppImage"
+    download_asset "$APP_ASSET" "$APP"
+    chmod +x "$APP"
+    info "app installed: $APP"
+  fi
 fi
 
 # ---- 4. config -------------------------------------------------------------
@@ -552,7 +622,9 @@ log "${c_g}done${c_0} — launch Trellis Studio${SKIP_MODELS:+ (add your models 
 # `cmd && info ...` as the last statement would make a successful install exit 1
 # whenever the AppImage is absent (e.g. --skip-app), which now matters because
 # callers gate on the exit code.
-if [ -f "$DEST/Trellis Studio.AppImage" ]; then
+if [ "$PLATFORM" = macos ] && [ -d "/Applications/Trellis Studio.app" ]; then
+  info "run: open \"/Applications/Trellis Studio.app\""
+elif [ -f "$DEST/Trellis Studio.AppImage" ]; then
   info "run: \"$DEST/Trellis Studio.AppImage\""
 fi
 exit 0
