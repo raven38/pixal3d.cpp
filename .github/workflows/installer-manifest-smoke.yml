@@ -81,6 +81,7 @@ jobs:
           & pwsh -NoProfile -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
           if ($LASTEXITCODE -eq 0) { throw 'corrupt model set was incorrectly accepted' }
           Write-Host 'INSTALLER_MANIFEST_WINDOWS_PWSH_OK'
+          exit 0
       - name: Diagnose Windows PowerShell 5.1 UTF-8 file parsing
         if: runner.os == 'Windows'
         shell: pwsh
