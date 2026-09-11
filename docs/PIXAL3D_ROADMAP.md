@@ -126,9 +126,9 @@
 - [x] production UI (#20 / PR #28)
 - [x] verified local OPFS model install (#15 / PR #28)
 - [x] production UI CI (#22 / PR #29)
-- [ ] automatic persistence/version lifecycle (#9)
-- [ ] storage/WebGPU preflight (#21)
-- [ ] real Chrome/WebGPU full generation + cache reuse/delete release gate
+- [x] automatic persistence/version lifecycle (#9 / PR #42)
+- [x] storage/WebGPU preflight incl. device probe (#21)
+- [x] real Chrome/WebGPU full generation + cache reuse/delete release gate (local 2026-09-10, public deployment 2026-09-11)
 - [ ] tag `v0.9.0-web-alpha`
 
 ## M11 — Staged model delivery (first-run latency)

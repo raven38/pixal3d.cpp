@@ -58,7 +58,7 @@ async function refreshPreflight(cache = null) {
 
   const lines = [];
   lines.push(gpu.ok
-    ? `✓ WebGPU · max buffer ${fmtBytes(gpu.limits.maxBufferSize)} · storage binding ${fmtBytes(gpu.limits.maxStorageBufferBindingSize)}`
+    ? `✓ WebGPU · max buffer ${fmtBytes(gpu.limits.maxBufferSize)} · storage binding ${fmtBytes(gpu.limits.maxStorageBufferBindingSize)} · device ok (${(gpu.requiredFeatures || []).join(', ')})`
     : `✕ ${gpu.message}`);
   if (storage) {
     lines.push(storage.ok

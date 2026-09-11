@@ -46,6 +46,9 @@ await page.addInitScript(() => {
       requestAdapter: async () => ({
         limits: { maxBufferSize: 4 * 1024 * 1024 * 1024, maxStorageBufferBindingSize: 1024 * 1024 * 1024, maxComputeWorkgroupsPerDimension: 65535 },
         info: { vendor: 'mock', architecture: 'mock', device: 'mock', description: 'Playwright mock adapter' },
+        // #21 以降の preflight は shader-f16 を確認し、使い捨ての device を要求する
+        features: new Set(['shader-f16']),
+        requestDevice: async () => ({ destroy() {} }),
       }),
     },
   });
