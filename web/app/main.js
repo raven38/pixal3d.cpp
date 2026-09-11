@@ -185,18 +185,20 @@ $('#run').onclick = async () => {
   $('#delete-models').disabled = true;
   const started = Date.now();
   const genProgress = makeGenProgress();
-  $('#progress-text').textContent = 'starting… · 0:00';
-  timer = setInterval(() => {
-    $('#progress-text').textContent = $('#progress-text').textContent.split(' · ')[0] + ' · ' + fmtTime(Date.now() - started);
-  }, 1000);
+  // 進捗文字列は状態として持ち、タイマーは経過時間だけを付け直す。
+  // （以前は表示文字列を ' · ' で切っていたので、段名以外の ETA / overall が 1 秒で消えていた）
+  let progressLabel = 'starting…';
+  const render = () => { $('#progress-text').textContent = progressLabel + ' · ' + fmtTime(Date.now() - started); };
+  render();
+  timer = setInterval(render, 1000);
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === 'log') {
       log(m.text);
       const text = String(m.text || '').trim();
       const staged = genProgress(text);
-      if (staged) $('#progress-text').textContent = staged + ' · ' + fmtTime(Date.now() - started);
-      else if (text) $('#progress-text').textContent = text + ' · ' + fmtTime(Date.now() - started);
+      if (staged) { progressLabel = staged; render(); }
+      else if (text) { progressLabel = text; render(); }
     } else if (m.type === 'error') { log(m.text); finish('failed'); }
     else { log(m.report); showGlb(new Blob([m.glb], { type: 'model/gltf-binary' })); finish('complete'); }
   };
@@ -231,9 +233,14 @@ function makeGenProgress() {
     const m = /\[flow\]\s+\[[#.]+\]\s+(\d+)\/(\d+)\s+([\d.]+)s\s+(.*)$/.exec(text || '');
     if (!m) return null;
     const done = +m[1], steps = +m[2], eta = m[4].trim();
-    if (done <= lastDone || stage < 0) { if (done === 0 || stage < 0) stage++; }
+    // 段の切り替えは done が「減った」ことで検出する（12→0 も 12→1 も拾う）。
+    // 同じ値の再受信（0/12 が 2 回来る等）では進めない。
+    if (stage < 0 || done < lastDone) stage++;
     lastDone = done;
-    if (stage >= FLOW_STAGES.length) return null;
+    if (stage >= FLOW_STAGES.length) {
+      // flow 4 段を越えた行は想定外。バーは flow 完了位置のまま、行はそのまま見せる。
+      return null;
+    }
     const before = FLOW_STAGES.slice(0, stage).reduce((a, s) => a + s.weight, 0);
     const frac = (before + FLOW_STAGES[stage].weight * (steps ? done / steps : 0)) / TOTAL_WEIGHT;
     setBar(frac);

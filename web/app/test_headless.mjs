@@ -48,7 +48,11 @@ await page.addInitScript(() => {
         info: { vendor: 'mock', architecture: 'mock', device: 'mock', description: 'Playwright mock adapter' },
         // #21 以降の preflight は shader-f16 を確認し、使い捨ての device を要求する
         features: new Set(['shader-f16']),
-        requestDevice: async () => ({ destroy() {} }),
+        requestDevice: async (desc) => {
+          if (!(desc?.requiredFeatures || []).includes('shader-f16')) throw new Error('CONTRACT: shader-f16 not requested');
+          if (!desc?.requiredLimits?.maxBufferSize) throw new Error('CONTRACT: requiredLimits missing');
+          return { destroy() {} };
+        },
       }),
     },
   });

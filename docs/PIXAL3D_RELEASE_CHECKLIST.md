@@ -404,11 +404,16 @@ local fallback). This gate covers the other side, and the current implementation
 | **reload with a warm cache** | **0 GGUF re-transfers** |
 
 One real gap the gate found, now closed (#21, 2026-09-11): a `requestDevice()` failure used to pass
-the preflight, which only probed the adapter and its limits. `webgpuPreflight()` now mirrors
-`ggml_webgpu_init` — it requires `shader-f16`, adds `subgroups` when the adapter advertises it, passes
-the adapter's `maxBufferSize` / `maxStorageBufferBindingSize` as `requiredLimits`, acquires one
-throwaway device and destroys it. A GPU that would fail at generation time now fails at preflight,
-before the 7.54 GiB install.
+the preflight, which only probed the adapter and its limits. `webgpuPreflight()` now requests a
+throwaway device the way `ggml_webgpu_init` does as far as the pipeline depends on it: the same
+adapter selection (default `requestAdapter()`, no `powerPreference`), `shader-f16` required,
+`subgroups` when the adapter advertises it, and `maxBufferSize` / `maxStorageBufferBindingSize` as
+`requiredLimits`; the device is destroyed immediately. Two known differences, both deliberate:
+the runtime passes the adapter's *full* limits object, and a `GGML_WEBGPU_GPU_PROFILE` build also
+requires `timestamp-query` (not a release build). A GPU that would fail at generation time now fails
+at preflight, before the 7.54 GiB install. `test_cache_failure_modes.mjs` cases 7–9 pin the contract:
+device refusal and missing `shader-f16` must be rejected, and a healthy adapter must pass — the mock
+throws if the preflight stops requesting `shader-f16` or the two limits.
 
 ## Non-blockers / known issues
 

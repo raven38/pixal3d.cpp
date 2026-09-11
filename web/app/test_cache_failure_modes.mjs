@@ -71,6 +71,10 @@ async function newPage({ deviceFails = false, noF16 = false, manifest = manifest
         for (const f of (desc?.requiredFeatures || [])) {
           if (!new Set(${noF16 ? '[]' : "['shader-f16']"}).has(f)) throw new TypeError('Unsupported feature: ' + f);
         }
+        // 契約: preflight は runtime と同じく shader-f16 を要求し、2 つの limits を指定すること。
+        // これを落とす回帰（requiredFeatures/requiredLimits を空にする）をテストで検出する。
+        if (!(desc?.requiredFeatures || []).includes('shader-f16')) throw new Error('CONTRACT: shader-f16 not requested');
+        if (!desc?.requiredLimits?.maxBufferSize || !desc?.requiredLimits?.maxStorageBufferBindingSize) throw new Error('CONTRACT: requiredLimits missing');
         return { destroy() {} };
       },
     }),
@@ -225,6 +229,19 @@ const status = (page) => page.evaluate(async () => {
   const gpuOk = /✓ WebGPU/.test(text);
   if (gpuOk) { console.log('FAIL: missing shader-f16 passed the preflight (#21)'); failed = true; }
   else console.log(`ok: missing shader-f16 is rejected by the preflight (${text.split('\n').find((l) => /WebGPU/.test(l))})`);
+  await ctx.close();
+}
+
+// ---- 9. 正常なアダプタは通る（陽性ケース） -------------------------------
+// mock の requestDevice は preflight の契約（shader-f16 の要求・limits の指定）を検査して
+// 違反なら投げる。ここで ✓ を要求することで「契約を落とす回帰」と「本来動く GPU を弾く
+// 誤検知」の両方を検出する。
+{
+  const { ctx, page } = await newPage();
+  const text = (await page.locator('#preflight-status').textContent()) || '';
+  const line = text.split('\n').find((l) => /WebGPU/.test(l)) || '';
+  if (!/✓ WebGPU/.test(line)) { console.log(`FAIL: healthy adapter rejected by the preflight (${line})`); failed = true; }
+  else console.log(`ok: healthy adapter passes the preflight (${line})`);
   await ctx.close();
 }
 

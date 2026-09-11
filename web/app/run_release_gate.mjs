@@ -214,10 +214,14 @@ try {
   await page.waitForFunction(() => !document.querySelector('#run')?.disabled, null, { timeout: 60_000 });
   await page.locator('#run').click();
   await page.waitForFunction(() => /ss|cond|flow|stage|proj/i.test(document.querySelector('#log')?.textContent || ''), null, { timeout: 15 * 60 * 1000 });
+  const retransfersTotal = ggufHits().length - beforeRestart;
   step('restart_generation_started', {
-    gguf_retransfers_total: ggufHits().length - beforeRestart,
+    gguf_retransfers_total: retransfersTotal,
     log_head: (await page.locator('#log').textContent())?.split('\n').filter((l) => /stage|flow|WebGPU/i.test(l)).slice(0, 3),
   });
+  // Ready 直後だけでなく、生成開始までの経路でも GGUF を取り直していないこと。
+  // ここを記録だけにすると「Ready → Generate でモデルを再取得する回帰」が gate を通ってしまう。
+  if (retransfersTotal !== 0) throw new Error(`GGUF re-transferred after restart: ${retransfersTotal} request(s)`);
   await page.locator('#cancel').click();
 
   // ---- 4. 削除で使用量が減る ------------------------------------------------
