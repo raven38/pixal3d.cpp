@@ -41,6 +41,7 @@
   <div class="card">
     <div class="row"><label>Resolution <select id="resolution"><option value="1024">1024</option><option value="1536" disabled>1536 (desktop only)</option></select></label><label>Seed <input id="seed" type="number" value="1" min="0" style="width:90px"></label></div>
     <div class="row" style="margin-top:12px"><button id="run" class="primary" disabled>Generate 3D</button><button id="cancel" class="btn" disabled>Cancel</button></div>
+    <div class="progress" style="margin-top:10px"><div id="gen-bar" class="bar"></div></div>
     <div id="progress-text" class="muted" style="margin-top:8px"></div>
   </div>
   <details class="card"><summary>Developer log</summary><pre id="log" class="log"></pre></details>
