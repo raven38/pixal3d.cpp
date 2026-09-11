@@ -38,6 +38,9 @@ const manifestPath = path.join(modelsDir, 'pixal3d-models.json');
 if (!fs.existsSync(manifestPath)) throw new Error(`need ${manifestPath} (copy the release manifest next to the GGUFs)`);
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 const hits = [];
+// --models-url を渡すと、ローカルの配信元を立てずに実ホスト（例: Hugging Face）から取得する。
+// その場合 GGUF のリクエスト数はブラウザの response イベントで数える。
+const remoteModels = flag('--models-url', '');
 const origin = http.createServer((req, res) => {
   const name = decodeURIComponent(req.url.replace(/^\//, '').split('?')[0]);
   hits.push({ name, at: Date.now(), range: req.headers.range || null });
@@ -52,8 +55,8 @@ const origin = http.createServer((req, res) => {
   });
   fs.createReadStream(file).pipe(res);
 });
-await new Promise((r) => origin.listen(0, '127.0.0.1', r));
-const modelsBase = `http://127.0.0.1:${origin.address().port}`;
+if (!remoteModels) await new Promise((r) => origin.listen(0, '127.0.0.1', r));
+const modelsBase = remoteModels || `http://127.0.0.1:${origin.address().port}`;
 const ggufHits = () => hits.filter((h) => h.name.endsWith('.gguf'));
 
 // ---- 実 Chrome。プロファイルは使い回して「再起動」を作る -------------------
@@ -81,7 +84,7 @@ let ctx = null;
 const shutdown = async () => {
   try { if (ctx) await ctx.close(); } catch {}
   ctx = null;
-  try { origin.close(); } catch {}
+  try { if (!remoteModels) origin.close(); } catch {}
   cleanupProfile();
 };
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await shutdown(); process.exit(130); });
@@ -102,6 +105,12 @@ async function openApp(context) {
       : true) console.log('[browser]', t.slice(0, 500));
   });
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
+  if (remoteModels) page.on('response', (r) => {
+    const u = r.url();
+    if (u.startsWith(remoteModels) || /\.gguf(\?|$)/.test(u)) {
+      hits.push({ name: decodeURIComponent(u.split('?')[0].split('/').pop()), at: Date.now(), range: null, status: r.status() });
+    }
+  });
   // main の app は ?model_base_url= と #model-base-url を使う（release_store.js:73）。
   await page.goto(`${appBase}?model_base_url=${encodeURIComponent(modelsBase)}`, { waitUntil: 'domcontentloaded' });
   return page;
