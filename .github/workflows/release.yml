@@ -256,8 +256,17 @@ jobs:
                 cp -P "$cuda_lib"/$l.so* dist/ 2>/dev/null || true
               done
             fi
+            # ggml-cpu is built with OpenMP; a minimal Ubuntu has no libgomp1, and
+            # the clean-install check on a bare 24.04 container failed with
+            # "libgomp.so.1: cannot open shared object file". Bundle it (LGPL,
+            # redistributable) so the archive runs without apt.
+            gomp="$(gcc -print-file-name=libgomp.so.1)"
+            test -f "$gomp" && cp -L "$gomp" dist/
             sudo apt-get install -y -qq patchelf
             for f in $(find dist -type f); do patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
+            # Fail closed on anything still unresolved outside glibc / the loader / the GPU driver.
+            missing="$(for f in dist/trellis-cli dist/trellis-server; do ldd "$f" | grep -E "not found" || true; done)"
+            if [ -n "$missing" ]; then echo "unresolved shared libraries:"; echo "$missing"; exit 1; fi
             ASSET="trellis-${{ matrix.release_backend || matrix.backend }}-linux-x64.tar.gz"
             tar -C dist -czf "$ASSET" .
           fi
