@@ -359,7 +359,7 @@ void naf_na_window(int q, int L, int d, int K, int& r, int& p, int& Lr, int& sta
 // for the 64-wide q/k heads.
 void naf_na2d(const std::vector<float>& q, const std::vector<float>& k, const std::vector<float>& v,
               int T, int dy, int dx, int Cv, float scale, std::vector<float>& out) {
-    constexpr int heads = 4, qk_hd = 64, K = 9;
+    static constexpr int heads = 4, qk_hd = 64, K = 9;   // static: lambda がキャプチャしないので MSVC でも定数式になる
     const int v_hd = Cv / heads;
     const size_t TT = (size_t)T * T;
     out.assign((size_t)Cv * TT, 0.f);
