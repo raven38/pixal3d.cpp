@@ -269,8 +269,12 @@ jobs:
             test -f "$gomp" && cp -L "$gomp" dist/
             sudo apt-get install -y -qq patchelf
             for f in $(find dist -type f); do patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
-            # Fail closed on anything still unresolved outside glibc / the loader / the GPU driver.
-            missing="$(for f in dist/trellis-cli dist/trellis-server; do ldd "$f" | grep -E "not found" || true; done)"
+            # Fail closed on anything still unresolved, except the libraries that come from
+            # the user's GPU driver stack and are absent on a driver-less CI runner
+            # (libcuda is the NVIDIA driver API; libvulkan is the loader, installed with the
+            # driver or the SDK). Everything else must be bundled or come from glibc.
+            driver_libs='libcuda\.so|libvulkan\.so|libnvidia-|libamdhip|libhsa-runtime'
+            missing="$(for f in dist/trellis-cli dist/trellis-server; do ldd "$f" | grep -E "not found" || true; done | grep -Ev "$driver_libs" || true)"
             if [ -n "$missing" ]; then echo "unresolved shared libraries:"; echo "$missing"; exit 1; fi
             ASSET="trellis-${{ matrix.release_backend || matrix.backend }}-linux-x64.tar.gz"
             tar -C dist -czf "$ASSET" .
