@@ -91,7 +91,10 @@ export async function webgpuPreflight() {
   }
   let adapter = null;
   try {
-    adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    // ggml-webgpu (ggml_webgpu_init) は RequestAdapterOptions を既定のまま使う。
+    // ここで high-performance を指定すると、複数 GPU の機で実行時と別のアダプタを
+    // 検査してしまう（片方だけ shader-f16 対応なら判定が実行時と食い違う）。
+    adapter = await navigator.gpu.requestAdapter();
   } catch (e) {
     return {
       ok: false,
@@ -143,8 +146,11 @@ export async function webgpuPreflight() {
   // #21: an adapter with usable limits can still refuse a device, or refuse the
   // features the runtime needs. ggml-webgpu (ggml-webgpu.cpp, ggml_webgpu_init)
   // requests shader-f16 unconditionally, subgroups when the adapter has them, and
-  // the adapter's own limits. Ask for exactly that with a throwaway device so the
-  // failure surfaces here, before the 7.54 GiB install, rather than at generation.
+  // passes the adapter's full limits. Ask for the same features and the two limits
+  // the pipeline actually depends on (maxBufferSize / maxStorageBufferBindingSize)
+  // with a throwaway device so the failure surfaces here, before the 7.54 GiB
+  // install, rather than at generation. Not covered: a GGML_WEBGPU_GPU_PROFILE
+  // build additionally requires timestamp-query.
   const features = adapter.features || new Set();
   if (!features.has('shader-f16')) {
     return {

@@ -41,7 +41,10 @@ s = io.open(p, encoding='utf-8').read()
 tag = '<script type="module" src="main.js"></script>'
 if s.count(tag) != 1:
     raise SystemExit("main.js の script タグが見つからない")
-inject = f'<script>window.PIXAL3D_MODEL_BASE_URL = {base!r};</script>\n' + tag
+# JSON 文字列として埋め、'<' は \u003c に逃がして </script> による script 要素の終端を防ぐ
+import json
+lit = json.dumps(base).replace('<', '\\u003c')
+inject = f'<script>window.PIXAL3D_MODEL_BASE_URL = {lit};</script>\n' + tag
 io.open(p, 'w', encoding='utf-8').write(s.replace(tag, inject))
 PY
 
