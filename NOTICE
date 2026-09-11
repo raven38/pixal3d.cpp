@@ -1,0 +1,58 @@
+Pixal3D (pixal3d.cpp)
+Copyright (c) 2026 raven (raven38)
+
+This product includes software developed by third parties, listed below with
+their licenses. Copies of the license texts are in LICENSE (MIT, covering
+trellis.cpp and this fork's own changes) and in the vendored sources.
+
+-------------------------------------------------------------------------------
+1. trellis.cpp — the base this repository is forked from
+   https://github.com/pwilkin/trellis.cpp
+   Copyright (c) 2026 Piotr Wilkin
+   MIT License (see LICENSE)
+
+   pixal3d.cpp is a fork of trellis.cpp, diverged at commit 4a5b006. The
+   inherited pipeline (background removal, DINOv3 conditioning, the three flow
+   transformers, the decoders, remesh/decimate/UV/bake, the GLB writer, the CLI
+   and HTTP server, Trellis Studio) originates there and remains under its MIT
+   license and copyright. Upstream contributors' commits are preserved in this
+   repository's history with their original authorship.
+
+-------------------------------------------------------------------------------
+2. ggml — tensor library and backends (vendored in thirdparty/ggml)
+   https://github.com/ggml-org/ggml, via https://github.com/pwilkin/ggml
+   Copyright (c) 2023-2026 The ggml authors
+   MIT License (thirdparty/ggml/LICENSE)
+
+   Local, opt-in modifications live in patches/ggml-webgpu/*.patch and are
+   applied to the submodule working tree at configure time; see
+   docs/GGML_FORK_DIFF.md.
+
+-------------------------------------------------------------------------------
+3. Microsoft TRELLIS.2 — reference implementation and model architecture
+   https://github.com/microsoft/TRELLIS.2
+   https://huggingface.co/microsoft/TRELLIS.2-4B
+
+-------------------------------------------------------------------------------
+4. TencentARC Pixal3D — the multiview, camera-aware model this fork targets
+   https://github.com/TencentARC/Pixal3D
+   https://huggingface.co/TencentARC/Pixal3D
+
+   Model weights are redistributed in GGUF form under their own license terms,
+   not under this repository's MIT license. See the model repositories and the
+   licence files shipped with each model set (LICENSE.md, DINOV3_LICENSE.md).
+
+-------------------------------------------------------------------------------
+5. DINOv3 — image feature extractor used for conditioning
+   https://github.com/facebookresearch/dinov3
+   Subject to the DINOv3 license (DINOV3_LICENSE.md in the model sets).
+
+-------------------------------------------------------------------------------
+6. Other vendored/third-party components
+
+   xatlas (UV unwrapping)            https://github.com/jpcy/xatlas — MIT
+   cpp-httplib (HTTP server)         https://github.com/yhirose/cpp-httplib — MIT
+   stable-diffusion.cpp (optional)   https://github.com/leejet/stable-diffusion.cpp — MIT
+   Tauri (desktop shell)             https://github.com/tauri-apps/tauri — MIT/Apache-2.0
+
+   BiRefNet / RMBG background-removal models are used under their own licenses.

@@ -1,5 +1,12 @@
 # trellis.cpp
 
+> **This repository is `pixal3d.cpp`, a fork of
+> [pwilkin/trellis.cpp](https://github.com/pwilkin/trellis.cpp)** (MIT, © 2026 Piotr Wilkin),
+> extending it with the multiview, camera-aware [TencentARC Pixal3D](https://github.com/TencentARC/Pixal3D)
+> backbone and a WebGPU/WASM browser target. The inherited pipeline described below is
+> upstream's work; see [`NOTICE`](NOTICE) for full attribution and [`PIXAL3D.md`](PIXAL3D.md)
+> for what this fork adds.
+
 A standalone, **GGML-based C++** implementation of Microsoft's
 [TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B) image-to-3D pipeline:
 background removal, image conditioning, the three flow transformers, the VAE decoders,
@@ -28,11 +35,11 @@ drag-an-image → 3D desktop app with an interactive preview and a saved gallery
 
 ```bash
 # Linux (x86-64)
-curl -fsSL https://raw.githubusercontent.com/pwilkin/trellis.cpp/main/install/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/raven38/pixal3d.cpp/main/install/install.sh | bash
 ```
 ```powershell
 # Windows (x64), in PowerShell
-irm https://raw.githubusercontent.com/pwilkin/trellis.cpp/main/install/install.ps1 | iex
+irm https://raw.githubusercontent.com/raven38/pixal3d.cpp/main/install/install.ps1 | iex
 ```
 
 See [**Trellis Studio (desktop app)**](#trellis-studio-desktop-app) below for what it
