@@ -140,6 +140,44 @@ export async function webgpuPreflight() {
     } : null;
   } catch {}
 
+  // #21: an adapter with usable limits can still refuse a device, or refuse the
+  // features the runtime needs. ggml-webgpu (ggml-webgpu.cpp, ggml_webgpu_init)
+  // requests shader-f16 unconditionally, subgroups when the adapter has them, and
+  // the adapter's own limits. Ask for exactly that with a throwaway device so the
+  // failure surfaces here, before the 7.54 GiB install, rather than at generation.
+  const features = adapter.features || new Set();
+  if (!features.has('shader-f16')) {
+    return {
+      ok: false,
+      code: 'shader-f16-unsupported',
+      message: 'This GPU does not expose shader-f16, which the Pixal3D WebGPU runtime requires.',
+      adapter,
+      info,
+      limits,
+    };
+  }
+  const requiredFeatures = ['shader-f16'];
+  if (features.has('subgroups')) requiredFeatures.push('subgroups');
+  try {
+    const device = await adapter.requestDevice({
+      requiredFeatures,
+      requiredLimits: {
+        maxBufferSize: limits.maxBufferSize,
+        maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
+      },
+    });
+    try { device.destroy?.(); } catch {}
+  } catch (e) {
+    return {
+      ok: false,
+      code: 'device-unavailable',
+      message: `WebGPU device request failed (${requiredFeatures.join(', ')}): ${e?.message || e}`,
+      adapter,
+      info,
+      limits,
+    };
+  }
+
   return {
     ok: true,
     code: 'webgpu-ready',
@@ -147,5 +185,6 @@ export async function webgpuPreflight() {
     adapter,
     info,
     limits,
+    requiredFeatures,
   };
 }

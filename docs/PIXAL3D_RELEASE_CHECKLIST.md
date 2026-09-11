@@ -316,7 +316,7 @@ Supported target: Chrome/Chromium + WebGPU, resolution 1024 only. Inference stay
 | Verified OPFS model-set install consumes manifest + size + SHA256 | ✅ #15 / PR #28 | Playwright fixture |
 | Fast production UI + OPFS + manifest integrity gate | ✅ #22 / PR #29 | Playwright CI |
 | Persistent automatic model delivery/version invalidation/safe cache delete | ✅ #9 | PR #42 implementation + `test_cache_failure_modes.mjs` + the real-Chrome gate |
-| Storage quota + WebGPU/device-budget preflight UI | 🔶 #21 | PR #42 `preflight.js`; real Chrome values recorded. Known limitation: a `requestDevice()` failure can still be discovered only when generation starts (see below) |
+| Storage quota + WebGPU/device-budget preflight UI | ✅ #21 | PR #42 `preflight.js` + device probe (2026-09-11): the preflight now requests a throwaway device with the runtime's own feature set (`shader-f16`, plus `subgroups` when advertised) and the adapter's limits; `requestDevice()` failure and missing `shader-f16` are rejected before the model install (`test_cache_failure_modes.mjs` cases 7–8). Real M4 Max: `device ok (shader-f16, subgroups)` |
 | Full Chrome/WebGPU 1024 known-input generation → textured GLB | ✅ | official cyclops, Chrome 153, IoU 0.9795 PASS |
 | Second launch reuses the cached 7.54 GiB `pixal3d-q8_0 v1` set without retransferring it | ✅ | browser restart on the same profile: 0 GGUF re-transfers |
 | Cache deletion frees only origin-owned Pixal3D storage | ✅ | real Chrome: usage → 0; headless: an unrelated OPFS directory survives |
@@ -403,12 +403,12 @@ local fallback). This gate covers the other side, and the current implementation
 | delete | removes only the Pixal3D namespace; an unrelated OPFS directory survives |
 | **reload with a warm cache** | **0 GGUF re-transfers** |
 
-One real gap the gate found: **a `requestDevice()` failure passes the current preflight**, which only
-probes the adapter and its limits. A device that advertises usable limits but refuses a device (or
-refuses the backend's `shader-f16`) is therefore only discovered after the model set is installed and
-a generation starts. Acquiring a throwaway device with the backend's own feature set during preflight
-would close it; recorded here rather than silently fixed inside someone else's freshly landed
-implementation.
+One real gap the gate found, now closed (#21, 2026-09-11): a `requestDevice()` failure used to pass
+the preflight, which only probed the adapter and its limits. `webgpuPreflight()` now mirrors
+`ggml_webgpu_init` — it requires `shader-f16`, adds `subgroups` when the adapter advertises it, passes
+the adapter's `maxBufferSize` / `maxStorageBufferBindingSize` as `requiredLimits`, acquires one
+throwaway device and destroys it. A GPU that would fail at generation time now fails at preflight,
+before the 7.54 GiB install.
 
 ## Non-blockers / known issues
 
