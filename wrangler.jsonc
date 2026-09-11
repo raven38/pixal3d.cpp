@@ -1,0 +1,10 @@
+{
+  "$schema": "./web/node_modules/wrangler/config-schema.json",
+  "name": "pixal3d-web",
+  "compatibility_date": "2026-09-01",
+  // 静的配信のみ。推論は全てユーザーのブラウザ内 (WASM + WebGPU) で走る。
+  "assets": {
+    "directory": "./web/dist",
+    "not_found_handling": "404-page"
+  }
+}

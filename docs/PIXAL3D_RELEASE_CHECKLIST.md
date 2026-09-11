@@ -361,6 +361,34 @@ what is stored: treat `storagePreflight` as advisory and rely on `QuotaExceededE
 and total memory with an explicit `TODO` (gpuweb/gpuweb#5505). `web/app/preflight.js` is right not to
 invent an aggregate-VRAM threshold; the per-buffer and per-binding limits are the checkable part.
 
+### Web alpha release gate against the public deployment (2026-09-11)
+
+Same gate (`web/app/run_release_gate.mjs --models-url …`), but the app is served from the public
+Cloudflare Pages deployment and the model set from the public Hugging Face repository — no local
+HTTP server anywhere in the path.
+
+| | value |
+|---|---|
+| app | `https://pixal3d-web.raven38.workers.dev/` (Cloudflare Pages, `wrangler.jsonc`, 12 static files / 4.6 MB from `scripts/build_web_dist.sh`) |
+| models | `https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/main` (public; 9/9 files match the committed manifest by size + SHA256) |
+| browser | Chrome for Testing 153.0.8010.12, headed, `--enable-unsafe-webgpu`, M4 Max / Metal |
+| adapter | `maxBufferSize` 4,294,967,292 · `maxStorageBufferBindingSize` 4,294,967,292 |
+| fetch throughput | **6.9 MiB/s** measured mid-download (HF → this machine), i.e. ~18–20 min for a cold 7.54 GiB install |
+| resume after a hard kill | the first run was killed at 7.5 GiB; the rerun with the same profile reached `Ready` in 1210 s with **`gguf_requests: 1`** — eight of nine files were re-hashed from OPFS and reused |
+| generation | `complete` in **4902 s**, seed 1, res 1024 (3688 s on the local-HTTP run; same machine, other load present) |
+| Texture Flow | `tokens=17795`, `resident 2517.0 MB`, graph peak 1538.0 MB — identical to the local-HTTP run |
+| shape decode | 4,798,704 voxels → raw mesh V=4,798,704 F=9,607,898; the browser tail completed |
+| GLB | **31,020,608 bytes** — byte-for-byte the same size as the local-HTTP run |
+| acceptance | `tools/silhouette_iou.py`: **mean IoU 0.9795, scale_error 0.0066 → PASS** — identical to the local-HTTP run |
+| restart, same profile | `Ready` immediately, **0 GGUF re-transfers**, generation started from cache |
+| cache delete | usage 3,797,012,676 → **0** |
+
+One real bug was found and fixed on the way. Hugging Face answers a request that carries a
+`Referer` header with **404 and no CORS headers** (hotlink protection), so the browser reported
+`Failed to fetch` while every `curl` probe succeeded. `web/app/release_store.js` now fetches with
+`referrerPolicy: 'no-referrer'`. This is invisible to any test that does not run a real browser
+against a real cross-origin host.
+
 ### Failure modes of the browser cache (`web/app/test_cache_failure_modes.mjs`)
 
 `test_headless.mjs` covers the happy path (remote lifecycle → OPFS → SHA → commit marker, delete,

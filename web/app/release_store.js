@@ -62,7 +62,7 @@ export async function deleteCachedModels() {
 }
 
 export async function fetchReleaseManifest(url = DEFAULT_MANIFEST_URL, signal) {
-  const res = await fetch(url, { cache: 'no-store', signal });
+  const res = await fetch(url, { cache: 'no-store', signal, referrerPolicy: 'no-referrer' });
   if (!res.ok) throw new Error(`Model manifest fetch failed (HTTP ${res.status})`);
   return validateReleaseManifest(await res.json());
 }
@@ -113,7 +113,7 @@ async function downloadOne(d, ent, url, onProgress, aggregate, signal) {
     return;
   }
   await removeIfPresent(d, ent.name);
-  const res = await fetch(url, { cache: 'no-store', signal });
+  const res = await fetch(url, { cache: 'no-store', signal, referrerPolicy: 'no-referrer' });
   if (!res.ok || !res.body) throw new Error(`Download failed for ${ent.name} (HTTP ${res.status})`);
   const h = await d.getFileHandle(ent.name, { create: true });
   const w = await h.createWritable({ keepExistingData: false });
