@@ -8,7 +8,7 @@
   Trellis Studio desktop app, and writes the config the app reads on launch.
 
 .EXAMPLE
-  irm https://raw.githubusercontent.com/pwilkin/trellis.cpp/main/install/install.ps1 | iex
+  irm https://raw.githubusercontent.com/raven38/pixal3d.cpp/main/install/install.ps1 | iex
   # or, with options:
   ./install.ps1 -Backend vulkan -SkipModels
 #>
@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $Repo) { $Repo = if ($env:TRELLIS_REPO) { $env:TRELLIS_REPO } else { "pwilkin/trellis.cpp" } }
+if (-not $Repo) { $Repo = if ($env:TRELLIS_REPO) { $env:TRELLIS_REPO } else { "raven38/pixal3d.cpp" } }
 $GhApi = "https://api.github.com"
 $RelBase = ""   # set by Resolve-Release
 $HfBase = "https://huggingface.co/ilintar/trellis2-gguf/resolve/main"

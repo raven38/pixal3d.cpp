@@ -14,13 +14,13 @@ installs the desktop app, and writes the config the app reads on launch.
 ### Linux (x86-64)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pwilkin/trellis.cpp/main/install/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/raven38/pixal3d.cpp/main/install/install.sh | bash
 ```
 
 ### Windows (x64), in PowerShell
 
 ```powershell
-irm https://raw.githubusercontent.com/pwilkin/trellis.cpp/main/install/install.ps1 | iex
+irm https://raw.githubusercontent.com/raven38/pixal3d.cpp/main/install/install.ps1 | iex
 ```
 
 That's it — launch **Trellis Studio**, drop in an image, and click **Generate 3D**.
