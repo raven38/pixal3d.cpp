@@ -1,0 +1,7 @@
+# Chrome 層 + 判定スクリプト。pod はこのイメージを `xvfb-run -a node /opt/gate/probe_webgpu.mjs` で叩くだけ。
+ARG REGISTRY=webgpu-gate
+FROM ${REGISTRY}:chrome-153
+COPY probe_webgpu.mjs /opt/gate/probe_webgpu.mjs
+CMD ["bash"]
+# run_release_gate.mjs は最後に `shasum -a 256` を呼ぶ（macOS 前提）。Linux では sha256sum へ委譲する
+RUN printf '#!/bin/sh\n# shasum -a 256 <file> 互換\nshift 2 2>/dev/null; exec sha256sum "$@"\n' > /usr/local/bin/shasum && chmod +x /usr/local/bin/shasum

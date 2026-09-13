@@ -1,0 +1,21 @@
+# Vulkan 層の上に Node 22 + Playwright 同梱 Chromium（macOS ゲートと同じ 153 系）を焼き込む。
+# pod 内では apt/npm を一切使わない前提。
+ARG REGISTRY=webgpu-gate
+FROM ${REGISTRY}:vulkan-noble
+ENV DEBIAN_FRONTEND=noninteractive
+# HTTP:80 の archive.ubuntu.com は接続失敗が多いので HTTPS へ倒す（pod と同じ制約でもある）
+RUN sed -i 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g; s|http://security.ubuntu.com|https://security.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update && apt-get install -y --no-install-recommends xz-utils xvfb python3 procps \
+    && rm -rf /var/lib/apt/lists/*
+# Node 22（公式 tarball、HTTPS）
+ARG NODE_VERSION=22.14.0
+RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
+      | tar -xJ -C /usr/local --strip-components=1 && node --version
+# Playwright は web/package.json と同じメジャー系列に固定する
+ARG PLAYWRIGHT_VERSION=1.63.0
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+WORKDIR /opt/gate
+RUN npm init -y >/dev/null && npm install --no-audit --no-fund playwright@${PLAYWRIGHT_VERSION} \
+    && npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
+CMD ["bash"]

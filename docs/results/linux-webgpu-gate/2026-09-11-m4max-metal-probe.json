@@ -1,0 +1,116 @@
+{
+  "navigator_gpu": true,
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": ""
+  },
+  "features": [
+    "bgra8unorm-storage",
+    "chromium-experimental-subgroup-matrix",
+    "clip-distances",
+    "core-features-and-limits",
+    "depth-clip-control",
+    "depth32float-stencil8",
+    "dual-source-blending",
+    "float32-blendable",
+    "float32-filterable",
+    "indirect-first-instance",
+    "primitive-index",
+    "rg11b10ufloat-renderable",
+    "shader-f16",
+    "subgroup-size-control",
+    "subgroups",
+    "texture-component-swizzle",
+    "texture-compression-astc",
+    "texture-compression-astc-sliced-3d",
+    "texture-compression-bc",
+    "texture-compression-bc-sliced-3d",
+    "texture-compression-etc2",
+    "texture-compression-unaligned",
+    "texture-formats-tier1",
+    "texture-formats-tier2",
+    "timestamp-query"
+  ],
+  "limits": {
+    "maxTextureDimension1D": 16384,
+    "maxTextureDimension2D": 16384,
+    "maxTextureDimension3D": 2048,
+    "maxTextureArrayLayers": 2048,
+    "maxBindGroups": 4,
+    "maxBindGroupsPlusVertexBuffers": 24,
+    "maxBindingsPerBindGroup": 1000,
+    "maxDynamicUniformBuffersPerPipelineLayout": 10,
+    "maxDynamicStorageBuffersPerPipelineLayout": 8,
+    "maxSampledTexturesPerShaderStage": 48,
+    "maxSamplersPerShaderStage": 16,
+    "maxStorageBuffersPerShaderStage": 10,
+    "maxStorageTexturesPerShaderStage": 8,
+    "maxUniformBuffersPerShaderStage": 12,
+    "maxUniformBufferBindingSize": 65536,
+    "maxStorageBufferBindingSize": 4294967292,
+    "minUniformBufferOffsetAlignment": 256,
+    "minStorageBufferOffsetAlignment": 256,
+    "maxVertexBuffers": 8,
+    "maxBufferSize": 4294967292,
+    "maxVertexAttributes": 30,
+    "maxVertexBufferArrayStride": 2048,
+    "maxInterStageShaderVariables": 28,
+    "maxColorAttachments": 8,
+    "maxColorAttachmentBytesPerSample": 128,
+    "maxComputeWorkgroupStorageSize": 32768,
+    "maxComputeInvocationsPerWorkgroup": 1024,
+    "maxComputeWorkgroupSizeX": 1024,
+    "maxComputeWorkgroupSizeY": 1024,
+    "maxComputeWorkgroupSizeZ": 64,
+    "maxComputeWorkgroupsPerDimension": 65535,
+    "maxImmediateSize": 64,
+    "maxStorageBuffersInFragmentStage": 10,
+    "maxStorageTexturesInFragmentStage": 8,
+    "maxStorageBuffersInVertexStage": 10,
+    "maxStorageTexturesInVertexStage": 8
+  },
+  "shader_f16": true,
+  "device_request": {
+    "requiredFeatures": [
+      "shader-f16",
+      "subgroups"
+    ],
+    "requiredLimits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxBindGroups": 4
+    }
+  },
+  "device_ok": true,
+  "alloc_3332mb": {
+    "validation": null,
+    "oom": null,
+    "ok": true
+  },
+  "compute_f16_check": {
+    "sample": [
+      0,
+      0.5,
+      1,
+      127.5
+    ],
+    "ok": true
+  },
+  "mode": "new",
+  "chromium": "153.0.8010.12",
+  "args": [
+    "--enable-unsafe-webgpu",
+    "--use-angle=metal",
+    "--ignore-gpu-blocklist",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--enable-logging=stderr",
+    "--v=1"
+  ],
+  "at": "2026-09-11T07:50:07.663Z"
+}

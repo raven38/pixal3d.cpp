@@ -1,0 +1,44 @@
+=== vulkaninfo 16bit features ===
+	VK_KHR_16bit_storage                          : extension revision 1
+	VK_KHR_shader_float16_int8                    : extension revision 1
+	shaderFloat16                                      = true
+	shaderInt8                                         = true
+	storageBuffer16BitAccess           = true
+	uniformAndStorageBuffer16BitAccess = true
+=== variant: nvf16 ===
+    "vendor": "nvidia",
+    "architecture": "lovelace",
+--
+  "shader_f16": true,
+--
+  "device_ok": true,
+--
+    "validation": null,
+    "oom": null,
+    "ok": true
+--
+    "sample": [
+--
+    "ok": true
+--
+PROBE_VERDICT=REAL_GPU_OK
+=== variant: nvf16_unsafe ===
+    "vendor": "nvidia",
+    "architecture": "lovelace",
+--
+  "shader_f16": true,
+--
+  "device_ok": true,
+--
+    "validation": null,
+    "oom": null,
+    "ok": true
+--
+    "sample": [
+--
+    "ok": true
+--
+PROBE_VERDICT=REAL_GPU_OK
+=== features(nvf16) ===
+['bgra8unorm-storage', 'chromium-experimental-multi-draw-indirect', 'chromium-experimental-sampling-resource-table', 'chromium-experimental-subgroup-matrix', 'chromium-experimental-timestamp-query-inside-passes', 'clip-distances', 'core-features-and-limits', 'depth-clip-control', 'depth32float-stencil8', 'dual-source-blending', 'float32-blendable', 'float32-filterable', 'indirect-first-instance', 'primitive-index', 'rg11b10ufloat-renderable', 'shader-f16', 'subgroup-size-control', 'subgroups', 'texture-component-swizzle', 'texture-compression-bc', 'texture-compression-bc-sliced-3d', 'texture-compression-unaligned', 'texture-formats-tier1', 'texture-formats-tier2', 'timestamp-query']
+{'maxBufferSize': 4294967292, 'maxStorageBufferBindingSize': 2147483644}
