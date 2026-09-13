@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Trellis Studio — one-command setup for Linux (x86-64) and macOS (Apple Silicon).
 #
-#   curl -fsSL https://raw.githubusercontent.com/pwilkin/trellis.cpp/main/install/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/raven38/pixal3d.cpp/main/install/install.sh | bash
 #
 # On macOS the runtime is Metal (no backend choice) and the app ships as a .dmg.
 # Detects the GPU runtime (CUDA / ROCm / Vulkan / Metal), downloads the matching
@@ -13,7 +13,7 @@ set -euo pipefail
 # prereleases, which is how a Desktop alpha tag would resolve to an older stable
 # release's assets. The tag is always resolved to a concrete value first, then
 # every expected asset is checked before anything is downloaded.
-REPO="${TRELLIS_REPO:-pwilkin/trellis.cpp}"
+REPO="${TRELLIS_REPO:-raven38/pixal3d.cpp}"
 TAG="latest"          # a tag, or "latest" (newest stable) / "latest-prerelease"
 # Verification escape hatch: install straight from a directory of release assets
 # served over HTTP, skipping GitHub release resolution. This is how the macOS
