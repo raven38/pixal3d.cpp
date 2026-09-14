@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
 
@@ -220,7 +221,8 @@ try {
   if (!(after.usage < before.usage)) throw new Error('cache delete did not reduce OPFS usage');
 
   report.model_set = { model_set: manifest.model_set, version: manifest.version };
-  report.manifest_sha256 = execFileSync('shasum', ['-a', '256', manifestPath], { encoding: 'utf8' }).split(' ')[0];
+  // shasum/sha256sum の有無に依存しない（コンテナ内に shasum が無く ok=false になった実績）
+  report.manifest_sha256 = createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
   // gate 側の commit と、実際にテストした app の配信元は別物なので分けて記録する
   // （PR branch の Docker で main 由来の公開 app を叩く構成があり得る）。コンテナ内には
   // git ツリーが無いので gate の SHA は GATE_COMMIT で明示的に渡す。無ければ手元の git から
