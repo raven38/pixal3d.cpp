@@ -76,15 +76,24 @@ if [ -n "$SERVER" ]; then
   exit 0
 fi
 
-# ---- local: install.sh で runtime + 重みを用意（既にあれば検証だけ）→ trellis-cli ----
+# ---- local: install.sh で runtime + 重みを用意（既にあれば manifest で全ファイル検証）→ trellis-cli ----
 CLI="$DEST/runtime/trellis-cli"
 MODELS="$DEST/models"
+installer="$(dirname "${BASH_SOURCE[0]:-$0}")/install.sh"
+if [ ! -f "$installer" ]; then
+  installer="$(mktemp)"; curl -fsSL "https://raw.githubusercontent.com/$REPO/main/install/install.sh" -o "$installer"
+fi
+# キャッシュ有効の判定は「CLI が実行可能」かつ「models/ の全ファイルが manifest のサイズ・SHA256 と一致」。
+# manifest だけ残った部分キャッシュや壊れた GGUF は、ここで弾いて installer に補完させる。
+need_install=0
 if [ ! -x "$CLI" ] || [ ! -f "$MODELS/pixal3d-models.json" ]; then
-  info "runtime or weights missing under $DEST — running the installer (first run only)"
-  installer="$(dirname "${BASH_SOURCE[0]:-$0}")/install.sh"
-  if [ ! -f "$installer" ]; then
-    installer="$(mktemp)"; curl -fsSL "https://raw.githubusercontent.com/$REPO/main/install/install.sh" -o "$installer"
-  fi
+  need_install=1
+elif ! bash "$installer" --dest "$DEST" --verify-models >/dev/null 2>&1; then
+  info "existing weights under $MODELS do not match their manifest — re-running the installer"
+  need_install=1
+fi
+if [ "$need_install" = 1 ]; then
+  info "runtime or weights missing/invalid under $DEST — running the installer"
   bash "$installer" --repo "$REPO" --tag "$TAG" --dest "$DEST" --skip-app -y \
     --model-manifest release --model-base-url "$MODEL_BASE_URL"
 fi

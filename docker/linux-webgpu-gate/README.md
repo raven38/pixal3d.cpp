@@ -29,7 +29,7 @@ command: ["bash","-lc"]
 args:
 - |
   cd /opt/gate && timeout 300 xvfb-run -a node probe_webgpu.mjs --headless xvfb --out /tmp/webgpu_probe.json
-  echo "probe rc=$?"     # xvfb-run を最終コマンドにしない（PID 1 化で固まる）
+  rc=$?; echo "probe rc=$rc"; exit $rc   # xvfb-run を最終コマンドにしない（PID 1 化で固まる）。verdict は exit code に載る
 ```
 
 ## 実 GPU で WebGPU が出るための 4 条件（2026-09-11 L4 / driver 580.178.04 で実測）
@@ -80,7 +80,9 @@ browser 実測の per-view graph buffer 2837.8 MB は 2 チャンクに割れる
 
 ## フル生成（release gate）を pod で回す — `Dockerfile.e2e`
 
-gate 層に `run_release_gate.mjs` + release manifest + 入力 4 view を焼く。モデル本体は Hugging Face から
+gate 層に `run_release_gate.mjs` + release manifest + 入力 4 view を焼く
+（`docker buildx build ... --build-arg REGISTRY=$REGISTRY --build-arg GATE_COMMIT=$(git rev-parse HEAD) -f Dockerfile.e2e ...`。
+イメージ内に git ツリーは無いので、report に書く commit は `GATE_COMMIT` で渡す。渡さないと gate は `git rev-parse` に落ちて `ok=false` になる）。モデル本体は Hugging Face から
 `--models-url` で直接、app は公開配信元（`WEB_APP_URL`）から取るので pod 側の準備は不要。
 起動は `xvfb-run -a node run_release_gate.mjs /opt/gate/models /opt/gate/views --models-url … --out … --glb …` に
 `GATE_CHROMIUM_ARGS="--use-angle=vulkan --enable-features=Vulkan,WebGPU --ignore-gpu-blocklist --enable-dawn-features=vulkan_enable_f16_on_nvidia --no-sandbox --disable-dev-shm-usage"`

@@ -74,4 +74,8 @@ await browser.close(); srv.close();
 fs.writeFileSync(outPath, JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result, null, 2));
 const real = result.adapter && !/swiftshader|llvmpipe|software/i.test(JSON.stringify(result.adapter)) && !result.adapter.isFallbackAdapter;
-console.log(`PROBE_VERDICT=${real && result.device_ok && result.alloc_3332mb?.ok ? 'REAL_GPU_OK' : 'FAIL'}`);
+// gate として使うので、f16 compute の結果まで含めて判定し、exit code にも伝える
+// （SwiftShader・device 失敗・確保失敗・f16 の誤値はどれも FAIL / exit 1）。
+const ok = Boolean(real && result.device_ok && result.alloc_3332mb?.ok && result.compute_f16_check?.ok);
+console.log(`PROBE_VERDICT=${ok ? 'REAL_GPU_OK' : 'FAIL'}`);
+process.exitCode = ok ? 0 : 1;
