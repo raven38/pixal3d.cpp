@@ -195,8 +195,10 @@ L4 では不可）。旧記述の「単一バッファ 3,332 MB」は grep で�
       （Mac Metal 2879 s の 1.11 倍）、GLB 32,050,460 B、再起動後の再転送 0、削除で 3.80 GB 解放。
       SS 段の `ss_coords@64 N=4438 bbox x[3..28] y[2..29] z[0..31]` は Mac と一致。
       段別: SS 169.6 s / Shape-512 179.1 s / Shape-1024 1279.0 s / Texture 768.2 s
-      （Mac: 194.9 / 165.7 / 1476.3 / 1042.4）。`ok=false` は最終の `shasum` がイメージに無かっただけ
-      （`Dockerfile.gate` に shim を追加済み、次回から解消）。成果物とレンダ:
-      `docs/results/linux-webgpu-gate/l4-20260911/`（`render_l4.png` / `render_m4max.png` 4 視点並置）
+      （Mac: 194.9 / 165.7 / 1476.3 / 1042.4）。この初回は最終の `shasum` がイメージに無く `ok=false`。
+      成果物とレンダ: `docs/results/linux-webgpu-gate/l4-20260911/`（`render_l4.png` / `render_m4max.png` 4 視点並置）
+- [x] **2026-09-14 再実行で `ok: true`**（manifest ハッシュを `node:crypto` に変更、`gate_commit fb13b24`、
+      `app_url` を別記録）: 取得 289 s、生成 3286 s、GLB 32,050,460 B（初回と同サイズ）、再転送 0、
+      削除 3.80 GB。`docs/results/linux-webgpu-gate/l4-20260914b/`（JSON / gate.log / `render_l4.png`）
 - [ ] GPU が要らない工程（7.54 GiB 取得 / OPFS 検証 / 再起動後の再転送ゼロ / キャッシュ削除）は
       CPU pod でも回せる。#18 の Linux カバレッジをそこだけ先に埋める案も残す

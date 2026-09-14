@@ -88,5 +88,7 @@ gate 層に `run_release_gate.mjs` + release manifest + 入力 4 view を焼く
 `GATE_CHROMIUM_ARGS="--use-angle=vulkan --enable-features=Vulkan,WebGPU --ignore-gpu-blocklist --enable-dawn-features=vulkan_enable_f16_on_nvidia --no-sandbox --disable-dev-shm-usage"`
 （`--use-angle=vulkan` 等を落とすと SwiftShader・1 GiB になる。1 回目はこれで落とした）。
 
-2026-09-11 L4 実測（`docs/results/linux-webgpu-gate/l4-20260911/`）: 取得 437 s、生成 3209 s
+2026-09-14 L4 再実行（`docs/results/linux-webgpu-gate/l4-20260914b/`、gate_commit fb13b24、`ok: true`）: 取得 289 s、
+生成 3286 s、GLB 32,050,460 B（09-11 と同サイズ）、再転送 0、削除 3.80 GB。
+2026-09-11 L4 初回（`l4-20260911/`、`ok: false` — 当時のイメージに shasum が無く最終行で落ちた。生成自体は完走）: 取得 437 s、生成 3209 s
 （SS 169.6 / Shape-512 179.1 / Shape-1024 1279.0 / Texture 768.2）、GLB 32,050,460 B、再転送 0、削除 3.80 GB。
