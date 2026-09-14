@@ -230,9 +230,12 @@ try {
 
   report.model_set = { model_set: manifest.model_set, version: manifest.version };
   report.manifest_sha256 = execFileSync('shasum', ['-a', '256', manifestPath], { encoding: 'utf8' }).split(' ')[0];
-  // コンテナ内には git ツリーが無いので、検証対象の SHA は GATE_COMMIT で明示的に渡す。
-  // 無ければ手元の git から取るが、どちらも無い場合は report.ok を立てない。
-  report.commit = process.env.GATE_COMMIT || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  // gate 側の commit と、実際にテストした app の配信元は別物なので分けて記録する
+  // （PR branch の Docker で main 由来の公開 app を叩く構成があり得る）。コンテナ内には
+  // git ツリーが無いので gate の SHA は GATE_COMMIT で明示的に渡す。無ければ手元の git から
+  // 取るが、どちらも無い場合は report.ok を立てない。
+  report.gate_commit = process.env.GATE_COMMIT || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  report.app_url = appBase;
   report.ok = true;
 } finally {
   report.finished_at = new Date().toISOString();
