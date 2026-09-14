@@ -1,0 +1,141 @@
+[browser] Failed to load resource: the server responded with a status of 404 ()
+[gate] initial_state: "Not ready · 1 required item(s) missing/invalid · 0 B verified"
+[gate] preflight: ["Running storage / WebGPU preflight…"]
+[gate] adapter: {"info":{},"maxBufferSize":4294967292,"maxStorageBufferBindingSize":2147483644}
+[gate] install: {"seconds":289,"gguf_requests":9,"status":"Ready · pixal3d-q8_0 v1 · 7.54 GB · 9 verified model(s)"}
+[gate] storage_after_install: {"quota":18829398212,"usage":8091979972,"usageDetails":{"fileSystem":8091979972}}
+release manifest pixal3d-q8_0 v1
+preflight gpu=webgpu-ready storage=download-required quota=10737418240 usage=0 additional=8091975360
+preflight gpu=webgpu-ready storage=storage-ready quota=18829398212 usage=8091979972 additional=0
+live Texture conditioning included: full E2E
+real input: V=4 mesh_scale=1.0000
+[stderr] ggml_webgpu: adapter_info: vendor_id: 0 | vendor: nvidia | architecture: lovelace | device_id: 0 | name:  | device_desc: 
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[stage] ss_cond_glob   n=5120 mean=-0.000000 std=0.960175 min=-29.3386 max=+10.6178 nonfinite=0
+[stage] ss_cond_proj   n=4194304 mean=+0.000000 std=0.954461 min=-7.0576 max=+24.3091 nonfinite=0
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[gate] 120s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 180s elapsed, no new log line (a flow stage prints only when it ends)
+      [flow] [....................]  0/12    0.0s  starting          [flow] [#...................]  1/12   16.0s  ~176s left        [flow] [###.................]  2/12   31.6s  ~158s left        [flow] [#####...............]  3/12   47.2s  ~142s left        [flow] [######..............]  4/12   62.9s  ~126s left        [flow] [########............]  5/12   78.7s  ~110s left        [flow] [##########..........]  6/12   94.6s  ~95s left         [flow] [###########.........]  7/12  110.4s  ~79s left         [flow] [#############.......]  8/12  126.3s  ~63s left         [flow] [###############.....]  9/12  142.2s  ~47s left         [flow] [################....] 10/12  158.1s  ~32s left         [flow] [##################..] 11/12  166.1s  ~15s left         [flow] [####################] 12/12  174.0s  ~0s left    
+      [flow] 12 steps, 22 forwards, 174.0s
+[stage] ss_latent      n=32768 mean=-0.000830 std=0.599433 min=-3.7167 max=+4.4625 nonfinite=0
+[stderr] [trellis] CPU backend using 1 threads
+[gate] 300s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 360s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 420s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 480s elapsed, no new log line (a flow stage prints only when it ends)
+[stage] ss_logits      n=262144 mean=-137.311559 std=66.268392 min=-205.8350 max=+166.4409 nonfinite=0
+[stage] ss_coords@64   N=4438 bbox x[3..28] y[2..29] z[0..31] centroid(15.5,14.6,14.9)
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[stage] s512_cond_glob n=5120 mean=-0.000000 std=0.960175 min=-29.3386 max=+10.6178 nonfinite=0
+[stage] s512_cond_proj n=9089024 mean=+0.000036 std=0.957740 min=-6.8678 max=+23.9401 nonfinite=0
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[gate] 600s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 660s elapsed, no new log line (a flow stage prints only when it ends)
+      [flow] [....................]  0/12    0.0s  starting          [flow] [#...................]  1/12   18.4s  ~202s left        [flow] [###.................]  2/12   36.5s  ~183s left        [flow] [#####...............]  3/12   54.8s  ~164s left        [flow] [######..............]  4/12   73.2s  ~146s left        [flow] [########............]  5/12   91.7s  ~128s left        [flow] [##########..........]  6/12  110.2s  ~110s left        [flow] [###########.........]  7/12  128.7s  ~92s left         [flow] [#############.......]  8/12  147.2s  ~74s left         [flow] [###############.....]  9/12  156.4s  ~52s left         [flow] [################....] 10/12  165.7s  ~33s left         [flow] [##################..] 11/12  175.0s  ~16s left         [flow] [####################] 12/12  184.2s  ~0s left    
+      [flow] 12 steps, 20 forwards, 184.2s
+[stage] s512_latent    n=142016 mean=-0.020994 std=0.913843 min=-4.5635 max=+5.1467 nonfinite=0
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[stage] upsample@512   N=1222281 bbox x[59..452] y[38..472] z[1..511] centroid(255.5,240.2,252.4)
+live Shape1024 tokens=17748
+[stage] hr_coords@64   N=17748 bbox x[7..56] y[5..58] z[0..63] centroid(31.5,29.6,30.3)
+[heap] after Shape512     grown 1330 MB  live 50 MB  free 1220 MB
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[gate] 781s elapsed, no new log line (a flow stage prints only when it ends)
+[stage] s1024_cond_glob n=5120 mean=+0.000000 std=0.959974 min=-29.3344 max=+9.9561 nonfinite=0
+[stage] s1024_cond_proj n=36347904 mean=-0.000011 std=0.959935 min=-6.6799 max=+24.0093 nonfinite=0
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[gate] 901s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 961s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1021s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1081s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1141s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1201s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1261s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1321s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1381s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1441s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1501s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1561s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1621s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1681s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1741s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1801s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1861s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1921s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 1981s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2041s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2101s elapsed, no new log line (a flow stage prints only when it ends)
+      [flow] [....................]  0/12    0.0s  starting          [flow] [#...................]  1/12  131.5s  ~1447s left       [flow] [###.................]  2/12  263.2s  ~1316s left       [flow] [#####...............]  3/12  394.9s  ~1185s left       [flow] [######..............]  4/12  526.3s  ~1053s left       [flow] [########............]  5/12  657.6s  ~921s left        [flow] [##########..........]  6/12  788.8s  ~789s left        [flow] [###########.........]  7/12  920.0s  ~657s left        [flow] [#############.......]  8/12  1051.1s  ~526s left        [flow] [###############.....]  9/12  1116.8s  ~372s left        [flow] [################....] 10/12  1182.4s  ~236s left        [flow] [##################..] 11/12  1248.0s  ~113s left        [flow] [####################] 12/12  1313.7s  ~0s left    
+      [flow] 12 steps, 20 forwards, 1313.7s
+[stage] s1024_latent   n=567936 mean=-0.010381 std=0.877463 min=-4.5813 max=+4.1798 nonfinite=0
+[heap] after Shape1024    grown 1330 MB  live 54 MB  free 1215 MB
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+shape_decode done: 4772891 voxels res=1024
+[heap] shape_decode       grown 2166 MB  live 302 MB  free 1766 MB
+[stage] decoded_vox    N=4772891 bbox x[125..898] y[80..942] z[10..1013] centroid(511.6,480.3,503.5)
+mesh V=4772891 F=9556792
+[heap] dual_grid_to_mesh  grown 2166 MB  live 421 MB  free 1647 MB
+[stage] raw_mesh       V=4772891 bbox size (0.7546, 0.8427, 0.9794)
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+live tex cond: tokens=17748 d_proj=2048  graph peak 1538.0 MB, resident 2516.6 MB, 48.0 s
+[heap] before TextureFlow grown 2166 MB  live 558 MB  free 1510 MB
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+[gate] 2341s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2401s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2461s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2521s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2582s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2642s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2702s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2762s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2822s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2882s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 2942s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] 3002s elapsed, no new log line (a flow stage prints only when it ends)
+      [flow] [....................]  0/12    0.0s  starting          [flow] [#...................]  1/12   65.9s  ~725s left        [flow] [###.................]  2/12  132.0s  ~660s left        [flow] [#####...............]  3/12  198.1s  ~594s left        [flow] [######..............]  4/12  264.1s  ~528s left        [flow] [########............]  5/12  330.1s  ~462s left        [flow] [##########..........]  6/12  396.0s  ~396s left        [flow] [###########.........]  7/12  461.8s  ~330s left        [flow] [#############.......]  8/12  527.6s  ~264s left        [flow] [###############.....]  9/12  593.4s  ~198s left        [flow] [################....] 10/12  659.1s  ~132s left        [flow] [##################..] 11/12  724.8s  ~66s left         [flow] [####################] 12/12  790.5s  ~0s left    
+      [flow] 12 steps, 12 forwards, 790.5s
+[heap] after TextureFlow  grown 2166 MB  live 371 MB  free 1697 MB
+[stderr] [trellis] using WebGPU: WebGPU (4095 MB)
+tex_decode done: 4772891 voxels x6 (109.2 MB)
+[heap] tex_decode         grown 2577 MB  live 483 MB  free 1997 MB
+tex decode: 4772891 voxels x6 (109.2 MB), raw mesh V=4772891 F=9556792
+postprocess: input V=4772891 F=9556792 voxels=4772891 remesh_res=512 target_faces=500000 atlas=4096 [grown 2577 live 756 free 1723 MB]
+postprocess: weld begin [grown 2577 live 756 free 1723 MB]
+  weld: V 4772891->4767564 (5327 near-duplicates merged, eps=0.00012)
+  fill_holes: 7746 boundary loops filled (+31670 faces)
+postprocess: weld done V=4767564 F=9588462 [grown 2577 live 865 free 1694 MB]
+postprocess: tri_bvh begin F=9588462 [grown 2577 live 865 free 1694 MB]
+postprocess: tri_bvh done [grown 2577 live 1487 free 1072 MB]
+postprocess: remesh begin res=512 band=1 [grown 2577 live 1487 free 1072 MB]
+  remesh_dc: 2924808 active voxels -> V=2313698 F=4632296 (eps=0.001965, project_back=0.00)
+    [clean] faces=4632296, flipped 0 for consistent winding
+postprocess: remesh done V=2264499 F=4531596 dropped=70 [grown 2577 live 1567 free 993 MB]
+postprocess: qem begin F=4531596 -> 500000 [grown 2577 live 1567 free 993 MB]
+[gate] 3242s elapsed, no new log line (a flow stage prints only when it ends)
+[gate] generate: {"state":"complete","seconds":3286}
+[browser] [$updateSource] called! 
+src: null
+extraUrls: 
+loaded: false
+[browser] [$updateSource] BAILING OUT EARLY!
+[browser] [$updateSource] called! 
+src: blob:https://pixal3d-web.raven38.workers.dev/9c0e80d7-2388-47e4-af84-d3227f435e8f
+extraUrls: 
+loaded: false
+[browser] [$updateSource] BAILING OUT EARLY!
+[browser] IntersectionObserver fired! isIntersecting: true
+[browser] [$updateSource] called! 
+src: blob:https://pixal3d-web.raven38.workers.dev/9c0e80d7-2388-47e4-af84-d3227f435e8f
+extraUrls: 
+loaded: false
+[gate] glb: {"path":"/nfs/pixal3d_web_gate/l4-20260914b/web_release_gate.glb","bytes":32050460,"filename":"pixal3d.glb"}
+[browser] Failed to load resource: the server responded with a status of 404 ()
+[gate] restart: {"ready":true,"gguf_requests_before":9,"gguf_requests_after":9,"gguf_retransfers":0,"requests_after_restart":[],"status":"Ready · pixal3d-q8_0 v1 · 7.54 GB · 9 verified model(s)"}
+[gate] restart_generation_started: {"gguf_retransfers_total":0,"log_head":["preflight gpu=webgpu-ready storage=storage-ready quota=14534430916 usage=3797012676 additional=0"]}
+[gate] delete: {"usage_before":3797012676,"usage_after":0,"freed":3797012676,"state":"Not ready · 1 required item(s) missing/invalid · 0 B verified"}
+[gate] wrote /nfs/pixal3d_web_gate/l4-20260914b/web_release_gate.json (ok=true)
+gate rc=0

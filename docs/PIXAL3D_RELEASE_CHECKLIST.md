@@ -224,12 +224,49 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | MV metadata/image/alpha/mesh_scale preflight | ✅ #19 / PR #27 | headless UI CI |
 | CUDA `ss_decode` graph-support path exercised on NVIDIA hardware | ✅ #11 | NVIDIA L4 validation |
 | Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
-| Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
+| Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ✅ headless (see below) / ⬜ viewer | **real machine** |
 | Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` verify-only path is now executed in Windows CI by PR #44; full clean-install remains #18 |
 | Installer downloads/verifies the exact model set against its manifest | ✅ | `--model-manifest` / `--verify-models` (see below); verified against the real `pixal3d-q8_0 v1` set and fail-closed cases, plus Linux/Windows tiny-set CI in PR #44 |
 | Package/Tauri version matches `v0.9.0-desktop-alpha` | ✅ | #35: metadata `0.9.0` in all four files; tag carries `-desktop-alpha` (see above) |
 
 Desktop alpha deliberately requires an explicit positive `mesh_scale`. Automatic estimation from PR #5 is not part of the release path because the real calibration datasets produced large errors (cyclops expected ~1.0 → 1.261568; views4 expected ~0.206 → 0.381288).
+
+### Clean-install Linux, headless — Vulkan and CUDA (2026-09-12, NVIDIA L4 / Ubuntu 24.04 container)
+
+`install.sh --skip-app --backend vulkan --tag v0.9.0-desktop-alpha` + `trellis-cli --views` in a bare
+`ubuntu:24.04`-based image (no apt at run time), models from Hugging Face:
+
+| step | result |
+|---|:---:|
+| installer | rc 0; Vulkan runtime tarball from the release, 9 GGUF from HF, `pixal3d-q8_0 v1` verified |
+| runtime starts on a minimal image | **failed on the first attempt** — `libgomp.so.1: cannot open shared object file` (ggml-cpu links OpenMP, `libgomp1` absent). Fixed by PR #50 (bundle it + fail packaging when `ldd` reports anything unresolved); the rebuilt archive starts |
+| real GPU | `ggml_vulkan: 0 = NVIDIA L4 (NVIDIA) \| fp16: 1 \| matrix cores: NV_coopmat2`, `using Vulkan0 (23034 MB)` |
+| MV 1024 generation | rc 0, 1188.8 s total, 34,254,872-byte GLB (V=670,138 F=991,056, atlas 4096), sha256 verified after transfer |
+| stage times | SS 31.2 s / Shape-512 25.9 s / Shape-1024 251.9 s / Texture 150.7 s — **the fastest of the three paths measured** (macOS Metal native 89.1/93.3/581.5/345.2; L4 browser WebGPU 169.6/179.1/1279.0/768.2) |
+| known gap | the NAF@1024 encoder falls back to CPU on Vulkan (4-D `MUL_MAT`/`PERMUTE`/`CONT`/`RESHAPE` unsupported, once per view) — correct output, but this stage is not GPU-resident on Vulkan |
+
+Re-run on the portable-CPU archives (PR #54, `GGML_NATIVE=OFF`): same times within 0.15 %
+(31.1 / 25.8 / 252.1 / 151.3 s, total 1187.0 s) and the same GLB size, so the portability fix costs
+no measurable speed. The GLB bytes are not identical between the two builds (sha256
+`49c71902…` vs `2281f30c…`) — CPU kernel selection changes the float rounding; bit-identical output
+across builds is not claimed anywhere in this project.
+
+**CUDA 13.1 leg, same pod recipe** (`--backend cuda`, `trellis-cuda-linux-x64.tar.gz`, portable build):
+install rc 0, `ggml_cuda_init: found 1 CUDA devices (Total VRAM: 22563 MiB)`, generation rc 0 in
+**626.7 s**, GLB 35,617,428 B (V=677,419 F=996,282, atlas 4096), sha256 verified after transfer.
+Stage times **14.4 / 15.5 / 113.1 / 67.4 s** — 2.2x the Vulkan leg on the same GPU, and the NAF CPU
+fallback of the Vulkan path does not occur.
+
+| path (same input, seed 1) | SS | Shape-512 | Shape-1024 | Texture | total |
+|---|---:|---:|---:|---:|---:|
+| L4 CUDA 13.1 native | **14.4 s** | **15.5 s** | **113.1 s** | **67.4 s** | **626.7 s** |
+| L4 Vulkan native | 31.1 s | 25.8 s | 252.1 s | 151.3 s | 1187.0 s |
+| macOS M4 Max Metal native | 89.1 s | 93.3 s | 581.5 s | 345.2 s | ~1440 s |
+| L4 browser WebGPU | 169.6 s | 179.1 s | 1279.0 s | 768.2 s | 3209 s |
+
+Not covered: the Studio GUI on Linux (WebKitGTK window, gallery/save) — only the runtime and CLI.
+Logs/renders: `docs/results/linux-webgpu-gate/l4-clean-vulkan-20260912/` and
+`.../l4-clean-cuda-20260912/`.
 
 ## macOS Desktop alpha (2026-09-10)
 
@@ -249,6 +286,22 @@ real machine runs them.
 | Runtime tarball is self-contained | ✅ | the binaries resolve `@rpath/libggml*.dylib` through `@loader_path`; verified by deleting the build-directory rpath and still reaching `/health` → `ok`. Packaging strips that absolute build path and fails if `@loader_path` is missing |
 | Code signing / notarization | ⬜ | ad-hoc signature only, `TeamIdentifier=not set`. The installer clears `com.apple.quarantine`, so a scripted install works; a user double-clicking a downloaded dmg still meets Gatekeeper. Advertise as unsigned or notarize before a public release |
 | Intel macs | ⬜ | rejected explicitly by the installer (`uname -m != arm64`); only Apple Silicon is built and tested |
+
+### Clean install from the published CI artifacts (2026-09-12, macOS/M4 Max)
+
+The prerelease `v0.9.0-desktop-alpha` was created on `main` `c7848d1` and `release.yml` ran on the
+`release: published` event (run 34617440907). With `~/Library/Application Support/trellis-studio`
+absent and no `Trellis Studio.app` installed:
+
+| step | result |
+|---|:---:|
+| `install.sh --repo … --tag v0.9.0-desktop-alpha -y --model-manifest <HF manifest> --model-base-url <HF>` (the installer as of the tag) | rc 0, 8 min; runtime tarball + dmg from the release API, 9 GGUF from Hugging Face, manifest `5648ee78…` verified, app copied to `/Applications` |
+| runtime self-contained | `LC_RPATH` is `$ORIGIN` / `@loader_path` only |
+| signature | `adhoc`, `TeamIdentifier=not set` (as the release note says) |
+| Studio launch | `Trellis Studio.app` spawns `runtime/trellis-server` (child pid confirmed), `GET /health` → `ok` on 127.0.0.1:8080 |
+| MV 1024 generation through that server | `POST /generate-mv`, views4, seed 1: HTTP 200, 32,958,796-byte GLB in 28 min; GLB `generator` = `trellis.cpp v0.9.0-desktop-alpha` |
+
+Same head/nose ring/teeth/ears as the native CLI and browser runs on the same input.
 
 The tag stays `v0.9.0-desktop-alpha` with artifact metadata `0.9.0` (see the versioning note above);
 the release note must say macOS/Apple Silicon only.

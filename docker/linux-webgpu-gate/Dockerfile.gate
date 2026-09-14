@@ -1,0 +1,5 @@
+# Chrome 層 + 判定スクリプト。pod はこのイメージを `xvfb-run -a node /opt/gate/probe_webgpu.mjs` で叩くだけ。
+ARG REGISTRY=webgpu-gate
+FROM ${REGISTRY}:chrome-153
+COPY probe_webgpu.mjs /opt/gate/probe_webgpu.mjs
+CMD ["bash"]

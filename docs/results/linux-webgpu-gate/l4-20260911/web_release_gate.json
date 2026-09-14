@@ -1,0 +1,74 @@
+{
+  "started_at": "2026-09-11T10:27:00.287Z",
+  "steps": {
+    "initial_state": "Not ready · 1 required item(s) missing/invalid · 0 B verified",
+    "preflight": [
+      "Running storage / WebGPU preflight…"
+    ],
+    "adapter": {
+      "info": {},
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 2147483644
+    },
+    "install": {
+      "seconds": 437,
+      "gguf_requests": 9,
+      "status": "Ready · pixal3d-q8_0 v1 · 7.54 GB · 9 verified model(s)"
+    },
+    "storage_after_install": {
+      "quota": 18829398212,
+      "usage": 8091979972,
+      "usageDetails": {
+        "fileSystem": 8091979972
+      }
+    },
+    "generate": {
+      "state": "complete",
+      "seconds": 3209
+    },
+    "glb": {
+      "path": "/nfs/pixal3d_web_gate/l4-20260911/web_release_gate.glb",
+      "bytes": 32050460,
+      "filename": "pixal3d.glb"
+    },
+    "restart": {
+      "ready": true,
+      "gguf_requests_before": 9,
+      "gguf_requests_after": 9,
+      "gguf_retransfers": 0,
+      "requests_after_restart": [],
+      "status": "Ready · pixal3d-q8_0 v1 · 7.54 GB · 9 verified model(s)"
+    },
+    "restart_generation_started": {
+      "gguf_retransfers_total": 0,
+      "log_head": [
+        "preflight gpu=webgpu-ready storage=storage-ready quota=14534430916 usage=3797012676 additional=0"
+      ]
+    },
+    "delete": {
+      "usage_before": 3797012676,
+      "usage_after": 0,
+      "freed": 3797012676,
+      "state": "Not ready · 1 required item(s) missing/invalid · 0 B verified"
+    }
+  },
+  "ok": false,
+  "browser": "153.0.8010.12",
+  "adapter": {
+    "info": {},
+    "maxBufferSize": 4294967292,
+    "maxStorageBufferBindingSize": 2147483644
+  },
+  "storage_after_install": {
+    "quota": 18829398212,
+    "usage": 8091979972,
+    "usageDetails": {
+      "fileSystem": 8091979972
+    }
+  },
+  "model_set": {
+    "model_set": "pixal3d-q8_0",
+    "version": "v1"
+  },
+  "finished_at": "2026-09-11T11:27:51.809Z"
+}

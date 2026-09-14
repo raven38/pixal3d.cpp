@@ -1,0 +1,10 @@
+# gate 層 + release gate 一式（gate スクリプト・manifest・入力 4 view）。モデル本体は HF から直接取る。
+ARG REGISTRY=webgpu-gate
+FROM ${REGISTRY}:gate-20260911
+# 検証対象の commit SHA（run_release_gate.mjs が report.commit に書く。イメージ内に git ツリーは無い）
+ARG GATE_COMMIT
+ENV GATE_COMMIT=${GATE_COMMIT}
+COPY e2e/run_release_gate.mjs /opt/gate/run_release_gate.mjs
+COPY e2e/pixal3d-models.json /opt/gate/models/pixal3d-models.json
+COPY e2e/views /opt/gate/views
+CMD ["bash"]
