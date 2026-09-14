@@ -323,7 +323,17 @@ Supported target: Chrome/Chromium + WebGPU, resolution 1024 only. Inference stay
 
 The Web release model set is `pixal3d-q8_0 v1` (7.54 GiB), per §12's GPU-budget headroom finding. Its native E2E gate and the real Chrome/WebGPU release gate both pass against this exact manifest.
 
-Web alpha known limits: Chrome/Chromium only, WebGPU required, 1024 only, wasm32 4 GiB host address-space constraints, browser-safe 512 postprocess, and pre-matted RGBA + `transforms.json` input.
+Web alpha known limits: Chrome/Chromium only, WebGPU required, 1024 only, wasm32 4 GiB host
+address-space constraints, browser-safe 512 postprocess, and pre-matted RGBA input.
+`transforms.json` is optional for exactly four turntable views (front/right/back/left,
+elevation 0, FOV 20°); any other camera setup or view count still requires it, and the
+synthesized case requires the user to confirm `mesh_scale` explicitly — no default is assumed.
+
+**Linux + NVIDIA needs a Chrome flag.** Dawn does not expose `shader-f16` on NVIDIA/Vulkan
+without `--enable-dawn-features=vulkan_enable_f16_on_nvidia` (crbug.com/42251215, Chromium 153 /
+Dawn main 2026-09). With the flag the full gate passes on an L4 (see M12); without it the #21
+device preflight stops before the 7.54 GiB install instead of failing at generation, which is
+the intended behaviour but means stock Chrome on Linux/NVIDIA cannot run the Web alpha.
 
 ### Web alpha release gate, end to end (2026-09-10)
 

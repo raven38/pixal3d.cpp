@@ -20,6 +20,8 @@ viewInput.accept = 'image/*,.json,application/json';
 viewInput.hidden = true;
 document.body.appendChild(viewInput);
 const calibrator = initMeshScaleCalibration({ input: viewInput, mount: $('#calibration') });
+// テスト用フック（test_canonical_rig.mjs）。UI だけでは観測できない isReady() の遷移を直接検証する。
+window.__calibration = calibrator;
 
 let worker = null;
 let timer = null;
@@ -277,6 +279,8 @@ $('#reset').onclick = () => {
     log(`release manifest unavailable: ${e?.message || e}`);
   }
   await refreshModels();
+  // 合成リグの mesh_scale 確定は DOM 変化に頼らず明示イベントで拾う
+  document.addEventListener('pixal3d-calibration-change', setRunEnabled);
   const mo = new MutationObserver(setRunEnabled);
   mo.observe($('#calibration'), { subtree: true, childList: true, attributes: true });
   setRunEnabled();

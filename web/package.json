@@ -6,7 +6,11 @@
     "wrangler": "^4.131.0"
   },
   "scripts": {
-    "deploy": "wrangler deploy",
-    "preview": "wrangler dev"
+    "build": "bash ../scripts/build_web_dist.sh",
+    "predeploy": "npm run build",
+    "deploy": "wrangler deploy --config ../wrangler.jsonc",
+    "prepreview": "npm run build",
+    "preview": "wrangler dev --config ../wrangler.jsonc",
+    "test:rig": "node app/test_canonical_rig.mjs"
   }
 }
