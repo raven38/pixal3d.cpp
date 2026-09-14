@@ -1,0 +1,1 @@
+GLB 本体（32 MB）はリポジトリに入れない。~/data/pixal3d_web_gate/l4-20260914b/web_release_gate.glb（SHA256 df3c6dbb2d4f4a3541ead2f9f266968fb47aff1fa4d29a198ba83f7c5993c49b）と NFS /data/pixal3d_web_gate/l4-20260914b/ に保管

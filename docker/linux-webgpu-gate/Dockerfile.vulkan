@@ -1,0 +1,15 @@
+# Pixal3D Web 版を Linux/GPU pod で検証するためのベース層（Vulkan のみ、Chrome は別段）。
+# pod の egress は HTTPS のみ・apt 不可なので、必要物は全てここで焼き込む。
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl libvulkan1 vulkan-tools libglvnd0 libgl1 libglx0 libegl1 libgles2 \
+      libx11-6 libxext6 pciutils \
+    && rm -rf /var/lib/apt/lists/*
+# nvidia-container-toolkit が graphics capability で注入する ICD を明示しておく
+RUN mkdir -p /etc/vulkan/icd.d /etc/vulkan/implicit_layer.d /usr/share/glvnd/egl_vendor.d && \
+    printf '{"file_format_version":"1.0.0","ICD":{"library_path":"libGLX_nvidia.so.0","api_version":"1.3.0"}}\n' > /etc/vulkan/icd.d/nvidia_icd.json && \
+    printf '{"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0"}}\n' > /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+CMD ["bash"]

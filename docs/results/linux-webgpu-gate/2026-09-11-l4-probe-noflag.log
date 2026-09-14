@@ -1,0 +1,235 @@
+base=Ubuntu 24.04.4 LTS
+NVIDIA L4, 580.178.04
+	deviceName         = NVIDIA L4
+	driverName         = NVIDIA
+=== headless=new ===
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+    "maxStorageBufferBindingSize": 1073741824,
+    "maxBufferSize": 1073741824,
+  "shader_f16": false,
+      "maxBufferSize": 1073741824,
+      "maxStorageBufferBindingSize": 1073741824,
+  "device_ok": false,
+  "device_error": "TypeError: Failed to execute 'requestDevice' on 'GPUAdapter': Unsupported feature: shader-f16",
+PROBE_VERDICT=FAIL
+--- stderr (gpu/vulkan) ---
+=== xvfb + headed ===
+    "vendor": "nvidia",
+    "architecture": "lovelace",
+    "description": ""
+    "maxStorageBufferBindingSize": 2147483644,
+    "maxBufferSize": 4294967292,
+  "shader_f16": false,
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 2147483644,
+  "device_ok": false,
+  "device_error": "TypeError: Failed to execute 'requestDevice' on 'GPUAdapter': Unsupported feature: shader-f16",
+PROBE_VERDICT=FAIL
+=== JSON(new) ===
+{
+  "navigator_gpu": true,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "device": "",
+    "description": ""
+  },
+  "features": [
+    "bgra8unorm-storage",
+    "chromium-experimental-sampling-resource-table",
+    "chromium-experimental-timestamp-query-inside-passes",
+    "clip-distances",
+    "core-features-and-limits",
+    "depth-clip-control",
+    "depth32float-stencil8",
+    "float32-blendable",
+    "float32-filterable",
+    "indirect-first-instance",
+    "rg11b10ufloat-renderable",
+    "subgroup-size-control",
+    "subgroups",
+    "texture-component-swizzle",
+    "texture-compression-astc",
+    "texture-compression-astc-sliced-3d",
+    "texture-compression-bc",
+    "texture-compression-bc-sliced-3d",
+    "texture-compression-etc2",
+    "texture-compression-unaligned",
+    "timestamp-query"
+  ],
+  "limits": {
+    "maxTextureDimension1D": 8192,
+    "maxTextureDimension2D": 8192,
+    "maxTextureDimension3D": 2048,
+    "maxTextureArrayLayers": 256,
+    "maxBindGroups": 4,
+    "maxBindGroupsPlusVertexBuffers": 24,
+    "maxBindingsPerBindGroup": 1000,
+    "maxDynamicUniformBuffersPerPipelineLayout": 8,
+    "maxDynamicStorageBuffersPerPipelineLayout": 4,
+    "maxSampledTexturesPerShaderStage": 16,
+    "maxSamplersPerShaderStage": 16,
+    "maxStorageBuffersPerShaderStage": 10,
+    "maxStorageTexturesPerShaderStage": 4,
+    "maxUniformBuffersPerShaderStage": 12,
+    "maxUniformBufferBindingSize": 65536,
+    "maxStorageBufferBindingSize": 1073741824,
+    "minUniformBufferOffsetAlignment": 256,
+    "minStorageBufferOffsetAlignment": 256,
+    "maxVertexBuffers": 8,
+    "maxBufferSize": 1073741824,
+    "maxVertexAttributes": 16,
+    "maxVertexBufferArrayStride": 2048,
+    "maxInterStageShaderVariables": 28,
+    "maxColorAttachments": 8,
+    "maxColorAttachmentBytesPerSample": 128,
+    "maxComputeWorkgroupStorageSize": 32768,
+    "maxComputeInvocationsPerWorkgroup": 256,
+    "maxComputeWorkgroupSizeX": 256,
+    "maxComputeWorkgroupSizeY": 256,
+    "maxComputeWorkgroupSizeZ": 64,
+    "maxComputeWorkgroupsPerDimension": 65535,
+    "maxImmediateSize": 64,
+    "maxStorageBuffersInFragmentStage": 10,
+    "maxStorageTexturesInFragmentStage": 4,
+    "maxStorageBuffersInVertexStage": 10,
+    "maxStorageTexturesInVertexStage": 4
+  },
+  "shader_f16": false,
+  "device_request": {
+    "requiredFeatures": [
+      "shader-f16",
+      "subgroups"
+    ],
+    "requiredLimits": {
+      "maxBufferSize": 1073741824,
+      "maxStorageBufferBindingSize": 1073741824,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 256,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxBindGroups": 4
+    }
+  },
+  "device_ok": false,
+  "device_error": "TypeError: Failed to execute 'requestDevice' on 'GPUAdapter': Unsupported feature: shader-f16",
+  "mode": "new",
+  "chromium": "153.0.8010.12",
+  "args": [
+    "--enable-unsafe-webgpu",
+    "--use-angle=vulkan",
+    "--enable-features=Vulkan,WebGPU",
+    "--ignore-gpu-blocklist",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--enable-logging=stderr",
+    "--v=1"
+  ],
+  "at": "2026-09-11T08:16:34.754Z",
+  "nvidia_smi": "NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  580.178.04  Release Build  Tue Jul  7 12:18:12 UTC 2026"
+}=== JSON(xvfb) ===
+{
+  "navigator_gpu": true,
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "lovelace",
+    "device": "",
+    "description": ""
+  },
+  "features": [
+    "bgra8unorm-storage",
+    "chromium-experimental-multi-draw-indirect",
+    "chromium-experimental-sampling-resource-table",
+    "chromium-experimental-subgroup-matrix",
+    "chromium-experimental-timestamp-query-inside-passes",
+    "clip-distances",
+    "core-features-and-limits",
+    "depth-clip-control",
+    "depth32float-stencil8",
+    "dual-source-blending",
+    "float32-blendable",
+    "float32-filterable",
+    "indirect-first-instance",
+    "primitive-index",
+    "rg11b10ufloat-renderable",
+    "subgroup-size-control",
+    "subgroups",
+    "texture-component-swizzle",
+    "texture-compression-bc",
+    "texture-compression-bc-sliced-3d",
+    "texture-compression-unaligned",
+    "texture-formats-tier1",
+    "texture-formats-tier2",
+    "timestamp-query"
+  ],
+  "limits": {
+    "maxTextureDimension1D": 16384,
+    "maxTextureDimension2D": 16384,
+    "maxTextureDimension3D": 2048,
+    "maxTextureArrayLayers": 2048,
+    "maxBindGroups": 4,
+    "maxBindGroupsPlusVertexBuffers": 24,
+    "maxBindingsPerBindGroup": 1000,
+    "maxDynamicUniformBuffersPerPipelineLayout": 10,
+    "maxDynamicStorageBuffersPerPipelineLayout": 8,
+    "maxSampledTexturesPerShaderStage": 48,
+    "maxSamplersPerShaderStage": 16,
+    "maxStorageBuffersPerShaderStage": 16,
+    "maxStorageTexturesPerShaderStage": 8,
+    "maxUniformBuffersPerShaderStage": 12,
+    "maxUniformBufferBindingSize": 65536,
+    "maxStorageBufferBindingSize": 2147483644,
+    "minUniformBufferOffsetAlignment": 256,
+    "minStorageBufferOffsetAlignment": 256,
+    "maxVertexBuffers": 8,
+    "maxBufferSize": 4294967292,
+    "maxVertexAttributes": 30,
+    "maxVertexBufferArrayStride": 2048,
+    "maxInterStageShaderVariables": 28,
+    "maxColorAttachments": 8,
+    "maxColorAttachmentBytesPerSample": 128,
+    "maxComputeWorkgroupStorageSize": 49152,
+    "maxComputeInvocationsPerWorkgroup": 1024,
+    "maxComputeWorkgroupSizeX": 1024,
+    "maxComputeWorkgroupSizeY": 1024,
+    "maxComputeWorkgroupSizeZ": 64,
+    "maxComputeWorkgroupsPerDimension": 65535,
+    "maxImmediateSize": 64,
+    "maxStorageBuffersInFragmentStage": 16,
+    "maxStorageTexturesInFragmentStage": 8,
+    "maxStorageBuffersInVertexStage": 16,
+    "maxStorageTexturesInVertexStage": 8
+  },
+  "shader_f16": false,
+  "device_request": {
+    "requiredFeatures": [
+      "shader-f16",
+      "subgroups"
+    ],
+    "requiredLimits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 2147483644,
+      "maxComputeWorkgroupStorageSize": 49152,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxStorageBuffersPerShaderStage": 16,
+      "maxBindGroups": 4
+    }
+  },
+  "device_ok": false,
+  "device_error": "TypeError: Failed to execute 'requestDevice' on 'GPUAdapter': Unsupported feature: shader-f16",
+  "mode": "xvfb",
+  "chromium": "153.0.8010.12",
+  "args": [
+    "--enable-unsafe-webgpu",
+    "--use-angle=vulkan",
+    "--enable-features=Vulkan,WebGPU",
+    "--ignore-gpu-blocklist",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--enable-logging=stderr",
+    "--v=1"
+  ],
+  "at": "2026-09-11T08:16:36.134Z",
+  "nvidia_smi": "NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  580.178.04  Release Build  Tue Jul  7 12:18:12 UTC 2026"
+}
