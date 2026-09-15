@@ -314,6 +314,13 @@ int main(int argc, char** argv) {
                 trellis::TransformsFile probe;
                 std::string verr;
                 if (!trellis::load_views_metadata(p.views, p.mesh_scale, p.mesh_scale_set, probe, verr)) {
+                    // サーバ内部の staging パスを応答に出さない（利用者には意味がなく、実体も漏らす）。
+                    const std::string prefix = p.views;
+                    size_t at = verr.find(prefix);
+                    while (at != std::string::npos) {
+                        verr.replace(at, prefix.size(), "the uploaded views");
+                        at = verr.find(prefix);
+                    }
                     std::filesystem::remove_all(view_dir, ec);
                     cleanup_outputs(stem);
                     set_error(res, 400, verr);
