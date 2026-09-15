@@ -3,7 +3,7 @@
 
 The automatic path mirrors TencentARC/Pixal3D inference.py: MoGe-2 estimates
 normalized intrinsics, horizontal FOV is derived from fx, and camera distance
-is computed from FOV plus the caller-provided mesh_scale.  The output is a
+is computed from FOV plus the caller-provided mesh_scale. The output is a
 normal Pixal3D transforms.json so the existing camera-aware runtime stays
 unchanged.
 
@@ -75,9 +75,9 @@ def estimate_fov_moge(image_path: Path, model_name: str, device: str) -> float:
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    image = Image.open(image_path).convert("RGBA")
-    white = Image.new("RGBA", image.size, (255, 255, 255, 255))
-    rgb = Image.alpha_composite(white, image).convert("RGB")
+    # Match official Pixal3D get_camera_params_wild_moge(): open the image and
+    # convert directly to RGB. Do not invent an alpha-compositing policy here.
+    rgb = Image.open(image_path).convert("RGB")
     image_np = np.asarray(rgb, dtype=np.float32) / 255.0
     image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).to(device)
 
