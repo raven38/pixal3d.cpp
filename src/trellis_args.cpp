@@ -2,10 +2,35 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
+#include <climits>
+#include <cmath>
 #include <cstring>
 #include <string>
 
 namespace trellis {
+namespace {
+// atoi/atof は "abc" を 0、"4x" を 4 として黙って受けるので、全体消費を要求する厳密版を使う。
+bool parse_int_strict(const char* s, int& out) {
+    if (!s || !*s) return false;
+    char* end = nullptr;
+    errno = 0;
+    const long v = std::strtol(s, &end, 10);
+    if (errno == ERANGE || !end || *end != '\0' || v < INT_MIN || v > INT_MAX) return false;
+    out = (int)v;
+    return true;
+}
+bool parse_float_strict(const char* s, float& out) {
+    if (!s || !*s) return false;
+    char* end = nullptr;
+    errno = 0;
+    const double v = std::strtod(s, &end);
+    if (!end || *end != '\0') return false;
+    out = (float)v;
+    return true;
+}
+} // namespace
+
 
 void print_usage(const char* argv0, bool server) {
     if (server) {
@@ -33,6 +58,10 @@ void print_usage(const char* argv0, bool server) {
         "                          with the positional/--image input; mandatory cascade\n"
         "                          (--res 512 is not supported -- no res-512 texture flow)\n"
         "      --num-views N       use only the first N transforms.json frames (default: all)\n"
+        "      --mesh-scale F      Pixal3D projection scale (> 0). Required when --views DIR\n"
+        "                          has no transforms.json (exactly 4 turntable views, natural\n"
+        "                          filename order = front, right, back, left, elevation 0,\n"
+        "                          FOV 20 deg); with transforms.json it overrides its value.\n"
         "      --bg-removal MODE   threshold | birefnet   (default: auto -- a pre-matted\n"
         "                          image keeps its alpha; otherwise BiRefNet when its model\n"
         "                          is present. The plain threshold matte cuts out specular\n"
@@ -94,7 +123,14 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
         else if (a == "--views")                { const char* v = need(a.c_str()); if (!v) return false; p.views = v; }
-        else if (a == "--num-views")            { const char* v = need(a.c_str()); if (!v) return false; p.num_views = atoi(v); }
+        else if (a == "--num-views")            { const char* v = need(a.c_str()); if (!v) return false;
+                                                  if (!parse_int_strict(v, p.num_views) || p.num_views <= 0) {
+                                                      fprintf(stderr, "[trellis] --num-views expects a positive integer, got '%s'\n", v); return false; }
+                                                  p.num_views_set = true; }
+        else if (a == "--mesh-scale")           { const char* v = need(a.c_str()); if (!v) return false;
+                                                  if (!parse_float_strict(v, p.mesh_scale) || !std::isfinite(p.mesh_scale) || p.mesh_scale <= 0.0f) {
+                                                      fprintf(stderr, "[trellis] --mesh-scale expects a finite value > 0, got '%s'\n", v); return false; }
+                                                  p.mesh_scale_set = true; }
         else if (a == "--bg-removal")           { const char* v = need(a.c_str()); if (!v) return false; p.birefnet = (std::strcmp(v, "birefnet") == 0) ? 1 : 0; }
         else if (a == "--birefnet")             { p.birefnet = 1; }
         else if (a == "--no-texture")           { p.texture = false; }

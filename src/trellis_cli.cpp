@@ -16,6 +16,7 @@
 #include "trellis_run.h"
 #include "pixal3d_cond.h"
 #include "transforms_json.h"
+#include <filesystem>
 // Declarations only (no *_IMPLEMENTATION define here) -- stbi_load/stbir_resize_uint8 are
 // implemented once in preprocess.cpp, part of trellis_core, which this binary links against.
 #include "stb_image.h"
@@ -106,7 +107,24 @@ static bool mv_load_views(const trellis::TrellisParams& cfg,
                            std::vector<trellis::Pixal3dView>& v1024,
                            float& mesh_scale) {
     trellis::TransformsFile tf;
-    if (!trellis::load_transforms_json(cfg.views + "/transforms.json", tf)) return false;
+    std::string err;
+    if (!trellis::load_views_metadata(cfg.views, cfg.mesh_scale, cfg.mesh_scale_set, tf, err)) {
+        fprintf(stderr, "[trellis] %s\n", err.c_str());
+        return false;
+    }
+    const bool synthesized = tf.frames.size() == (size_t)trellis::CANONICAL_RIG_VIEWS &&
+                             !std::filesystem::exists(cfg.views + "/transforms.json");
+    if (synthesized) {
+        printf("      no transforms.json: canonical turntable rig (front/right/back/left), "
+               "mesh_scale=%.4f\n", (double)tf.mesh_scale);
+        for (size_t i = 0; i < tf.frames.size(); ++i) printf("        %zu %s\n", i + 1, tf.frames[i].file_path.c_str());
+        // 合成モードで視点数を削ると rig の前提（4 視点）が崩れるので、4 以外は拒否する。
+        if (cfg.num_views_set && cfg.num_views != trellis::CANONICAL_RIG_VIEWS) {
+            fprintf(stderr, "[trellis] --num-views %d is not usable without transforms.json; the canonical rig needs all %d views\n",
+                    cfg.num_views, trellis::CANONICAL_RIG_VIEWS);
+            return false;
+        }
+    }
 
     const int nframes = (int)tf.frames.size();
     const int use_n = (cfg.num_views > 0) ? std::min(cfg.num_views, nframes) : nframes;
