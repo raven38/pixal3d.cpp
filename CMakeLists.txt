@@ -348,6 +348,10 @@ add_executable(trellis-shape-dec-alloc-trace src/shape_dec_alloc_trace.cpp)
 target_link_libraries(trellis-shape-dec-alloc-trace PRIVATE trellis_core)
 set_target_properties(trellis-shape-dec-alloc-trace PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+add_executable(trellis-test-transforms-synth src/test_transforms_synth.cpp)
+target_link_libraries(trellis-test-transforms-synth PRIVATE trellis_core)
+set_target_properties(trellis-test-transforms-synth PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-ss-flow src/test_ss_flow.cpp)
 target_link_libraries(trellis-test-ss-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")

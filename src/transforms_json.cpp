@@ -1,11 +1,13 @@
 #include "transforms_json.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <memory>
+#include <filesystem>
 #include <sstream>
 #include <utility>
 
@@ -208,6 +210,127 @@ bool load_transforms_json(const std::string& path, TransformsFile& out) {
         out.frames.push_back(std::move(tf));
     }
     if (out.frames.empty()) { fprintf(stderr, "transforms_json: %s has zero frames\n", path.c_str()); return false; }
+    return true;
+}
+
+// ---- canonical rig（transforms.json を持たない入力）---------------------------------------
+
+// web/real_e2e/calibration.js の CANONICAL_RIG と同一の値。front / right / back / left、
+// 仰角 0、距離 3.1192049980163574、camera_angle_x 20°(0.3490658503988659 rad)。
+namespace {
+constexpr float kCanonicalFov = 0.3490658503988659f;
+constexpr float kCanonicalDist = 3.1192049980163574f;
+const float kCanonicalPoses[CANONICAL_RIG_VIEWS][16] = {
+    { 1, 0,  0, 0,   0, 0, -1, -kCanonicalDist,   0, 1, 0, 0,   0, 0, 0, 1 },  // front (azim 0)
+    { 0, 0,  1, kCanonicalDist,   1, 0, 0, 0,     0, 1, 0, 0,   0, 0, 0, 1 },  // right (azim 90)
+    {-1, 0,  0, 0,   0, 0,  1,  kCanonicalDist,   0, 1, 0, 0,   0, 0, 0, 1 },  // back  (azim 180)
+    { 0, 0, -1, -kCanonicalDist, -1, 0, 0, 0,     0, 1, 0, 0,   0, 0, 0, 1 },  // left  (azim 270)
+};
+const char* kCanonicalNames[CANONICAL_RIG_VIEWS] = {
+    "front (azim 0)", "right (azim 90)", "back (azim 180)", "left (azim 270)"
+};
+
+bool has_image_extension(const std::string& name) {
+    const size_t dot = name.rfind('.');
+    if (dot == std::string::npos) return false;
+    std::string ext = name.substr(dot + 1);
+    for (char& c : ext) c = (char)std::tolower((unsigned char)c);
+    return ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "webp";
+}
+} // namespace
+
+bool natural_name_less(const std::string& a, const std::string& b) {
+    size_t i = 0, j = 0;
+    while (i < a.size() && j < b.size()) {
+        const bool da = std::isdigit((unsigned char)a[i]) != 0;
+        const bool db = std::isdigit((unsigned char)b[j]) != 0;
+        if (da && db) {
+            // 数字列は整数として比較する（先頭の 0 を無視した桁数 → 辞書順）。
+            size_t ia = i, ib = j;
+            while (ia < a.size() && std::isdigit((unsigned char)a[ia])) ++ia;
+            while (ib < b.size() && std::isdigit((unsigned char)b[ib])) ++ib;
+            size_t sa = i, sb = j;
+            while (sa + 1 < ia && a[sa] == '0') ++sa;
+            while (sb + 1 < ib && b[sb] == '0') ++sb;
+            const size_t la = ia - sa, lb = ib - sb;
+            if (la != lb) return la < lb;
+            const int cmp = a.compare(sa, la, b, sb, lb);
+            if (cmp != 0) return cmp < 0;
+            i = ia; j = ib;              // 数値は同値。次の区間へ
+            continue;
+        }
+        if (a[i] != b[j]) return (unsigned char)a[i] < (unsigned char)b[j];
+        ++i; ++j;
+    }
+    if (i < a.size() || j < b.size()) return a.size() < b.size();
+    return a < b;                        // 数値同値（"view02" vs "view2"）はバイト列で決める
+}
+
+std::vector<std::string> list_view_images(const std::string& dir) {
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) break;
+        if (!e.is_regular_file()) continue;
+        const std::string name = e.path().filename().string();
+        if (name.empty() || name[0] == '.') continue;   // ._* 等の付随ファイルを拾わない
+        if (has_image_extension(name)) names.push_back(name);
+    }
+    std::sort(names.begin(), names.end(), natural_name_less);
+    return names;
+}
+
+bool synthesize_canonical_rig(const std::vector<std::string>& image_files, float mesh_scale,
+                              TransformsFile& out, std::string& error) {
+    if ((int)image_files.size() != CANONICAL_RIG_VIEWS) {
+        error = "without transforms.json exactly " + std::to_string(CANONICAL_RIG_VIEWS) +
+                " views are required (front, right, back, left on a turntable); found " +
+                std::to_string(image_files.size());
+        return false;
+    }
+    if (!std::isfinite(mesh_scale) || mesh_scale <= 0.0f) {
+        error = "a synthesized rig needs an explicit positive mesh_scale; refusing to assume 1.0 "
+                "because an incorrect scale can silently corrupt Pixal3D multiview geometry";
+        return false;
+    }
+    out = TransformsFile{};
+    out.camera_angle_x = kCanonicalFov;
+    out.has_camera_angle_x = true;
+    out.mesh_scale = mesh_scale;
+    out.frames.reserve(CANONICAL_RIG_VIEWS);
+    for (int i = 0; i < CANONICAL_RIG_VIEWS; ++i) {
+        TransformsFrame tf{};
+        tf.file_path = image_files[i];
+        for (int k = 0; k < 16; ++k) tf.transform_matrix[k] = kCanonicalPoses[i][k];
+        out.frames.push_back(std::move(tf));
+    }
+    return true;
+}
+
+bool load_views_metadata(const std::string& dir, float mesh_scale, bool mesh_scale_set,
+                         TransformsFile& out, std::string& error) {
+    const std::string json_path = dir + "/transforms.json";
+    std::error_code ec;
+    // fallback は「transforms.json が存在しない」ときだけ。空ファイル・壊れた JSON・ディレクトリ・
+    // 読めない場合は従来どおり失敗させる（fail closed）。
+    const bool has_json = std::filesystem::exists(json_path, ec) && !ec;
+    if (has_json) {
+        if (!load_transforms_json(json_path, out)) { error = "failed to load " + json_path; return false; }
+        if (mesh_scale_set) {
+            if (!std::isfinite(mesh_scale) || mesh_scale <= 0.0f) {
+                error = "invalid --mesh-scale; expected a finite value > 0";
+                return false;
+            }
+            out.mesh_scale = mesh_scale;   // parse 成功後の上書きだけを許す
+        }
+        return true;
+    }
+    if (!std::filesystem::is_directory(dir, ec) || ec) { error = dir + " is not a directory"; return false; }
+    const std::vector<std::string> images = list_view_images(dir);
+    if (!synthesize_canonical_rig(images, mesh_scale_set ? mesh_scale : 0.0f, out, error)) {
+        error = dir + "/transforms.json not found and the canonical rig could not be used: " + error;
+        return false;
+    }
     return true;
 }
 

@@ -17,16 +17,21 @@ REPO="${TRELLIS_REPO:-raven38/pixal3d.cpp}"
 TAG="${TRELLIS_TAG:-latest-prerelease}"
 MODEL_BASE_URL="${PIXAL3D_MODEL_BASE_URL:-https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/main}"
 VIEWS=""; OUT="pixal3d.glb"; SEED=1; NUM_VIEWS=""; SERVER=""; RES=""; EXTRA=()
+MESH_SCALE=""
 DEST="${TRELLIS_DEST:-${XDG_DATA_HOME:-$HOME/.local/share}/trellis-studio}"
 
 usage() {
   cat <<USAGE
 generate.sh — fetch runtime + weights once, then generate a GLB
 
-  --views DIR        multiview input dir (transforms.json + view PNGs)   [required]
+  --views DIR        multiview input dir: transforms.json + view PNGs, or exactly 4
+                     turntable views (front/right/back/left in natural filename order)
+                     with --mesh-scale and no transforms.json                [required]
   -o, --output PATH  output .glb (default $OUT)
   --seed N           RNG seed (default $SEED)
   --num-views N      use only the first N frames
+  --mesh-scale F     Pixal3D projection scale (> 0). Required without transforms.json;
+                     with transforms.json it overrides the value inside it.
   --res 1024|1536    geometry resolution (local mode only)
   --server URL       remote mode: POST to a running trellis-server instead of running locally
   --repo OWNER/NAME  release repo for the runtime (default $REPO)
@@ -42,6 +47,7 @@ while [ $# -gt 0 ]; do
     -o|--output) OUT="$2"; shift 2;;
     --seed) SEED="$2"; shift 2;;
     --num-views) NUM_VIEWS="$2"; shift 2;;
+    --mesh-scale) MESH_SCALE="$2"; shift 2;;
     --res) RES="$2"; shift 2;;
     --server) SERVER="$2"; shift 2;;
     --repo) REPO="$2"; shift 2;;
@@ -54,7 +60,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$VIEWS" ] || { echo "--views DIR is required" >&2; usage; exit 1; }
-[ -f "$VIEWS/transforms.json" ] || { echo "$VIEWS/transforms.json not found" >&2; exit 1; }
+[ -d "$VIEWS" ] || { echo "--views $VIEWS is not a directory" >&2; exit 1; }
+# transforms.json が無い場合は canonical rig（4 視点 + 明示 mesh_scale）。判定と拒否は
+# ランタイム側（trellis-cli / trellis-server）が行うので、ここでは前提だけ確認する。
+if [ ! -f "$VIEWS/transforms.json" ] && [ -z "$MESH_SCALE" ]; then
+  echo "$VIEWS/transforms.json not found; pass --mesh-scale F to use the canonical 4-view rig" >&2
+  exit 1
+fi
 info() { echo "[generate] $*" >&2; }
 
 # ---- remote: 常駐サーバへ投げるだけ -------------------------------------------
@@ -62,11 +74,23 @@ if [ -n "$SERVER" ]; then
   # transforms.json の frame file_path と同じ相対名で各 view を multipart に載せる
   # （trellis-server はファイル名を transforms.json 相対で staging する）。
   # POST /generate-mv: part 名は view0, view1, …、filename は transforms.json の file_path。
-  args=(-F "transforms=@$VIEWS/transforms.json"); i=0
-  while IFS= read -r f; do
-    args+=(-F "view$i=@$VIEWS/$f;filename=$f"); i=$((i+1))
-  done < <(grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' "$VIEWS/transforms.json" | sed 's/.*"\([^"]*\)"$/\1/')
+  args=(); i=0
+  if [ -f "$VIEWS/transforms.json" ]; then
+    args+=(-F "transforms=@$VIEWS/transforms.json")
+    while IFS= read -r f; do
+      args+=(-F "view$i=@$VIEWS/$f;filename=$f"); i=$((i+1))
+    done < <(grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' "$VIEWS/transforms.json" | sed 's/.*"\([^"]*\)"$/\1/')
+  else
+    # transforms.json 無し: 画像を自然順（-V。GNU/BSD sort 共通で数字を数値として並べる）で
+    # view0..3 として送る。姿勢の割り当てはサーバ側の canonical rig が行う。
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      b="$(basename "$f")"
+      args+=(-F "view$i=@$f;filename=$b"); i=$((i+1))
+    done < <(find "$VIEWS" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) ! -name '.*' | sort -V)
+  fi
   [ -n "$NUM_VIEWS" ] && args+=(-F "num_views=$NUM_VIEWS")
+  [ -n "$MESH_SCALE" ] && args+=(-F "mesh_scale=$MESH_SCALE")
   [ -n "$RES" ] && args+=(-F "resolution=$RES")
   args+=(-F "seed=$SEED")
   info "POST $SERVER/generate-mv ($i views) -> $OUT"
@@ -101,6 +125,7 @@ fi
 
 cmd=("$CLI" --views "$VIEWS" --models "$MODELS" --seed "$SEED" --require-gpu -o "$OUT")
 [ -n "$NUM_VIEWS" ] && cmd+=(--num-views "$NUM_VIEWS")
+[ -n "$MESH_SCALE" ] && cmd+=(--mesh-scale "$MESH_SCALE")
 [ -n "$RES" ] && cmd+=(--res "$RES")
 info "${cmd[*]} ${EXTRA[*]:-}"
 "${cmd[@]}" "${EXTRA[@]}"

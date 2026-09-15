@@ -23,6 +23,10 @@ struct TrellisParams {
                                  // non-empty selects the Pixal3D cascade instead of TRELLIS.2.
     int num_views = 0;           // --num-views N: use only the first N transforms.json frames
                                  // (0/unset = all frames).
+    bool num_views_set = false;  // --num-views が明示されたか（0 や負値と未指定を区別する）
+    float mesh_scale = 0.0f;     // --mesh-scale F: transforms.json が無いときの必須スケール。
+                                 // ある場合は parse 成功後の上書きとして働く。
+    bool mesh_scale_set = false; // --mesh-scale が明示されたか（0.0 は無効値であって未指定ではない）
     std::string output = "model.glb";                           // output .glb
     std::string copyright;                                      // glTF asset.copyright metadata
     std::string models = "models";              // GGUF dir; override with --models DIR

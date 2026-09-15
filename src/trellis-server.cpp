@@ -7,8 +7,10 @@
 //                        chart space; box = faster projection), "band" (narrow-band
 //                        DC remesh band width, default 1 — see --band). Returns
 //                        model/gltf-binary.
-//   POST /generate-mv   Pixal3D multiview endpoint. Multipart must contain a
-//                        "transforms" file part (transforms.json) and one or more
+//   POST /generate-mv   Pixal3D multiview endpoint. Multipart may contain a
+//                        "transforms" file part (transforms.json); without it, exactly 4
+//                        turntable views plus a "mesh_scale" field select the canonical
+//                        rig (front/right/back/left). It also takes one or more
 //                        view image parts named "view0", "view1", ... . Each view's
 //                        multipart filename is staged relative to transforms.json,
 //                        so it must match the frame file_path used by transforms.json.
@@ -22,6 +24,7 @@
 // (per-stage load/free, like trellis-cli), serialized by a mutex. Keeping the
 // process resident avoids re-initializing the Vulkan backend on every request.
 #include "trellis_args.h"
+#include "transforms_json.h"
 #include "trellis_run.h"
 #include "httplib.h"
 
@@ -30,6 +33,13 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <cmath>
+#include <random>
+#ifndef _WIN32
+#include <unistd.h>
+#else
+#include <process.h>
+#endif
 #include <string>
 
 namespace {
@@ -58,7 +68,23 @@ std::string temp_stem() {
     std::filesystem::path dir = std::filesystem::temp_directory_path(ec);
     if (ec) dir = ".";
     auto n = counter.fetch_add(1);
-    return (dir / ("trellis-req-" + std::to_string(n))).string();
+    // プロセス毎に 0 から振り直すと、クラッシュ後の残骸ディレクトリを次のリクエストが再利用
+    // しうる。multiview はディレクトリ内の画像を数えるので、残骸 1 枚で「4 枚」を誤認する。
+    // pid + 乱数で衝突しない名前にし、作成も排他で行う（呼び出し側で存在チェック）。
+    static const std::string salt = [] {
+        std::random_device rd;
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%llx-%llx",
+                 (unsigned long long)
+#ifdef _WIN32
+                 _getpid(),
+#else
+                 getpid(),
+#endif
+                 ((unsigned long long)rd() << 32) ^ (unsigned long long)rd());
+        return std::string(buf);
+    }();
+    return (dir / ("trellis-req-" + salt + "-" + std::to_string(n))).string();
 }
 
 void set_error(httplib::Response& res, int status, const std::string& message) {
@@ -194,14 +220,39 @@ int main(int argc, char** argv) {
     });
 
     svr.Post("/generate-mv", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!req.has_file("transforms")) {
-            set_error(res, 400, "missing 'transforms' file part");
-            return;
-        }
+        // transforms.json は任意。無い場合は canonical rig（4 視点）で合成するので、
+        // 代わりに mesh_scale フォームフィールドが必須になる。
+        const bool has_transforms = req.has_file("transforms");
 
         trellis::TrellisParams p = base;
         apply_common_overrides(req, p);
-        if (req.has_file("num_views")) p.num_views = atoi(req.get_file_value("num_views").content.c_str());
+        if (req.has_file("num_views")) {
+            const std::string v = req.get_file_value("num_views").content;
+            char* end = nullptr;
+            const long n = std::strtol(v.c_str(), &end, 10);
+            if (!end || *end != '\0' || n <= 0 || n > 1024) {
+                set_error(res, 400, "num_views must be a positive integer");
+                return;
+            }
+            p.num_views = (int)n;
+            p.num_views_set = true;
+        }
+        if (req.has_file("mesh_scale")) {
+            const std::string v = req.get_file_value("mesh_scale").content;
+            char* end = nullptr;
+            const double d = std::strtod(v.c_str(), &end);
+            if (!end || *end != '\0' || !std::isfinite(d) || d <= 0.0) {
+                set_error(res, 400, "mesh_scale must be a finite value > 0");
+                return;
+            }
+            p.mesh_scale = (float)d;
+            p.mesh_scale_set = true;
+        }
+        if (!has_transforms && !p.mesh_scale_set) {
+            set_error(res, 400, "without a 'transforms' part, an explicit 'mesh_scale' field is required "
+                                "(4 turntable views: front, right, back, left)");
+            return;
+        }
         if (!p.cascade || p.hr_res < 1024) {
             set_error(res, 400, "multiview generation requires resolution 1024 or 1536");
             return;
@@ -218,14 +269,17 @@ int main(int argc, char** argv) {
         {
             std::lock_guard<std::mutex> lk(gen_mu);
             std::error_code ec;
-            std::filesystem::create_directories(view_dir, ec);
-            if (ec) {
-                set_error(res, 500, "failed to create multiview staging directory");
+            // 既存ディレクトリを使い回さない（残骸の画像が視点数の判定に混ざるため）。
+            if (!std::filesystem::create_directory(view_dir, ec) || ec) {
+                set_error(res, 500, "failed to create a fresh multiview staging directory");
                 return;
             }
 
-            bool staged_ok = write_file_bytes((view_dir / "transforms.json").string(),
-                                               req.get_file_value("transforms").content);
+            bool staged_ok = true;
+            if (has_transforms) {
+                staged_ok = write_file_bytes((view_dir / "transforms.json").string(),
+                                             req.get_file_value("transforms").content);
+            }
             int staged_views = 0;
             if (staged_ok) {
                 for (const auto& kv : req.files) {
@@ -254,9 +308,30 @@ int main(int argc, char** argv) {
                 return;
             }
 
+            // モデルを読む前に入力契約を検証し、具体的な理由を 400 で返す
+            // （従来は generic 500 になり、視点数や mesh_scale の誤りが利用者に伝わらなかった）。
+            {
+                trellis::TransformsFile probe;
+                std::string verr;
+                if (!trellis::load_views_metadata(p.views, p.mesh_scale, p.mesh_scale_set, probe, verr)) {
+                    std::filesystem::remove_all(view_dir, ec);
+                    cleanup_outputs(stem);
+                    set_error(res, 400, verr);
+                    return;
+                }
+                if (!has_transforms && p.num_views_set && p.num_views != trellis::CANONICAL_RIG_VIEWS) {
+                    std::filesystem::remove_all(view_dir, ec);
+                    cleanup_outputs(stem);
+                    set_error(res, 400, "num_views must be " + std::to_string(trellis::CANONICAL_RIG_VIEWS) +
+                                        " when no transforms part is sent");
+                    return;
+                }
+            }
+
             fprintf(stderr,
-                    "[trellis-server] generate-mv: %d staged views, seed %u, res %d, uv %s, num_views=%d\n",
-                    staged_views, p.seed, p.hr_res, p.xatlas ? "xatlas" : "box", p.num_views);
+                    "[trellis-server] generate-mv: %d staged views (%s), seed %u, res %d, uv %s, num_views=%d\n",
+                    staged_views, has_transforms ? "transforms.json" : "canonical rig", p.seed, p.hr_res,
+                    p.xatlas ? "xatlas" : "box", p.num_views);
             try {
                 int rc = trellis_run(p);
                 if (rc == 0) glb = read_file_bytes(p.output);

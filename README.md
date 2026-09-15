@@ -173,6 +173,21 @@ does no background matting, unlike the single-image path. `--num-views N` uses o
 `N` frames. `--views` is mutually exclusive with the positional/`--image` input, and `--res 512`
 is rejected: Pixal3D ships no res-512 texture flow, so the 1024/1536 cascade is mandatory.
 
+**Without `transforms.json`**, a directory holding **exactly four** turntable views works too, as
+long as you pass `--mesh-scale F` (a positive projection scale — no default is assumed, because a
+wrong scale silently corrupts the reconstruction):
+
+```
+trellis-cli --views ./views --mesh-scale 1.0 --models pixal3d_models --seed 42 out.glb
+```
+
+The four images are sorted by filename in natural order (`view2` before `view10`) and taken as
+**front, right, back, left** — elevation 0, camera distance 3.119, FOV 20°, the same canonical rig
+the browser app synthesizes (`web/real_e2e/calibration.js`). Anything else — three or five images,
+a missing `--mesh-scale`, `--num-views` other than 4 — is rejected rather than guessed. A present
+but malformed `transforms.json` is still an error; the rig is used only when the file is absent.
+With `transforms.json` present, `--mesh-scale` overrides the value inside it.
+
 `--models DIR` needs `dinov3.gguf`, `pixal3d_naf.gguf`, `pixal3d_ss_flow_mv.gguf`,
 `pixal3d_shape_flow_512_mv.gguf`, `pixal3d_shape_flow_1024_mv.gguf`,
 `pixal3d_tex_flow_1024_mv.gguf`, `ss_dec.gguf`, `shape_dec.gguf`, `tex_dec.gguf` (the same

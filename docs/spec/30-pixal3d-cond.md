@@ -70,6 +70,12 @@ DINOv3 only (NAF receives the **un-normalized** [0,1] image).
 `transforms.json` frames: `transform_matrix` = 4×4 c2w (Blender/NeRF, Z-up world), `camera_angle_x` (rad, per frame or
 top-level), `mesh_scale`; `distance_i = ‖c2w_i[:3,3]‖`. Frame 0 = main view, expected to be the canonical front view.
 
+When the input directory has no `transforms.json`, the runtime synthesizes the canonical turntable rig instead
+(`src/transforms_json.cpp::synthesize_canonical_rig`, identical to `web/real_e2e/calibration.js`): exactly 4 images in
+natural filename order → front / right / back / left, elevation 0, `distance = 3.1192049980163574`,
+`camera_angle_x = 0.3490658503988659`. `mesh_scale` has no default there and must be given explicitly
+(`--mesh-scale`, or the `mesh_scale` form field on `POST /generate-mv`).
+
 ```
 F' = F with F'[1,3] = -distance_0
 calc_mat_i = F' @ inv(C_0) @ C_i                  # calc_mat_0 == F' → V=1 degenerates to single-view
