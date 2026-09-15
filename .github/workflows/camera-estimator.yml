@@ -1,0 +1,24 @@
+name: Camera estimator smoke
+
+on:
+  pull_request:
+    paths:
+      - 'tools/estimate_transforms_moge.py'
+      - 'tools/test_estimate_transforms_moge.py'
+      - 'tools/run_pixal3d_estimated.py'
+      - 'tools/test_run_pixal3d_estimated.py'
+      - '.github/workflows/camera-estimator.yml'
+  workflow_dispatch:
+
+jobs:
+  no-model-contract:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run estimator contract without model downloads
+        run: python3 tools/test_estimate_transforms_moge.py
+      - name: Run one-image wrapper contract without model downloads
+        run: python3 tools/test_run_pixal3d_estimated.py
