@@ -42,7 +42,7 @@ let failed = false;
 const check = (ok, msg) => { console.log(`${ok ? 'ok' : 'FAIL'}: ${msg}`); if (!ok) failed = true; };
 
 // 配信をルート単位で差し替えられるようにする。served には GGUF 本体のリクエストだけ数える。
-async function newPage({ deviceFails = false, manifest = manifestFor(bodies), bodyMap = bodies, failNames = [] } = {}) {
+async function newPage({ deviceFails = false, noF16 = false, manifest = manifestFor(bodies), bodyMap = bodies, failNames = [] } = {}) {
   const ctx = await browser.newContext();
   const served = { gguf: [], manifest: 0 };
   await ctx.route('https://models.test/**', async (route) => {
@@ -63,9 +63,20 @@ async function newPage({ deviceFails = false, manifest = manifestFor(bodies), bo
     requestAdapter: async () => ({
       limits: { maxBufferSize: ${4 * 1024 ** 3}, maxStorageBufferBindingSize: ${2 * 1024 ** 3},
                 maxComputeWorkgroupsPerDimension: 65535 },
-      features: new Set(['shader-f16']),
+      features: new Set(${noF16 ? '[]' : "['shader-f16']"}),
       info: { vendor: 'mock', architecture: 'mock', device: '', description: '' },
-      requestDevice: async () => { ${deviceFails ? "throw new DOMException('nope', 'OperationError');" : 'return { destroy() {} };'} },
+      requestDevice: async (desc) => {
+        ${deviceFails ? "throw new DOMException('nope', 'OperationError');" : ''}
+        // 実装と同じく、広告していない feature を要求されたら TypeError で拒む
+        for (const f of (desc?.requiredFeatures || [])) {
+          if (!new Set(${noF16 ? '[]' : "['shader-f16']"}).has(f)) throw new TypeError('Unsupported feature: ' + f);
+        }
+        // 契約: preflight は runtime と同じく shader-f16 を要求し、2 つの limits を指定すること。
+        // これを落とす回帰（requiredFeatures/requiredLimits を空にする）をテストで検出する。
+        if (!(desc?.requiredFeatures || []).includes('shader-f16')) throw new Error('CONTRACT: shader-f16 not requested');
+        if (!desc?.requiredLimits?.maxBufferSize || !desc?.requiredLimits?.maxStorageBufferBindingSize) throw new Error('CONTRACT: requiredLimits missing');
+        return { destroy() {} };
+      },
     }),
   } });`);
   page.on('pageerror', (e) => { console.log('[pageerror]', e.message); failed = true; });
@@ -197,13 +208,40 @@ const status = (page) => page.evaluate(async () => {
 }
 
 // ---- 7. requestDevice 拒否 ------------------------------------------------
-// 現在の webgpuPreflight() は adapter と limits までを見る。device 取得の失敗が
-// preflight を通過してしまうなら、それは長時間の生成前に落とせていないということ。
+// #21: adapter と limits が使えても device が取れない GPU がある。preflight は
+// ggml-webgpu と同じ要求（shader-f16 + adapter の limits）で使い捨ての device を
+// 1 つ取り、失敗なら 7.54 GiB の取得前に落とす。通過してしまったら回帰。
 {
   const { ctx, page } = await newPage({ deviceFails: true });
   const text = (await page.locator('#preflight-status').textContent()) || '';
   const gpuOk = /✓ WebGPU/.test(text);
-  console.log(`${gpuOk ? 'note' : 'ok'}: requestDevice() failure ${gpuOk ? 'PASSES the current preflight (adapter/limits only) — see docs' : 'is rejected by the preflight'}`);
+  if (gpuOk) { console.log('FAIL: requestDevice() failure passed the preflight (#21)'); failed = true; }
+  else console.log(`ok: requestDevice() failure is rejected by the preflight (${text.split('\n').find((l) => /WebGPU/.test(l))})`);
+  await ctx.close();
+}
+
+// ---- 8. shader-f16 非対応 --------------------------------------------------
+// ggml-webgpu は shader-f16 を必須にしている。adapter が広告していなければ device 要求は
+// 失敗するので、preflight もそこで止まるべき。
+{
+  const { ctx, page } = await newPage({ noF16: true });
+  const text = (await page.locator('#preflight-status').textContent()) || '';
+  const gpuOk = /✓ WebGPU/.test(text);
+  if (gpuOk) { console.log('FAIL: missing shader-f16 passed the preflight (#21)'); failed = true; }
+  else console.log(`ok: missing shader-f16 is rejected by the preflight (${text.split('\n').find((l) => /WebGPU/.test(l))})`);
+  await ctx.close();
+}
+
+// ---- 9. 正常なアダプタは通る（陽性ケース） -------------------------------
+// mock の requestDevice は preflight の契約（shader-f16 の要求・limits の指定）を検査して
+// 違反なら投げる。ここで ✓ を要求することで「契約を落とす回帰」と「本来動く GPU を弾く
+// 誤検知」の両方を検出する。
+{
+  const { ctx, page } = await newPage();
+  const text = (await page.locator('#preflight-status').textContent()) || '';
+  const line = text.split('\n').find((l) => /WebGPU/.test(l)) || '';
+  if (!/✓ WebGPU/.test(line)) { console.log(`FAIL: healthy adapter rejected by the preflight (${line})`); failed = true; }
+  else console.log(`ok: healthy adapter passes the preflight (${line})`);
   await ctx.close();
 }
 

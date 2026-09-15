@@ -59,3 +59,9 @@ build-wasm-ss/
 
 # macOS が自動生成する。追跡すると PR に混入する
 .DS_Store
+
+# scripts/build_web_dist.sh が生成する配信物
+web/dist/
+
+# wrangler のローカル状態
+.wrangler/
