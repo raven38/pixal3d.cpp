@@ -20,6 +20,8 @@ viewInput.accept = 'image/*,.json,application/json';
 viewInput.hidden = true;
 document.body.appendChild(viewInput);
 const calibrator = initMeshScaleCalibration({ input: viewInput, mount: $('#calibration') });
+// テスト用フック（test_canonical_rig.mjs）。UI だけでは観測できない isReady() の遷移を直接検証する。
+window.__calibration = calibrator;
 
 let worker = null;
 let timer = null;
@@ -58,7 +60,7 @@ async function refreshPreflight(cache = null) {
 
   const lines = [];
   lines.push(gpu.ok
-    ? `✓ WebGPU · max buffer ${fmtBytes(gpu.limits.maxBufferSize)} · storage binding ${fmtBytes(gpu.limits.maxStorageBufferBindingSize)}`
+    ? `✓ WebGPU · max buffer ${fmtBytes(gpu.limits.maxBufferSize)} · storage binding ${fmtBytes(gpu.limits.maxStorageBufferBindingSize)} · device ok (${(gpu.requiredFeatures || []).join(', ')})`
     : `✕ ${gpu.message}`);
   if (storage) {
     lines.push(storage.ok
@@ -184,16 +186,21 @@ $('#run').onclick = async () => {
   $('#cancel').disabled = false;
   $('#delete-models').disabled = true;
   const started = Date.now();
-  $('#progress-text').textContent = 'starting… · 0:00';
-  timer = setInterval(() => {
-    $('#progress-text').textContent = $('#progress-text').textContent.split(' · ')[0] + ' · ' + fmtTime(Date.now() - started);
-  }, 1000);
+  const genProgress = makeGenProgress();
+  // 進捗文字列は状態として持ち、タイマーは経過時間だけを付け直す。
+  // （以前は表示文字列を ' · ' で切っていたので、段名以外の ETA / overall が 1 秒で消えていた）
+  let progressLabel = 'starting…';
+  const render = () => { $('#progress-text').textContent = progressLabel + ' · ' + fmtTime(Date.now() - started); };
+  render();
+  timer = setInterval(render, 1000);
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === 'log') {
       log(m.text);
       const text = String(m.text || '').trim();
-      if (text) $('#progress-text').textContent = text + ' · ' + fmtTime(Date.now() - started);
+      const staged = genProgress(text);
+      if (staged) { progressLabel = staged; render(); }
+      else if (text) { progressLabel = text; render(); }
     } else if (m.type === 'error') { log(m.text); finish('failed'); }
     else { log(m.report); showGlb(new Blob([m.glb], { type: 'model/gltf-binary' })); finish('complete'); }
   };
@@ -201,12 +208,59 @@ $('#run').onclick = async () => {
   worker.postMessage({ models: modelSet.models, modelManifest: modelSet.manifest, views, seed, resolution: 1024 });
 };
 
+// 生成の進捗バー。C++ (src/flow_runner.cpp) が flow の各ステップで stdout へ
+//   [flow] [####................]  5/12   42.3s  ~58s left
+// を出すので、それを読んで全体進捗に直す。flow は SS / Shape-512 / Shape-1024 /
+// Texture の 4 段あり各 12 step で、段ごとの所要が大きく違う（公式 cyclops の実測で
+// 194.9 / 165.7 / 1476.3 / 1042.4 秒）。段を均等に扱うとバーが跳ねるので実測秒で重み付けし、
+// flow 後段の decode + postprocess ぶんも残しておく。
+const FLOW_STAGES = [
+  { name: 'Sparse-structure flow', weight: 194.9 },
+  { name: 'Shape-512 flow', weight: 165.7 },
+  { name: 'Shape-1024 flow', weight: 1476.3 },
+  { name: 'Texture flow', weight: 1042.4 },
+];
+const TAIL_WEIGHT = 800; // decode + postprocess（生成全体 3688s と flow 合計 2879s の差）
+const TOTAL_WEIGHT = FLOW_STAGES.reduce((a, s) => a + s.weight, 0) + TAIL_WEIGHT;
+
+function makeGenProgress() {
+  let stage = -1;      // 現在の flow 段
+  let lastDone = -1;   // 段の切り替わり検出用
+  const setBar = (frac) => {
+    const el = document.getElementById('gen-bar');
+    if (el) el.style.width = Math.max(0, Math.min(100, frac * 100)).toFixed(1) + '%';
+  };
+  setBar(0);
+  return (text) => {
+    const m = /\[flow\]\s+\[[#.]+\]\s+(\d+)\/(\d+)\s+([\d.]+)s\s+(.*)$/.exec(text || '');
+    if (!m) return null;
+    const done = +m[1], steps = +m[2], eta = m[4].trim();
+    // 段の切り替えは done が「減った」ことで検出する（12→0 も 12→1 も拾う）。
+    // 同じ値の再受信（0/12 が 2 回来る等）では進めない。
+    if (stage < 0 || done < lastDone) stage++;
+    lastDone = done;
+    if (stage >= FLOW_STAGES.length) {
+      // flow 4 段を越えた行は想定外。バーは flow 完了位置のまま、行はそのまま見せる。
+      return null;
+    }
+    const before = FLOW_STAGES.slice(0, stage).reduce((a, s) => a + s.weight, 0);
+    const frac = (before + FLOW_STAGES[stage].weight * (steps ? done / steps : 0)) / TOTAL_WEIGHT;
+    setBar(frac);
+    return `${FLOW_STAGES[stage].name} ${done}/${steps} · ${eta} · overall ${(frac * 100).toFixed(0)}%`;
+  };
+}
+
 function finish(label) {
   if (timer) clearInterval(timer);
   timer = null;
   if (worker) { worker.terminate(); worker = null; }
   $('#cancel').disabled = true;
   $('#progress-text').textContent = label;
+  const gb = document.getElementById('gen-bar');
+  if (gb) gb.style.width = label === 'complete' ? '100%' : '0%';
+  // ボタンの状態は同期的に戻す。refreshModels() は await を挟むので、それ任せにすると
+  // 「失敗表示は出ているが Generate はまだ disabled」という窓ができる（CI で顕在化した）。
+  setRunEnabled();
   void refreshModels();
 }
 
@@ -228,6 +282,8 @@ $('#reset').onclick = () => {
     log(`release manifest unavailable: ${e?.message || e}`);
   }
   await refreshModels();
+  // 合成リグの mesh_scale 確定は DOM 変化に頼らず明示イベントで拾う
+  document.addEventListener('pixal3d-calibration-change', setRunEnabled);
   const mo = new MutationObserver(setRunEnabled);
   mo.observe($('#calibration'), { subtree: true, childList: true, attributes: true });
   setRunEnabled();

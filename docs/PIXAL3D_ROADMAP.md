@@ -126,10 +126,53 @@
 - [x] production UI (#20 / PR #28)
 - [x] verified local OPFS model install (#15 / PR #28)
 - [x] production UI CI (#22 / PR #29)
-- [ ] automatic persistence/version lifecycle (#9)
-- [ ] storage/WebGPU preflight (#21)
-- [ ] real Chrome/WebGPU full generation + cache reuse/delete release gate
+- [x] automatic persistence/version lifecycle (#9 / PR #42)
+- [x] storage/WebGPU preflight incl. device probe (#21)
+- [x] real Chrome/WebGPU full generation + cache reuse/delete release gate (local 2026-09-10, public deployment 2026-09-11)
 - [ ] tag `v0.9.0-web-alpha`
+
+## M11 — Staged model delivery (first-run latency)
+
+現状はモデルセット全量の取得と検証が終わるまで推論が始まらない。段ごとに必要なファイルが
+揃った時点で先の段を開始し、残りを裏で取得し続ける（download/inference overlap）。
+
+**根拠となる実測**（`pixal3d-q8_0 v1` / 公式 cyclops / 各段の生成時間は
+`docs/PIXAL3D_E2E_STATUS.md` の browser 実測、合計 2879 s）:
+
+| 段 | この段までに必要 | 割合 | この段の生成 |
+|---|---:|---:|---:|
+| conditioning (DINOv3+NAF) | 0.30 GiB | 4.0% | — |
+| SS flow + decode | 1.77 GiB | 23.5% | 194.9 s |
+| Shape-512 flow | 3.14 GiB | 41.7% | 165.7 s |
+| Shape-1024 flow + decode | 5.34 GiB | 70.9% | 1476.3 s |
+| Texture flow + decode | 7.54 GiB | 100% | 1042.4 s |
+
+最初の段の開始に要るのは全体の 4% だけで、残りは生成時間の裏に隠せる。短縮量の上限は
+ダウンロード時間そのもの。Web (7.54 GiB) では 40 MB/s で 6%、6.7 MB/s で 28% の短縮。
+
+**Desktop の方が効果が大きい**。F16 は 12.72 GiB（Q8_0 の 1.69 倍）で、installer は
+生成開始前に全量を取得する。回線別のダウンロード時間と、測れている生成時間の比較:
+
+| 回線 | F16 DL | vs desktop Metal 実測 1987 s |
+|---|---:|---|
+| 1 Gbps | 109 s | 生成が支配項 |
+| 300 Mbps | 364 s | 生成が支配項 |
+| 100 Mbps | 1093 s | 生成が支配項 |
+| 50 Mbps | 2186 s | **DL が支配項** |
+| 20 Mbps | 5464 s | **DL が支配項** |
+
+CUDA のフルパイプライン生成時間は未測定（L4 では `ss_dec` 単体のパリティのみ確認済み、
+`docs/PIXAL3D_E2E_STATUS.md`）。CUDA が Metal より速いなら境界はさらに高速側へ動き、
+より多くの回線環境で DL が支配項になる。**CUDA の実測を取るまで効果の断定はしない。**
+
+- [ ] CUDA でのフル生成時間を実測し、上表の境界を確定する（#18 の実機作業と同時に取る）
+- [ ] JS 側のみで済む先行改善: ダウンロード順を manifest 記載順から段の必要順へ固定し、
+      進捗表示を「あと何段で開始できるか」に変える（C++ の変更を伴わない）
+- [ ] `pixal3d_real_full_run()` の C ABI を段ごとに分割し、中間状態（SS active voxel /
+      SLAT / coords）を呼び出しをまたいで保持する。共有 C++ の変更なので native/CUDA/
+      Vulkan と同時に効く。Pixal3D parity 作業との衝突を避けるため着手時期を調整する
+- [ ] WORKERFS のマウントを全ファイル検証後の 1 回から段ごとの増分マウントへ変更する
+- [ ] desktop installer を「全量取得後に起動可」から「段が揃い次第起動可」へ変更する
 
 ## M12 — Linux / GPU pod での browser 検証
 

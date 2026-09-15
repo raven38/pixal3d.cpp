@@ -91,7 +91,10 @@ export async function webgpuPreflight() {
   }
   let adapter = null;
   try {
-    adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    // ggml-webgpu (ggml_webgpu_init) は RequestAdapterOptions を既定のまま使う。
+    // ここで high-performance を指定すると、複数 GPU の機で実行時と別のアダプタを
+    // 検査してしまう（片方だけ shader-f16 対応なら判定が実行時と食い違う）。
+    adapter = await navigator.gpu.requestAdapter();
   } catch (e) {
     return {
       ok: false,
@@ -140,6 +143,47 @@ export async function webgpuPreflight() {
     } : null;
   } catch {}
 
+  // #21: an adapter with usable limits can still refuse a device, or refuse the
+  // features the runtime needs. ggml-webgpu (ggml-webgpu.cpp, ggml_webgpu_init)
+  // requests shader-f16 unconditionally, subgroups when the adapter has them, and
+  // passes the adapter's full limits. Ask for the same features and the two limits
+  // the pipeline actually depends on (maxBufferSize / maxStorageBufferBindingSize)
+  // with a throwaway device so the failure surfaces here, before the 7.54 GiB
+  // install, rather than at generation. Not covered: a GGML_WEBGPU_GPU_PROFILE
+  // build additionally requires timestamp-query.
+  const features = adapter.features || new Set();
+  if (!features.has('shader-f16')) {
+    return {
+      ok: false,
+      code: 'shader-f16-unsupported',
+      message: 'This GPU does not expose shader-f16, which the Pixal3D WebGPU runtime requires.',
+      adapter,
+      info,
+      limits,
+    };
+  }
+  const requiredFeatures = ['shader-f16'];
+  if (features.has('subgroups')) requiredFeatures.push('subgroups');
+  try {
+    const device = await adapter.requestDevice({
+      requiredFeatures,
+      requiredLimits: {
+        maxBufferSize: limits.maxBufferSize,
+        maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
+      },
+    });
+    try { device.destroy?.(); } catch {}
+  } catch (e) {
+    return {
+      ok: false,
+      code: 'device-unavailable',
+      message: `WebGPU device request failed (${requiredFeatures.join(', ')}): ${e?.message || e}`,
+      adapter,
+      info,
+      limits,
+    };
+  }
+
   return {
     ok: true,
     code: 'webgpu-ready',
@@ -147,5 +191,6 @@ export async function webgpuPreflight() {
     adapter,
     info,
     limits,
+    requiredFeatures,
   };
 }

@@ -316,14 +316,24 @@ Supported target: Chrome/Chromium + WebGPU, resolution 1024 only. Inference stay
 | Verified OPFS model-set install consumes manifest + size + SHA256 | ✅ #15 / PR #28 | Playwright fixture |
 | Fast production UI + OPFS + manifest integrity gate | ✅ #22 / PR #29 | Playwright CI |
 | Persistent automatic model delivery/version invalidation/safe cache delete | ✅ #9 | PR #42 implementation + `test_cache_failure_modes.mjs` + the real-Chrome gate |
-| Storage quota + WebGPU/device-budget preflight UI | 🔶 #21 | PR #42 `preflight.js`; real Chrome values recorded. Known limitation: a `requestDevice()` failure can still be discovered only when generation starts (see below) |
+| Storage quota + WebGPU/device-budget preflight UI | ✅ #21 | PR #42 `preflight.js` + device probe (2026-09-11): the preflight now requests a throwaway device with the runtime's own feature set (`shader-f16`, plus `subgroups` when advertised) and the adapter's limits; `requestDevice()` failure and missing `shader-f16` are rejected before the model install (`test_cache_failure_modes.mjs` cases 7–8). Real M4 Max: `device ok (shader-f16, subgroups)` |
 | Full Chrome/WebGPU 1024 known-input generation → textured GLB | ✅ | official cyclops, Chrome 153, IoU 0.9795 PASS |
 | Second launch reuses the cached 7.54 GiB `pixal3d-q8_0 v1` set without retransferring it | ✅ | browser restart on the same profile: 0 GGUF re-transfers |
 | Cache deletion frees only origin-owned Pixal3D storage | ✅ | real Chrome: usage → 0; headless: an unrelated OPFS directory survives |
 
 The Web release model set is `pixal3d-q8_0 v1` (7.54 GiB), per §12's GPU-budget headroom finding. Its native E2E gate and the real Chrome/WebGPU release gate both pass against this exact manifest.
 
-Web alpha known limits: Chrome/Chromium only, WebGPU required, 1024 only, wasm32 4 GiB host address-space constraints, browser-safe 512 postprocess, and pre-matted RGBA + `transforms.json` input.
+Web alpha known limits: Chrome/Chromium only, WebGPU required, 1024 only, wasm32 4 GiB host
+address-space constraints, browser-safe 512 postprocess, and pre-matted RGBA input.
+`transforms.json` is optional for exactly four turntable views (front/right/back/left,
+elevation 0, FOV 20°); any other camera setup or view count still requires it, and the
+synthesized case requires the user to confirm `mesh_scale` explicitly — no default is assumed.
+
+**Linux + NVIDIA needs a Chrome flag.** Dawn does not expose `shader-f16` on NVIDIA/Vulkan
+without `--enable-dawn-features=vulkan_enable_f16_on_nvidia` (crbug.com/42251215, Chromium 153 /
+Dawn main 2026-09). With the flag the full gate passes on an L4 (see M12); without it the #21
+device preflight stops before the 7.54 GiB install instead of failing at generation, which is
+the intended behaviour but means stock Chrome on Linux/NVIDIA cannot run the Web alpha.
 
 ### Web alpha release gate, end to end (2026-09-10)
 
@@ -361,6 +371,34 @@ what is stored: treat `storagePreflight` as advisory and rely on `QuotaExceededE
 and total memory with an explicit `TODO` (gpuweb/gpuweb#5505). `web/app/preflight.js` is right not to
 invent an aggregate-VRAM threshold; the per-buffer and per-binding limits are the checkable part.
 
+### Web alpha release gate against the public deployment (2026-09-11)
+
+Same gate (`web/app/run_release_gate.mjs --models-url …`), but the app is served from the public
+Cloudflare Pages deployment and the model set from the public Hugging Face repository — no local
+HTTP server anywhere in the path.
+
+| | value |
+|---|---|
+| app | `https://pixal3d-web.raven38.workers.dev/` (Cloudflare Pages, `wrangler.jsonc`, 12 static files / 4.6 MB from `scripts/build_web_dist.sh`) |
+| models | `https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/main` (public; 9/9 files match the committed manifest by size + SHA256) |
+| browser | Chrome for Testing 153.0.8010.12, headed, `--enable-unsafe-webgpu`, M4 Max / Metal |
+| adapter | `maxBufferSize` 4,294,967,292 · `maxStorageBufferBindingSize` 4,294,967,292 |
+| fetch throughput | **6.9 MiB/s** measured mid-download (HF → this machine), i.e. ~18–20 min for a cold 7.54 GiB install |
+| resume after a hard kill | the first run was killed at 7.5 GiB; the rerun with the same profile reached `Ready` in 1210 s with **`gguf_requests: 1`** — eight of nine files were re-hashed from OPFS and reused |
+| generation | `complete` in **4902 s**, seed 1, res 1024 (3688 s on the local-HTTP run; same machine, other load present) |
+| Texture Flow | `tokens=17795`, `resident 2517.0 MB`, graph peak 1538.0 MB — identical to the local-HTTP run |
+| shape decode | 4,798,704 voxels → raw mesh V=4,798,704 F=9,607,898; the browser tail completed |
+| GLB | **31,020,608 bytes** — byte-for-byte the same size as the local-HTTP run |
+| acceptance | `tools/silhouette_iou.py`: **mean IoU 0.9795, scale_error 0.0066 → PASS** — identical to the local-HTTP run |
+| restart, same profile | `Ready` immediately, **0 GGUF re-transfers**, generation started from cache |
+| cache delete | usage 3,797,012,676 → **0** |
+
+One real bug was found and fixed on the way. Hugging Face answers a request that carries a
+`Referer` header with **404 and no CORS headers** (hotlink protection), so the browser reported
+`Failed to fetch` while every `curl` probe succeeded. `web/app/release_store.js` now fetches with
+`referrerPolicy: 'no-referrer'`. This is invisible to any test that does not run a real browser
+against a real cross-origin host.
+
 ### Failure modes of the browser cache (`web/app/test_cache_failure_modes.mjs`)
 
 `test_headless.mjs` covers the happy path (remote lifecycle → OPFS → SHA → commit marker, delete,
@@ -375,12 +413,17 @@ local fallback). This gate covers the other side, and the current implementation
 | delete | removes only the Pixal3D namespace; an unrelated OPFS directory survives |
 | **reload with a warm cache** | **0 GGUF re-transfers** |
 
-One real gap the gate found: **a `requestDevice()` failure passes the current preflight**, which only
-probes the adapter and its limits. A device that advertises usable limits but refuses a device (or
-refuses the backend's `shader-f16`) is therefore only discovered after the model set is installed and
-a generation starts. Acquiring a throwaway device with the backend's own feature set during preflight
-would close it; recorded here rather than silently fixed inside someone else's freshly landed
-implementation.
+One real gap the gate found, now closed (#21, 2026-09-11): a `requestDevice()` failure used to pass
+the preflight, which only probed the adapter and its limits. `webgpuPreflight()` now requests a
+throwaway device the way `ggml_webgpu_init` does as far as the pipeline depends on it: the same
+adapter selection (default `requestAdapter()`, no `powerPreference`), `shader-f16` required,
+`subgroups` when the adapter advertises it, and `maxBufferSize` / `maxStorageBufferBindingSize` as
+`requiredLimits`; the device is destroyed immediately. Two known differences, both deliberate:
+the runtime passes the adapter's *full* limits object, and a `GGML_WEBGPU_GPU_PROFILE` build also
+requires `timestamp-query` (not a release build). A GPU that would fail at generation time now fails
+at preflight, before the 7.54 GiB install. `test_cache_failure_modes.mjs` cases 7–9 pin the contract:
+device refusal and missing `shader-f16` must be rejected, and a healthy adapter must pass — the mock
+throws if the preflight stops requesting `shader-f16` or the two limits.
 
 ## Non-blockers / known issues
 
