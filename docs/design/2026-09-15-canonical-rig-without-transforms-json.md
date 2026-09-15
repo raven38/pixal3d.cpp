@@ -52,3 +52,22 @@ native 側（CLI・server・generate.sh）は `dir/transforms.json` が必須で
 - alpha チャンネルを持たない画像は従来どおりローダで拒否する（本変更では触らない）。
 - ブラウザ UI は変更不要。
 - ベースブランチは `linux-webgpu-gate`（`install/generate.sh` は PR #1 にしか無いため）。
+
+## codex 設計レビュー（2026-09-15）で確定した点
+
+1. **mesh_scale は「値」と「明示された事実」を分離する**。共通ローダは `(float value, bool was_set)`
+   を受ける。`pixal3d_load_input_views` は既定引数で従来の JSON 経路のまま（既存呼び出し側は無変更）。
+2. **transforms.json がある場合の挙動は変えない**。JSON には有効な `mesh_scale` が引き続き必須で、
+   `--mesh-scale` は parse 成功後の上書きだけに効く。欠落・不正 JSON を CLI 値で救済しない。
+3. **fallback は「transforms.json が存在しない」場合のみ**。空ファイル・壊れた JSON・ディレクトリ・
+   permission error は従来どおりエラー（`load_transforms_json` の false を fallback 条件にしない）。
+4. **server はディレクトリ列挙を入力の正本にしない**。衝突しない一時ディレクトリを作り、
+   その request で受理したファイルの明示リストを合成ローダへ渡す（残骸が 4 枚判定に混ざるのを防ぐ）。
+5. **server はモデル実行前に検証して 400 + 具体的な JSON エラーを返す**（従来は generic 500）。
+6. **`--num-views` / `--mesh-scale` は厳密パース**（`atoi` をやめ、全体消費・範囲・有限性を検査）。
+   未指定と `0` / 負値 / 非数値を区別し、合成モードでは 4 以外を拒否。
+7. **自然順は C++ 側で一意に定義する**: ASCII、大小文字を区別、数字列は整数として比較、
+   数値が同値なら元のバイト列で tie-break（locale 非依存）。
+8. **検証は合成関数単体で終えない**: CLI・server の両経路と異常系、および
+   「JSON 版」と「合成版」を同一バイナリ・同一 seed で対にして `ss_coords` のハッシュまで比較する。
+   最終受け入れでは両者の GLB を生成してレンダ比較する。
