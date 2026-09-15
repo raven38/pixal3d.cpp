@@ -13,6 +13,8 @@ on:
       - 'CMakeLists.txt'
       - 'thirdparty/**'
       - '.gitmodules'
+      - 'install/generate.sh'
+      - 'install/test_natural_order.sh'
       - '.github/workflows/linux-build.yml'
   push:
     branches: [main]
@@ -22,6 +24,8 @@ on:
       - 'CMakeLists.txt'
       - 'thirdparty/**'
       - '.gitmodules'
+      - 'install/generate.sh'
+      - 'install/test_natural_order.sh'
       - '.github/workflows/linux-build.yml'
   workflow_dispatch:
 
@@ -63,6 +67,17 @@ jobs:
         # `-- -k 0` は Ninja 固有の書式。ジェネレータを Make に変えるならここも変える。
         # 重みが要るので実行はしない（ビルドが通ることだけを見る）。
         run: cmake --build build -j "$(nproc)" -- -k 0
+
+      # 重みが要らない唯一のテスト。canonical rig の契約（合成結果が同梱 transforms.json と
+      # ビット一致・異常系が fail closed・自然順）と、権限/走査エラーの扱いという
+      # プラットフォーム差の出る部分を Linux で実際に動かす。
+      - name: Run the weightless canonical-rig test
+        run: ./build/trellis-test-transforms-synth docker/linux-webgpu-gate/e2e/views
+
+      # install/generate.sh の natural_sort が C++ の natural_name_less と同じ順序かを、
+      # GNU coreutils 側でも確認する（macOS の BSD sort とは別実装のため両方で回す）。
+      - name: Check the shell natural order against the C++ comparator
+        run: ./install/test_natural_order.sh build/trellis-test-transforms-synth
 
       - name: Show binaries
         if: always()
