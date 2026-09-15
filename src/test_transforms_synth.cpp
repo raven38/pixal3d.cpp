@@ -7,8 +7,10 @@
 //   4. 自然順が "view2" < "view10"、"view02" < "view2" になる
 //
 //   ./build/trellis-test-transforms-synth <views_dir>
+//   ./build/trellis-test-transforms-synth --sort NAME...   （並び順だけを出す。install/test_natural_order.sh 用）
 #include "transforms_json.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -25,7 +27,15 @@ static void check(bool ok, const char* what) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) { fprintf(stderr, "usage: %s <views_dir with transforms.json>\n", argv[0]); return 2; }
+    // --sort NAME... : natural_name_less で並べた結果を 1 行 1 件で出す。install/generate.sh の
+    // natural_sort（シェル側の同じ規則）と突き合わせるための機械可読モード。
+    if (argc >= 2 && std::string(argv[1]) == "--sort") {
+        std::vector<std::string> names(argv + 2, argv + argc);
+        std::sort(names.begin(), names.end(), natural_name_less);
+        for (const std::string& n : names) printf("%s\n", n.c_str());
+        return 0;
+    }
+    if (argc < 2) { fprintf(stderr, "usage: %s <views_dir with transforms.json>\n       %s --sort NAME...\n", argv[0], argv[0]); return 2; }
     const std::string dir = argv[1];
 
     TransformsFile ref;

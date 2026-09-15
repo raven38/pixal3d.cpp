@@ -69,6 +69,29 @@ if [ ! -f "$VIEWS/transforms.json" ] && [ -z "$MESH_SCALE" ]; then
 fi
 info() { echo "[generate] $*" >&2; }
 
+# ファイル名の自然順。C++ 側 transforms_json.cpp::natural_name_less と同じ規則で並べる:
+#   数字列は整数として比較（桁数 → 辞書順。先頭の 0 は無視）、それ以外はバイト比較、
+#   数値として同値なら元のバイト列で決める（"view02" < "view2"）。
+# `sort -V` は GNU 拡張で stock の BSD/macOS sort には無いため使わない。awk で
+#   「数字列 → <桁数3桁><数字列（0 除去後）>」に置換したソートキーを作り、
+#   キー → 元の名前 の順で LC_ALL=C sort（= バイト比較）に掛ける。
+# 入力・出力とも 1 行 1 パス。改行を含むファイル名は扱わない（views ディレクトリの前提）。
+natural_sort() {
+  LC_ALL=C awk '
+    {
+      orig = $0; key = ""; rest = $0
+      while (match(rest, /[0-9]+/)) {
+        key = key substr(rest, 1, RSTART - 1)
+        run = substr(rest, RSTART, RLENGTH)
+        sub(/^0+/, "", run)                       # 先頭の 0 を落として数値の桁数を得る
+        key = key sprintf("%03d%s", length(run), run)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+      key = key rest
+      print key "\t" orig
+    }' | LC_ALL=C sort -t"$(printf '\t')" -k1,1 -k2,2 | cut -f2-
+}
+
 # ---- remote: 常駐サーバへ投げるだけ -------------------------------------------
 if [ -n "$SERVER" ]; then
   # transforms.json の frame file_path と同じ相対名で各 view を multipart に載せる
@@ -87,7 +110,7 @@ if [ -n "$SERVER" ]; then
       [ -n "$f" ] || continue
       b="$(basename "$f")"
       args+=(-F "view$i=@$f;filename=$b"); i=$((i+1))
-    done < <(find "$VIEWS" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) ! -name '.*' | sort -V)
+    done < <(find "$VIEWS" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) ! -name '.*' | natural_sort)
   fi
   [ -n "$NUM_VIEWS" ] && args+=(-F "num_views=$NUM_VIEWS")
   [ -n "$MESH_SCALE" ] && args+=(-F "mesh_scale=$MESH_SCALE")

@@ -84,3 +84,13 @@ native 側（CLI・server・generate.sh）は `dir/transforms.json` が必須で
 - 同様に `directory_iterator` が失敗したときも「画像 0 枚」ではなくエラーにする。
 - `transforms.json` という名前のディレクトリは「存在する」扱いで、従来どおり parse 失敗にする
   （回帰テストを追加）。
+
+## 追加レビュー 2 回目（2026-09-15, PR #3）
+
+- `install/generate.sh` の `sort -V` は GNU 拡張で stock の BSD/macOS sort には無い。
+  awk でソートキー（数字列 → `<桁数3桁><0 除去後の数字列>`）を作り `LC_ALL=C sort` に掛ける
+  `natural_sort()` に置き換えた。順序の正本は C++ の `natural_name_less` 側とし、
+  `install/test_natural_order.sh` が両者を突き合わせる
+  （`trellis-test-transforms-synth --sort NAME...` が C++ 側の順序を出す）。
+- 重みの要らない `trellis-test-transforms-synth` と上記シェルテストを Linux CI
+  （`.github/workflows/linux-build.yml`）で実行するようにした。従来はビルドのみだった。

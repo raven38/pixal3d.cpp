@@ -184,7 +184,9 @@ above, which never needed `transforms.json`):
 trellis-cli --views ./views --mesh-scale 1.0 --models pixal3d_models --seed 42 out.glb
 ```
 
-The four images are sorted by filename in natural order (`view2` before `view10`) and taken as
+The four images are sorted by filename in natural order (`view2` before `view10`; the exact rule is
+`natural_name_less` in `src/transforms_json.cpp`, mirrored by `natural_sort` in
+`install/generate.sh` and cross-checked by `install/test_natural_order.sh`) and taken as
 **front, right, back, left** — elevation 0, camera distance 3.119, FOV 20°, the same canonical rig
 the browser app synthesizes (`web/real_e2e/calibration.js`). Anything else — three or five images,
 a missing `--mesh-scale`, `--num-views` other than 4 — is rejected rather than guessed. A present
