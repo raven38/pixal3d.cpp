@@ -175,7 +175,10 @@ is rejected: Pixal3D ships no res-512 texture flow, so the 1024/1536 cascade is 
 
 **Without `transforms.json`**, a directory holding **exactly four** turntable views works too, as
 long as you pass `--mesh-scale F` (a positive projection scale — no default is assumed, because a
-wrong scale silently corrupts the reconstruction):
+wrong scale silently corrupts the reconstruction). This is still the **multiview** cascade with the
+Pixal3D `*_mv.gguf` weights — it only removes the need to author camera JSON for the canonical
+turntable layout; it is not a single-view mode (for one image, use the TRELLIS.2 single-image path
+above, which never needed `transforms.json`):
 
 ```
 trellis-cli --views ./views --mesh-scale 1.0 --models pixal3d_models --seed 42 out.glb
@@ -187,6 +190,12 @@ the browser app synthesizes (`web/real_e2e/calibration.js`). Anything else — t
 a missing `--mesh-scale`, `--num-views` other than 4 — is rejected rather than guessed. A present
 but malformed `transforms.json` is still an error; the rig is used only when the file is absent.
 With `transforms.json` present, `--mesh-scale` overrides the value inside it.
+
+Fewer than four views is rejected on purpose: the released Pixal3D set ships only multiview
+checkpoints (`pixal3d_ss_flow_mv.gguf`, `pixal3d_shape_flow_{512,1024}_mv.gguf`,
+`pixal3d_tex_flow_1024_mv.gguf`), and the rig's poses are what makes the four images
+interpretable without camera metadata. A Pixal3D-conditioned single-view path would need
+non-MV checkpoints that this release does not contain.
 
 `--models DIR` needs `dinov3.gguf`, `pixal3d_naf.gguf`, `pixal3d_ss_flow_mv.gguf`,
 `pixal3d_shape_flow_512_mv.gguf`, `pixal3d_shape_flow_1024_mv.gguf`,

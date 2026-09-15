@@ -85,6 +85,38 @@ int main(int argc, char** argv) {
     check(load_views_metadata(tmp.string(), 1.0f, true, t4, err), "the same dir without transforms.json synthesizes");
     std::filesystem::remove_all(tmp, ec);
 
+    // 走査できないディレクトリは「画像 0 枚」ではなくエラーとして扱う（fail closed）
+    {
+        const std::filesystem::path locked = std::filesystem::temp_directory_path() / "pixal3d_synth_locked";
+        std::error_code lec;
+        std::filesystem::remove_all(locked, lec);
+        std::filesystem::create_directories(locked, lec);
+        std::filesystem::permissions(locked, std::filesystem::perms::none, lec);
+        std::string list_err;
+        const std::vector<std::string> none = list_view_images(locked.string(), &list_err);
+        // root で実行すると権限が効かないので、その場合だけ検査を飛ばす
+        const bool enforced = !list_err.empty();
+        check(!enforced || none.empty(), "an unreadable dir reports an error instead of 0 images");
+        TransformsFile t5;
+        check(!enforced || !load_views_metadata(locked.string(), 1.0f, true, t5, err),
+              "an unreadable dir does not synthesize");
+        std::filesystem::permissions(locked, std::filesystem::perms::owner_all, lec);
+        std::filesystem::remove_all(locked, lec);
+    }
+
+    // transforms.json という名前のディレクトリは「存在する」ので合成へ落とさない
+    {
+        const std::filesystem::path d2 = std::filesystem::temp_directory_path() / "pixal3d_synth_dirjson";
+        std::error_code dec;
+        std::filesystem::remove_all(d2, dec);
+        std::filesystem::create_directories(d2 / "transforms.json", dec);
+        for (const std::string& n : images) std::filesystem::copy_file(dir + "/" + n, d2 / n, dec);
+        TransformsFile t6;
+        check(!load_views_metadata(d2.string(), 1.0f, true, t6, err),
+              "a directory named transforms.json is an error, not an absence");
+        std::filesystem::remove_all(d2, dec);
+    }
+
     // 4. 自然順
     check(natural_name_less("view2.png", "view10.png"), "view2 < view10");
     check(!natural_name_less("view10.png", "view2.png"), "view10 > view2");

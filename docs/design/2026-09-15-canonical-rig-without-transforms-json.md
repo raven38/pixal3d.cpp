@@ -2,6 +2,11 @@
 
 2026-09-15 / 対象: `trellis-cli` / `trellis-server` / `install/generate.sh`
 
+**スコープ**: multiview パス（Pixal3D `*_mv.gguf`）の入力から transforms.json を不要にするだけで、
+単視点パスの新設ではない。1 枚入力は既存の TRELLIS.2 single-image パス（`trellis-cli image.png out.glb`）
+が従来から transforms.json 無しで動く。Pixal3D の条件付けを 1 枚で行う経路は non-MV チェックポイントを
+要し、現行リリースの model set（9 ファイルすべて MV）には含まれないため、本変更の対象外とする。
+
 ## 背景
 
 ブラウザ版は既に transforms.json 無しの入力に対応している（`web/real_e2e/calibration.js` の
@@ -71,3 +76,11 @@ native 側（CLI・server・generate.sh）は `dir/transforms.json` が必須で
 8. **検証は合成関数単体で終えない**: CLI・server の両経路と異常系、および
    「JSON 版」と「合成版」を同一バイナリ・同一 seed で対にして `ss_coords` のハッシュまで比較する。
    最終受け入れでは両者の GLB を生成してレンダ比較する。
+
+## 追加レビュー（2026-09-15, PR #3）で直した点
+
+- `std::filesystem::exists` の `error_code` を見ずに false を「不在」と解釈していた。存在判定が
+  失敗した場合（permission 等）はエラーにし、合成へ落とさない。
+- 同様に `directory_iterator` が失敗したときも「画像 0 枚」ではなくエラーにする。
+- `transforms.json` という名前のディレクトリは「存在する」扱いで、従来どおり parse 失敗にする
+  （回帰テストを追加）。

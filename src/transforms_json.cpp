@@ -266,12 +266,17 @@ bool natural_name_less(const std::string& a, const std::string& b) {
     return a < b;                        // 数値同値（"view02" vs "view2"）はバイト列で決める
 }
 
-std::vector<std::string> list_view_images(const std::string& dir) {
+std::vector<std::string> list_view_images(const std::string& dir, std::string* error) {
     std::vector<std::string> names;
     std::error_code ec;
-    for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
-        if (ec) break;
-        if (!e.is_regular_file()) continue;
+    std::filesystem::directory_iterator it(dir, ec);
+    if (ec) {
+        // 走査できなかったのを「画像が足りない」と誤って報告しない（fail closed）。
+        if (error) *error = "cannot list " + dir + ": " + ec.message();
+        return {};
+    }
+    for (const auto& e : it) {
+        if (!e.is_regular_file(ec) || ec) { ec.clear(); continue; }
         const std::string name = e.path().filename().string();
         if (name.empty() || name[0] == '.') continue;   // ._* 等の付随ファイルを拾わない
         if (has_image_extension(name)) names.push_back(name);
@@ -312,8 +317,13 @@ bool load_views_metadata(const std::string& dir, float mesh_scale, bool mesh_sca
     const std::string json_path = dir + "/transforms.json";
     std::error_code ec;
     // fallback は「transforms.json が存在しない」ときだけ。空ファイル・壊れた JSON・ディレクトリ・
-    // 読めない場合は従来どおり失敗させる（fail closed）。
-    const bool has_json = std::filesystem::exists(json_path, ec) && !ec;
+    // 読めない場合は従来どおり失敗させる（fail closed）。存在判定そのものが失敗したときも、
+    // 「無い」と解釈せずエラーにする（permission 等で合成へ落ちるのを防ぐ）。
+    const bool has_json = std::filesystem::exists(json_path, ec);
+    if (ec) {
+        error = "failed to inspect " + json_path + ": " + ec.message();
+        return false;
+    }
     if (has_json) {
         if (!load_transforms_json(json_path, out)) { error = "failed to load " + json_path; return false; }
         if (mesh_scale_set) {
@@ -326,7 +336,9 @@ bool load_views_metadata(const std::string& dir, float mesh_scale, bool mesh_sca
         return true;
     }
     if (!std::filesystem::is_directory(dir, ec) || ec) { error = dir + " is not a directory"; return false; }
-    const std::vector<std::string> images = list_view_images(dir);
+    std::string list_err;
+    const std::vector<std::string> images = list_view_images(dir, &list_err);
+    if (!list_err.empty()) { error = list_err; return false; }
     if (!synthesize_canonical_rig(images, mesh_scale_set ? mesh_scale : 0.0f, out, error)) {
         error = dir + "/transforms.json not found and the canonical rig could not be used: " + error;
         return false;
