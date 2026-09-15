@@ -258,6 +258,9 @@ function finish(label) {
   $('#progress-text').textContent = label;
   const gb = document.getElementById('gen-bar');
   if (gb) gb.style.width = label === 'complete' ? '100%' : '0%';
+  // ボタンの状態は同期的に戻す。refreshModels() は await を挟むので、それ任せにすると
+  // 「失敗表示は出ているが Generate はまだ disabled」という窓ができる（CI で顕在化した）。
+  setRunEnabled();
   void refreshModels();
 }
 
