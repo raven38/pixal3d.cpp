@@ -15,14 +15,14 @@ The bundled helper follows TencentARC/Pixal3D `inference.py`:
 
    `fov_x = 2 * atan(1 / (2 * fx_normalized))`
 
-5. `mesh_scale` remains an explicit user input.
+5. The one-image projection gauge uses **`mesh_scale = 1.0` by default**, matching official Pixal3D. This is not an estimate of physical object size. `--mesh-scale` remains available as an advanced override.
 6. Camera distance is derived from FOV and scale using the official single-image equation (with `extend_pixel=0`):
 
    `distance = 1 / (2 * mesh_scale * tan(fov_x / 2))`
 
 7. The remaining one-view gauge freedom is fixed to the canonical front-view camera orientation already used by Pixal3D.
 
-The result is written as a private ordinary `transforms.json`, so no downstream projection math is duplicated.
+Because the grid normalization and camera distance both scale with `1 / mesh_scale`, changing `mesh_scale` while recomputing the corresponding distance is a single-view projection-gauge change, not a claim about real-world meters or centimeters. The result is written as a private ordinary `transforms.json`, so no downstream projection math is duplicated.
 
 ## Generate a GLB from one image
 
@@ -32,10 +32,21 @@ The input must already be a pre-matted RGBA image with a real alpha channel. Thi
 python3 tools/run_pixal3d_estimated.py \
   --image character.png \
   --models pixal3d_models \
-  --mesh-scale 1.0 \
   --trellis-cli ./build/trellis-cli \
   --output character.glb
 ```
+
+No scale argument is required for the normal one-image path; the wrapper uses the canonical `mesh_scale=1.0` gauge. To override it for experiments:
+
+```bash
+python3 tools/run_pixal3d_estimated.py \
+  --image character.png \
+  --models pixal3d_models \
+  --mesh-scale 0.5 \
+  --output character.glb
+```
+
+The override is still validated as finite and positive, and the camera distance is recomputed from the same official equation.
 
 The wrapper creates a private temporary views directory, writes the official-style object crop as `input.png`, estimates camera metadata, then invokes:
 
@@ -53,7 +64,6 @@ To bypass MoGe and supply horizontal FOV directly (radians):
 python3 tools/run_pixal3d_estimated.py \
   --image character.png \
   --models pixal3d_models \
-  --mesh-scale 1.0 \
   --fov 0.3490658503988659 \
   --output character.glb
 ```
@@ -78,9 +88,10 @@ These Python dependencies and the MoGe checkpoint are **not** bundled into the s
 
 ## Important scope limits
 
-- `mesh_scale` is never guessed. Single-image absolute object scale is ambiguous, so a finite positive value remains required.
+- The wrapper fixes the unobservable **single-view projection gauge** to `mesh_scale=1.0` by default. It does **not** estimate real-world object size.
+- `--mesh-scale` is an advanced positive finite override only; it is not needed for the normal one-image UX.
 - This milestone estimates the one-image camera/FOV case only. The bundled helper rejects multiple images instead of inventing relative poses.
-- PR #3's exact four-view front/right/back/left canonical rig remains a separate known-camera shortcut.
+- PR #3's exact four-view front/right/back/left canonical rig remains a separate known-camera shortcut; its scale handling is unchanged.
 - Generation uses the dedicated Pixal3D **SV flow checkpoint family** through PR #6, not the multiview weights with `V=1`.
 - Arbitrary multi-image relative-pose estimation and browser-native camera estimation remain follow-ups under Issue #4.
 
@@ -100,6 +111,9 @@ These Python dependencies and the MoGe checkpoint are **not** bundled into the s
 - the staged crop preserves alpha while transparent pixels resolve to black,
 - the private image is normalized to `input.png`,
 - the CLI is invoked with `--pixal3d-weights sv`,
+- omitting `--mesh-scale` produces canonical `mesh_scale=1.0`,
+- an explicit positive override changes both `mesh_scale` and the derived camera distance consistently,
+- invalid explicit scale still fails closed,
 - the wrapper refuses a CLI build that predates PR #6.
 
-A full quality acceptance run should compare official Pixal3D single-view inference against pixal3d.cpp using the same image, camera metadata, mesh scale, seed, and SV checkpoint family. That run is separate from routine CI because it requires the full model set/GPU.
+A full quality acceptance run should compare official Pixal3D single-view inference against pixal3d.cpp using the same image, camera metadata, canonical scale gauge, seed, and SV checkpoint family. That run is separate from routine CI because it requires the full model set/GPU.
