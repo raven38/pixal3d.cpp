@@ -143,6 +143,11 @@ const JsonValue* obj_get(const JsonValue& v, const char* key) {
     return nullptr;
 }
 
+constexpr double kPi = 3.14159265358979323846;
+bool valid_camera_fov(double fov) {
+    return std::isfinite(fov) && fov > 0.0 && fov < kPi;
+}
+
 } // namespace
 
 bool load_transforms_json(const std::string& path, TransformsFile& out) {
@@ -157,6 +162,12 @@ bool load_transforms_json(const std::string& path, TransformsFile& out) {
     if (root.type != JsonType::Object) { fprintf(stderr, "transforms_json: %s root is not a JSON object\n", path.c_str()); return false; }
 
     if (const JsonValue* v = obj_get(root, "camera_angle_x"); v && v->type == JsonType::Number) {
+        if (!valid_camera_fov(v->num)) {
+            fprintf(stderr,
+                    "transforms_json: %s has invalid camera_angle_x=%g; expected a finite value with 0 < fov < pi radians\n",
+                    path.c_str(), v->num);
+            return false;
+        }
         out.camera_angle_x = (float)v->num; out.has_camera_angle_x = true;
     }
 
@@ -189,6 +200,12 @@ bool load_transforms_json(const std::string& path, TransformsFile& out) {
         if (const JsonValue* fp = obj_get(fr, "file_path"); fp && fp->type == JsonType::String) tf.file_path = fp->str;
         if (tf.file_path.empty()) { fprintf(stderr, "transforms_json: frame missing 'file_path'\n"); return false; }
         if (const JsonValue* ca = obj_get(fr, "camera_angle_x"); ca && ca->type == JsonType::Number) {
+            if (!valid_camera_fov(ca->num)) {
+                fprintf(stderr,
+                        "transforms_json: frame '%s' has invalid camera_angle_x=%g; expected a finite value with 0 < fov < pi radians\n",
+                        tf.file_path.c_str(), ca->num);
+                return false;
+            }
             tf.camera_angle_x = (float)ca->num; tf.has_camera_angle_x = true;
         }
         const JsonValue* tm = obj_get(fr, "transform_matrix");
