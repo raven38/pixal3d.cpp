@@ -44,6 +44,28 @@ write_tf() {
 EOF
 }
 
+write_tf_frame_fov() {
+  local frame_fov="$1"
+  cat > "$views/transforms.json" <<EOF
+{
+  "camera_angle_x": 0.3490658503988659,
+  "mesh_scale": 1.0,
+  "frames": [
+    {
+      "file_path": "front.png",
+      "camera_angle_x": $frame_fov,
+      "transform_matrix": [
+        [1, 0, 0, 0],
+        [0, 0, -1, -2.8356409],
+        [0, 1, 0, 0],
+        [0, 0, 0, 1]
+      ]
+    }
+  ]
+}
+EOF
+}
+
 run_fail() {
   local log="$1"; shift
   set +e
@@ -52,6 +74,17 @@ run_fail() {
   set -e
   if [ "$rc" -eq 0 ]; then
     echo "FAIL: command unexpectedly succeeded: $*" >&2
+    cat "$log" >&2
+    exit 1
+  fi
+}
+
+assert_fov_rejected_before_models() {
+  local log="$1"
+  grep -q 'camera_angle_x' "$log"
+  grep -qi 'pi' "$log"
+  if grep -q 'missing .*flow model' "$log"; then
+    echo "FAIL: invalid FOV reached model preflight" >&2
     cat "$log" >&2
     exit 1
   fi
@@ -77,19 +110,18 @@ if grep -q 'pixal3d_ss_flow_mv\.gguf' "$tmp/sv.log"; then
   exit 1
 fi
 
-# Perspective FOV is physically valid only for 0 < fov < pi. This must fail at
-# camera validation, before model preflight, even though the model directory is empty.
+# Perspective FOV is physically valid only for 0 < fov < pi. Top-level and
+# per-frame overrides must both fail during metadata parsing, before model preflight.
 write_tf 3.141592653589793
-run_fail "$tmp/fov.log" --views "$views" --models "$models" --pixal3d-weights sv --res 1024 "$tmp/fov.glb"
-grep -q 'camera_angle_x' "$tmp/fov.log"
-grep -qi 'pi' "$tmp/fov.log"
-if grep -q 'missing .*flow model' "$tmp/fov.log"; then
-  echo "FAIL: invalid FOV reached model preflight" >&2
-  cat "$tmp/fov.log" >&2
-  exit 1
-fi
+run_fail "$tmp/fov-top.log" --views "$views" --models "$models" --pixal3d-weights sv --res 1024 "$tmp/fov-top.glb"
+assert_fov_rejected_before_models "$tmp/fov-top.log"
+
+write_tf_frame_fov 3.141592653589793
+run_fail "$tmp/fov-frame.log" --views "$views" --models "$models" --pixal3d-weights sv --res 1024 "$tmp/fov-frame.glb"
+assert_fov_rejected_before_models "$tmp/fov-frame.log"
 
 echo "ok   default selects MV only"
 echo "ok   explicit SV selects SV only"
-echo "ok   camera FOV >= pi fails before model loading"
+echo "ok   top-level FOV >= pi fails before model loading"
+echo "ok   per-frame FOV >= pi fails before model loading"
 echo "PASSED"
