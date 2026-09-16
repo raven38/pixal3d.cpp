@@ -177,8 +177,7 @@ is rejected: Pixal3D ships no res-512 texture flow, so the 1024/1536 cascade is 
 long as you pass `--mesh-scale F` (a positive projection scale — no default is assumed, because a
 wrong scale silently corrupts the reconstruction). This is still the **multiview** cascade with the
 Pixal3D `*_mv.gguf` weights — it only removes the need to author camera JSON for the canonical
-turntable layout; it is not a single-view mode (for one image, use the TRELLIS.2 single-image path
-above, which never needed `transforms.json`):
+turntable layout; it is not a single-view mode:
 
 ```
 trellis-cli --views ./views --mesh-scale 1.0 --models pixal3d_models --seed 42 out.glb
@@ -193,23 +192,48 @@ a missing `--mesh-scale`, `--num-views` other than 4 — is rejected rather than
 but malformed `transforms.json` is still an error; the rig is used only when the file is absent.
 With `transforms.json` present, `--mesh-scale` overrides the value inside it.
 
-Fewer than four views is rejected on purpose: the released Pixal3D set ships only multiview
-checkpoints (`pixal3d_ss_flow_mv.gguf`, `pixal3d_shape_flow_{512,1024}_mv.gguf`,
-`pixal3d_tex_flow_1024_mv.gguf`), and the rig's poses are what makes the four images
-interpretable without camera metadata. A Pixal3D-conditioned single-view path would need
-non-MV checkpoints that this release does not contain.
+`--pixal3d-weights sv|mv` picks the flow-weight family (default `mv`). The official Pixal3D
+release has a single-view and a multiview checkpoint for each of the four flow stages; this repo
+names the converted single-view files with `_sv.gguf` and the multiview files with `_mv.gguf`.
+The same native loader/graph can read either family, while the five shared models are unchanged.
+`sv` is validated at V=1 and `mv` at V=4; other view counts are allowed with an explicit warning.
+This selector changes the checkpoint family only — the input still uses the `--views` camera
+contract. A one-frame `transforms.json` is therefore required until the separate camera-estimation
+wrapper is merged.
 
-`--models DIR` needs `dinov3.gguf`, `pixal3d_naf.gguf`, `pixal3d_ss_flow_mv.gguf`,
-`pixal3d_shape_flow_512_mv.gguf`, `pixal3d_shape_flow_1024_mv.gguf`,
-`pixal3d_tex_flow_1024_mv.gguf`, `ss_dec.gguf`, `shape_dec.gguf`, `tex_dec.gguf` (the same
-`ss_dec`/`shape_dec`/`tex_dec` decoders TRELLIS.2 uses — only the flow DiTs and the DINOv3/NAF
-conditioners are Pixal3D-specific). Per-view DINOv3 features are pixel-aligned-projected into a
-shared 3D grid (`ProjGrid`) and averaged over views (`ProjectAttention`); the shape/texture
-stages additionally fuse in NAF high-resolution image features. See
-`docs/spec/30-pixal3d-cond.md` for the full conditioning spec. Face budget (1M), UV atlas
-(4096px) and remesh band (1) default to the reference pipeline's own values in this mode
-(override with `--decim`/`--atlas`/`--band` as usual); everything after SLAT sampling
-(decode/remesh/decimate/UV/bake/GLB export) is the same TRELLIS.2 postprocess code.
+**SV distribution status:** this PR provides **runtime + conversion support only**. The normal
+installer and the currently published `pixal3d-f16` / `pixal3d-q8_0` manifests remain MV-only, so
+`install.sh` does not install the four `_sv.gguf` files yet. To exercise SV from a source checkout,
+start from an upstream TencentARC/Pixal3D snapshot that contains the plain (non-`_mv`)
+safetensors/config files under `ckpts/`, then convert the four flows into the same directory that
+already contains the shared Pixal3D models:
+
+```bash
+export TRELLIS_MODELS=/path/to/TencentARC/Pixal3D
+export TRELLIS_GGUF_OUT=/path/to/pixal3d_models
+python3 tools/convert.py \
+  pixal3d_ss_flow_sv \
+  pixal3d_shape_flow_512_sv \
+  pixal3d_shape_flow_1024_sv \
+  pixal3d_tex_flow_1024_sv
+```
+
+That creates `pixal3d_ss_flow_sv.gguf`, `pixal3d_shape_flow_512_sv.gguf`,
+`pixal3d_shape_flow_1024_sv.gguf`, and `pixal3d_tex_flow_1024_sv.gguf`. The existing
+`dinov3.gguf`, `pixal3d_naf.gguf`, `ss_dec.gguf`, `shape_dec.gguf`, and `tex_dec.gguf` are shared
+between SV and MV. A follow-up model-set release can add verified size/SHA manifests and installer
+selection without changing the runtime selector introduced here.
+
+For the currently published MV set, `--models DIR` needs `dinov3.gguf`, `pixal3d_naf.gguf`,
+`pixal3d_ss_flow_mv.gguf`, `pixal3d_shape_flow_512_mv.gguf`,
+`pixal3d_shape_flow_1024_mv.gguf`, `pixal3d_tex_flow_1024_mv.gguf`, `ss_dec.gguf`,
+`shape_dec.gguf`, `tex_dec.gguf`. Per-view DINOv3 features are pixel-aligned-projected into a
+shared 3D grid (`ProjGrid`) and averaged over views (`ProjectAttention`); the shape/texture stages
+additionally fuse in NAF high-resolution image features. See `docs/spec/30-pixal3d-cond.md` for
+the full conditioning spec. Face budget (1M), UV atlas (4096px) and remesh band (1) default to the
+reference pipeline's own values in this mode (override with `--decim`/`--atlas`/`--band` as usual);
+everything after SLAT sampling (decode/remesh/decimate/UV/bake/GLB export) is the same TRELLIS.2
+postprocess code.
 
 ## Pipeline
 

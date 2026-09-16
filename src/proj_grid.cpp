@@ -10,17 +10,6 @@
 
 namespace trellis {
 
-namespace {
-
-// Row-major 4x4 double matrices throughout (index i*4+j = row i, col j).
-
-void front_view_matrix_d(double distance, double out[16]) {
-    out[0] = 1;  out[1] = 0;  out[2] = 0;  out[3] = 0;
-    out[4] = 0;  out[5] = 0;  out[6] = -1; out[7] = -distance;
-    out[8] = 0;  out[9] = 1;  out[10] = 0; out[11] = 0;
-    out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
-}
-
 // Gauss-Jordan 4x4 inverse in double. Returns false (and zeroes out) if
 // singular, which should not happen for well-formed camera matrices.
 bool mat4_inverse_d(const double m[16], double out[16]) {
@@ -50,6 +39,18 @@ bool mat4_inverse_d(const double m[16], double out[16]) {
     for (int i = 0; i < 4; ++i) for (int j = 0; j < 4; ++j) out[i * 4 + j] = a[i][4 + j];
     return true;
 }
+
+namespace {
+
+// Row-major 4x4 double matrices throughout (index i*4+j = row i, col j).
+
+void front_view_matrix_d(double distance, double out[16]) {
+    out[0] = 1;  out[1] = 0;  out[2] = 0;  out[3] = 0;
+    out[4] = 0;  out[5] = 0;  out[6] = -1; out[7] = -distance;
+    out[8] = 0;  out[9] = 1;  out[10] = 0; out[11] = 0;
+    out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+}
+
 
 void mat4_mul_d(const double A[16], const double B[16], double out[16]) {
     for (int i = 0; i < 4; ++i) {
