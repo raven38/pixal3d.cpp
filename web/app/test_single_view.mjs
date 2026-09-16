@@ -37,6 +37,8 @@ assert.equal(modelFamilyForManifest(sv), 'sv');
 assert.equal(modelFamilyForManifest(mv), 'mv');
 assert.equal(modelFamilyForManifest({ model_family:'sv', files:[] }), 'sv');
 assert.equal(modelFamilyForManifest({ files:[{role:'ss_flow',name:'weird.gguf'}] }), null);
+assert.equal(modelFamilyForManifest({ ...mv, model_family:'sv' }), null, 'SV metadata must not override MV flow filenames');
+assert.equal(modelFamilyForManifest({ ...sv, model_family:'mv' }), null, 'MV metadata must not override SV flow filenames');
 
 const storage = new Map([
   ['pixal3d.svManifestUrl', 'https://stored.test/manifest.json'],
