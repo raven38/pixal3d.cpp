@@ -15,6 +15,7 @@
 #include "stb_image_write.h"
 #include "trellis_run.h"
 #include "pixal3d_cond.h"
+#include "proj_grid.h"   // mat4_inverse_d: 入力段で transform_matrix の可逆性を確認する
 #include "transforms_json.h"
 #include <filesystem>
 // Declarations only (no *_IMPLEMENTATION define here) -- stbi_load/stbir_resize_uint8 are
@@ -138,6 +139,37 @@ static bool mv_load_views(const trellis::TrellisParams& cfg,
         if (fr.has_camera_angle_x) fov = fr.camera_angle_x;
         else if (tf.has_camera_angle_x) fov = tf.camera_angle_x;
         else { fprintf(stderr, "[trellis] view %d (%s): no camera_angle_x (per-frame or top-level)\n", i, fr.file_path.c_str()); return false; }
+        // FOV と姿勢は、壊れていても下流が黙って進んでしまう（camera_angle_x=0 だと
+        // tan(fov/2)=0 で focal が無限大、特異な transform_matrix だと proj_grid.cpp:127/:206 の
+        // mat4_inverse_d() の失敗が無視される）。V=1 では他視点による平均緩和も無いので、
+        // 壊れた 1 枚がそのまま条件になる。ここで落とす。
+        if (!std::isfinite(fov) || fov <= 0.0f) {
+            fprintf(stderr, "[trellis] view %d (%s): camera_angle_x must be finite and > 0, got %g\n",
+                    i, fr.file_path.c_str(), (double)fov);
+            return false;
+        }
+        {
+            double c2w_d[16], inv[16];
+            for (int k = 0; k < 16; ++k) {
+                if (!std::isfinite(fr.transform_matrix[k])) {
+                    fprintf(stderr, "[trellis] view %d (%s): transform_matrix has a non-finite entry\n",
+                            i, fr.file_path.c_str());
+                    return false;
+                }
+                c2w_d[k] = (double)fr.transform_matrix[k];
+            }
+            if (!trellis::mat4_inverse_d(c2w_d, inv)) {
+                fprintf(stderr, "[trellis] view %d (%s): transform_matrix is singular (not invertible)\n",
+                        i, fr.file_path.c_str());
+                return false;
+            }
+            const double d2 = c2w_d[3]*c2w_d[3] + c2w_d[7]*c2w_d[7] + c2w_d[11]*c2w_d[11];
+            if (!(d2 > 0.0)) {
+                fprintf(stderr, "[trellis] view %d (%s): camera sits at the origin (distance 0)\n",
+                        i, fr.file_path.c_str());
+                return false;
+            }
+        }
 
         const std::string path = cfg.views + "/" + fr.file_path;
         int W, H; bool has_alpha;
@@ -214,7 +246,58 @@ static std::vector<float> mv_shape_flow(const std::string& path, const trellis::
     return out;
 }
 
-static int trellis_run_mv(const trellis::TrellisParams& cfg) {
+// Pixal3D flow 重みの系列（--pixal3d-weights sv|mv）を 4 つのファイル名へ落とす。
+// 公式は 4 段それぞれに単視点版（接尾辞なし）と多視点版（_mv）を配布しており、config json と
+// テンソル名/shape/dtype は一致する（2026-09-15 実測）。共有の 5 モデル（dinov3 / naf /
+// ss_dec / shape_dec / tex_dec）は系列に依存しないので名前を変えない。
+struct Pixal3dWeights {
+    std::string ss, shape512, shape1024, tex;
+};
+
+static Pixal3dWeights mv_weight_paths(const std::string& models, const std::string& variant) {
+    const std::string sfx = (variant == "sv") ? "_sv" : "_mv";
+    return { models + "/pixal3d_ss_flow"        + sfx + ".gguf",
+             models + "/pixal3d_shape_flow_512" + sfx + ".gguf",
+             models + "/pixal3d_shape_flow_1024"+ sfx + ".gguf",
+             models + "/pixal3d_tex_flow_1024"  + sfx + ".gguf" };
+}
+
+// 推論を始める前に、選んだ系列で実際に要るファイルが揃っているか確認する。
+// 段階ロードのままだと texture flow だけ欠けていたときに 3 段走ってから落ち、しかも
+// Model::load() の例外を main が捕まえないので診断が出ない。
+static bool mv_check_weights(const Pixal3dWeights& w, const std::string& variant, bool want_tex) {
+    std::vector<const std::string*> need = { &w.ss, &w.shape512, &w.shape1024 };
+    if (want_tex) need.push_back(&w.tex);
+    std::vector<std::string> missing;
+    for (const std::string* p : need) {
+        FILE* f = fopen(p->c_str(), "rb");
+        if (f) fclose(f); else missing.push_back(*p);
+    }
+    if (missing.empty()) return true;
+    fprintf(stderr, "[trellis] --pixal3d-weights %s: missing %zu of %zu flow model(s):\n",
+            variant.c_str(), missing.size(), need.size());
+    for (const std::string& m : missing) fprintf(stderr, "            %s\n", m.c_str());
+    fprintf(stderr, "          (the other variant is not substituted; pass --models DIR with the "
+                    "matching set)\n");
+    return false;
+}
+
+// 検証済みの組み合わせだけを無警告にする。条件付けは全視点を単純平均するので、系列が想定する
+// 視点数から外れると別分布の条件になる。実測（TASK-047）: カメラ・入力を共通にして視点数だけ
+// 4->1 にすると多視点重みが 85 勝 0 敗（d30 85 体）/ 20 勝 0 敗（game 設定画 20 体、IoU 中央値
+// +0.32）で負け、1 視点同士でも多視点重みは単視点重みに 3 勝 17 敗で負ける。
+// 実行は止めない（判断はユーザーに残す）。
+static void mv_warn_view_count(const std::string& variant, int V) {
+    if (variant == "sv" && V != 1)
+        fprintf(stderr, "[trellis] warning: --pixal3d-weights sv with V=%d. The single-view weights "
+                        "are validated at V=1; extra views are averaged into the condition.\n", V);
+    if (variant == "mv" && V != 4)
+        fprintf(stderr, "[trellis] warning: --pixal3d-weights mv with V=%d. The multiview weights "
+                        "are validated at V=4; at V=1 they break down badly (85-0 against the "
+                        "single-view weights on 85 subjects).\n", V);
+}
+
+int trellis_run_mv(const trellis::TrellisParams& cfg) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     uint32_t run_seed = cfg.seed;
     if (run_seed == 0) {
@@ -250,6 +333,11 @@ static int trellis_run_mv(const trellis::TrellisParams& cfg) {
     if (!mv_load_views(cfg, views512, views1024, mesh_scale)) return 1;
     const int V = (int)views512.size();
     printf("      V=%d views, mesh_scale=%.4f\n", V, mesh_scale);
+
+    const Pixal3dWeights W = mv_weight_paths(M, cfg.pixal3d_weights);
+    mv_warn_view_count(cfg.pixal3d_weights, V);
+    if (!mv_check_weights(W, cfg.pixal3d_weights, do_tex)) return 1;
+    printf("      flow weights: %s\n", cfg.pixal3d_weights.c_str());
     double t_stage = now();
 
     printf("[2/6] SS proj conditioning + flow\n");
@@ -261,9 +349,9 @@ static int trellis_run_mv(const trellis::TrellisParams& cfg) {
           dino.free(); }
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(c.proj.size(), 0.0f);
 
-        trellis::Model m = trellis::Model::load(M + "/pixal3d_ss_flow_mv.gguf", gpu);
+        trellis::Model m = trellis::Model::load(W.ss, gpu);
         trellis::DiTParams p; p.in_ch = 8; p.out_ch = 8; p.d_cond = 1024; p.cast_f32 = F32;
-        if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] pixal3d_ss_flow_mv.gguf: not a Pixal3D checkpoint\n"); return 1; }
+        if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] %s: not a Pixal3D checkpoint\n", W.ss.c_str()); return 1; }
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, c.n_global);
         trellis::FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* cn, const float* pj){ return run->forward(x, ts, cn, pj); };
         trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
@@ -293,7 +381,7 @@ static int trellis_run_mv(const trellis::TrellisParams& cfg) {
         c.proj.clear(); c.proj.shrink_to_fit();
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * coords.size());
-        lr_norm = mv_shape_flow(M + "/pixal3d_shape_flow_512_mv.gguf", cfg, F32, gpu, coords,
+        lr_norm = mv_shape_flow(W.shape512, cfg, F32, gpu, coords,
                                 c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
         if (lr_norm.empty()) return 1;
     }
@@ -349,7 +437,7 @@ static int trellis_run_mv(const trellis::TrellisParams& cfg) {
         c.proj.clear(); c.proj.shrink_to_fit();
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * shc.size());
-        slat_norm = mv_shape_flow(M + "/pixal3d_shape_flow_1024_mv.gguf", cfg, F32, gpu, shc,
+        slat_norm = mv_shape_flow(W.shape1024, cfg, F32, gpu, shc,
                                   c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
         if (slat_norm.empty()) return 1;
     }
@@ -398,9 +486,9 @@ static int trellis_run_mv(const trellis::TrellisParams& cfg) {
             c.proj.clear(); c.proj.shrink_to_fit();
             vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
 
-            trellis::Model m = trellis::Model::load(M + "/pixal3d_tex_flow_1024_mv.gguf", gpu);
+            trellis::Model m = trellis::Model::load(W.tex, gpu);
             trellis::DiTParams p; p.in_ch = 64; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
-            if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] pixal3d_tex_flow_1024_mv.gguf: not a Pixal3D checkpoint\n"); return 1; }
+            if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] %s: not a Pixal3D checkpoint\n", W.tex.c_str()); return 1; }
             trellis::DitRunner* run = trellis::make_sparse_runner(m, p, shc, c.n_global);
             // Tex flow needs the proj-aware sample_flow overload (ProjectAttention DiT).
             trellis::FlowFwdProj fwdp = [&](const vector<float>& st, float ts, const float* cn, const float* pj) {

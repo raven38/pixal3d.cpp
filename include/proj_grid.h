@@ -10,6 +10,10 @@
 
 namespace trellis {
 
+// 4x4 の逆行列。特異なら false（呼び出し側で必ず戻り値を見ること。無視すると
+// 出力がゼロ化されたまま処理が進む）。
+bool mat4_inverse_d(const double m[16], double out[16]);
+
 // Camera parameters for a single view / batch element.
 struct Camera {
     float fov_x;       // camera_angle_x, radians (horizontal FOV)

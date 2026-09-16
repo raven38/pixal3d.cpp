@@ -199,6 +199,17 @@ checkpoints (`pixal3d_ss_flow_mv.gguf`, `pixal3d_shape_flow_{512,1024}_mv.gguf`,
 interpretable without camera metadata. A Pixal3D-conditioned single-view path would need
 non-MV checkpoints that this release does not contain.
 
+`--pixal3d-weights sv|mv` picks the flow weights variant (default `mv`). The official release
+ships both a single-view (`_sv` here) and a multiview (`_mv`) checkpoint for each of the four flow
+stages; their config and tensor structure are identical, so the same loader and graph read both.
+The flag only changes those four file names — the five shared models are variant-independent. It
+requires `--views`, and the CLI warns when the view count does not match what the variant was
+validated at (`sv` at V=1, `mv` at V=4): with the same cameras and only view 0, the multiview
+weights lose 85-0 to the single-view weights on 85 subjects and break down visibly. Note this runs
+the SV weights through the `--views` contract (a `transforms.json` with one frame, or the canonical
+rig above); it is not a reproduction of the official single-view pipeline, which takes
+`camera_params` instead.
+
 `--models DIR` needs `dinov3.gguf`, `pixal3d_naf.gguf`, `pixal3d_ss_flow_mv.gguf`,
 `pixal3d_shape_flow_512_mv.gguf`, `pixal3d_shape_flow_1024_mv.gguf`,
 `pixal3d_tex_flow_1024_mv.gguf`, `ss_dec.gguf`, `shape_dec.gguf`, `tex_dec.gguf` (the same
