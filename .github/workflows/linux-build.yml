@@ -15,6 +15,7 @@ on:
       - '.gitmodules'
       - 'install/generate.sh'
       - 'install/test_natural_order.sh'
+      - 'install/test_pixal3d_weight_selection.sh'
       - '.github/workflows/linux-build.yml'
   push:
     branches: [main]
@@ -26,6 +27,7 @@ on:
       - '.gitmodules'
       - 'install/generate.sh'
       - 'install/test_natural_order.sh'
+      - 'install/test_pixal3d_weight_selection.sh'
       - '.github/workflows/linux-build.yml'
   workflow_dispatch:
 
@@ -68,9 +70,8 @@ jobs:
         # 重みが要るので実行はしない（ビルドが通ることだけを見る）。
         run: cmake --build build -j "$(nproc)" -- -k 0
 
-      # 重みが要らない唯一のテスト。canonical rig の契約（合成結果が同梱 transforms.json と
-      # ビット一致・異常系が fail closed・自然順）と、権限/走査エラーの扱いという
-      # プラットフォーム差の出る部分を Linux で実際に動かす。
+      # canonical rig の契約（合成結果が同梱 transforms.json とビット一致・異常系が
+      # fail closed・自然順）と、権限/走査エラーの扱いを Linux で実際に動かす。
       - name: Run the weightless canonical-rig test
         run: ./build/trellis-test-transforms-synth docker/linux-webgpu-gate/e2e/views
 
@@ -78,6 +79,11 @@ jobs:
       # GNU coreutils 側でも確認する（macOS の BSD sort とは別実装のため両方で回す）。
       - name: Check the shell natural order against the C++ comparator
         run: ./install/test_natural_order.sh build/trellis-test-transforms-synth
+
+      # 実モデルは不要。空の model dir で fail-fast させ、既定が MV のまま・明示 SV が
+      # MV に黙ってフォールバックしないことと、0 < FOV < pi の camera 契約を固定する。
+      - name: Check Pixal3D weight selection and FOV contract
+        run: bash ./install/test_pixal3d_weight_selection.sh ./build/trellis-cli
 
       - name: Show binaries
         if: always()
