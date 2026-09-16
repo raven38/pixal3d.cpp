@@ -12,6 +12,7 @@
     "prepreview": "npm run build",
     "preview": "wrangler dev --config ../wrangler.jsonc",
     "test:rig": "node app/test_canonical_rig.mjs",
-    "test:single-view": "node app/test_single_view.mjs"
+    "test:single-view": "node app/test_single_view.mjs",
+    "test:moge-focal": "node app/test_moge_focal.mjs"
   }
 }
