@@ -31,11 +31,19 @@ export function makeSingleViewTransforms(imageName, fovRad = DEFAULT_SV_FOV) {
 
 export function modelFamilyForManifest(manifest) {
   const explicit = manifest?.model_family;
-  if (explicit === 'sv' || explicit === 'mv') return explicit;
-  if (!Array.isArray(manifest?.files)) return null;
+  if (explicit !== undefined && explicit !== 'sv' && explicit !== 'mv') return null;
+  if (!Array.isArray(manifest?.files)) return (explicit === 'sv' || explicit === 'mv') ? explicit : null;
   const flowRoles = new Set(['ss_flow', 'shape_flow_512', 'shape_flow_1024', 'texture_flow_1024']);
   const flows = manifest.files.filter((f) => flowRoles.has(f?.role));
-  if (!flows.length) return null;
+  if (!flows.length) return (explicit === 'sv' || explicit === 'mv') ? explicit : null;
+
+  const hasSv = flows.some((f) => typeof f?.name === 'string' && f.name.includes('_sv.gguf'));
+  const hasMv = flows.some((f) => typeof f?.name === 'string' && f.name.includes('_mv.gguf'));
+  if (hasSv && hasMv) return null;
+  if (explicit === 'sv' && hasMv) return null;
+  if (explicit === 'mv' && hasSv) return null;
+  if (explicit === 'sv' || explicit === 'mv') return explicit;
+
   const allSv = flows.every((f) => typeof f?.name === 'string' && f.name.includes('_sv.gguf'));
   const allMv = flows.every((f) => typeof f?.name === 'string' && f.name.includes('_mv.gguf'));
   if (allSv) return 'sv';
