@@ -22,6 +22,11 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Run weightless input contracts
+        working-directory: web
+        run: |
+          npm run test:rig
+          npm run test:single-view
       - name: Serve repository
         run: |
           python3 -m http.server 8199 --bind 127.0.0.1 > /tmp/pixal3d-web.log 2>&1 &
