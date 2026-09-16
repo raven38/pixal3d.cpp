@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { DEFAULT_SV_FOV, makeSingleViewTransforms, modelFamilyForManifest } from './single_view.js';
+import {
+  DEFAULT_SV_FOV,
+  makeSingleViewTransforms,
+  modelFamilyForManifest,
+  resolveSvModelSource,
+} from './single_view.js';
 
 assert.equal(DEFAULT_SV_FOV, 0.3490658503988659);
 const tf = makeSingleViewTransforms('input.png');
@@ -32,5 +37,27 @@ assert.equal(modelFamilyForManifest(sv), 'sv');
 assert.equal(modelFamilyForManifest(mv), 'mv');
 assert.equal(modelFamilyForManifest({ model_family:'sv', files:[] }), 'sv');
 assert.equal(modelFamilyForManifest({ files:[{role:'ss_flow',name:'weird.gguf'}] }), null);
+
+const storage = new Map([
+  ['pixal3d.svManifestUrl', 'https://stored.test/manifest.json'],
+  ['pixal3d.svModelBaseUrl', 'https://stored.test/files'],
+]);
+const store = { getItem:(k)=>storage.get(k)||'' };
+assert.deepEqual(
+  resolveSvModelSource({ search:'', windowObj:null, storage:store }),
+  { manifestUrl:'https://stored.test/manifest.json', modelBaseUrl:'https://stored.test/files' },
+);
+assert.deepEqual(
+  resolveSvModelSource({
+    search:'?sv_manifest_url=https%3A%2F%2Fquery.test%2Fm.json&sv_model_base_url=https%3A%2F%2Fquery.test%2Ffiles',
+    windowObj:null,
+    storage:store,
+  }),
+  { manifestUrl:'https://query.test/m.json', modelBaseUrl:'https://query.test/files' },
+);
+assert.deepEqual(
+  resolveSvModelSource({ search:'', windowObj:{ PIXAL3D_SV_MODEL_MANIFEST_URL:'https://window.test/m.json', PIXAL3D_SV_MODEL_BASE_URL:'https://window.test/files' }, storage:null }),
+  { manifestUrl:'https://window.test/m.json', modelBaseUrl:'https://window.test/files' },
+);
 
 console.log('WEB_SINGLE_VIEW_CONTRACT_OK');
