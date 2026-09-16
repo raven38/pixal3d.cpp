@@ -97,20 +97,18 @@ await page.waitForFunction(() => document.querySelector('#preflight-status')?.te
 if ((await page.locator('#preflight-status').textContent())?.includes('WebGPU unavailable')) throw new Error('mock WebGPU preflight failed');
 if (await page.locator('#input-mode').inputValue() !== 'mv') throw new Error('MV must remain the default when no public SV manifest is configured');
 
-// Real remote MV lifecycle: HTTP streaming -> OPFS -> incremental SHA -> manifest commit marker.
+// Import modules relative to the page so this same smoke covers source web/app/ and built web/dist/.
 const remoteStatus = await page.evaluate(async () => {
-  const { installReleaseModels } = await import('/web/app/release_store.js');
-  const s = await installReleaseModels({ manifestUrl: 'https://models.test/manifest.json', modelBaseUrl: 'https://models.test/files' });
+  const mod = await import(new URL('release_store.js', location.href).href);
+  const s = await mod.installReleaseModels({ manifestUrl: 'https://models.test/manifest.json', modelBaseUrl: 'https://models.test/files' });
   return { ready:s.ready, modelSet:s.modelSet, version:s.version, files:s.files };
 });
 if (!remoteStatus.ready || remoteStatus.modelSet !== remoteManifest.model_set || remoteStatus.files !== 9) throw new Error(`remote release install failed: ${JSON.stringify(remoteStatus)}`);
 
-// Safe delete is constrained to the origin-owned Pixal3D OPFS namespace.
-await page.evaluate(async () => { const { deleteCachedModels } = await import('/web/app/release_store.js'); await deleteCachedModels(); });
-const deleted = await page.evaluate(async () => { const { cacheStatus } = await import('/web/app/model_store.js'); return cacheStatus(); });
+await page.evaluate(async () => { const mod = await import(new URL('release_store.js', location.href).href); await mod.deleteCachedModels(); });
+const deleted = await page.evaluate(async () => { const mod = await import(new URL('model_store.js', location.href).href); return mod.cacheStatus(); });
 if (deleted.ready) throw new Error('Pixal3D OPFS cache remained Ready after delete');
 
-// Local MV fallback remains supported.
 const modelFiles = [{ name:'pixal3d-models.json', mimeType:'application/json', buffer:Buffer.from(JSON.stringify(localManifest)) }, ...localModels.map(m=>({name:m.name,mimeType:'application/octet-stream',buffer:m.buffer}))];
 await page.locator('#model-files').setInputFiles(modelFiles);
 await page.waitForFunction(() => document.querySelector('#model-status')?.textContent?.includes('Ready'));
@@ -127,7 +125,7 @@ let payload=await page.evaluate(()=>window.__lastPayload);
 if(payload.views[1]!=='side.png'||payload.views[2]!=='front.png')throw new Error('drag reorder did not reach Worker payload');
 if(payload.models.length!==localModels.length)throw new Error(`cached MV model set not passed: ${payload.models}`);
 if(payload.resolution!==1024||payload.inputMode!=='mv'||payload.modelSet!==localManifest.model_set||payload.modelFamily!=='mv')throw new Error('MV worker manifest/resolution contract mismatch');
-if(!payload.workerUrl.includes('/web/real_e2e/worker.js'))throw new Error(`unexpected Worker URL: ${payload.workerUrl}`);
+if(!payload.workerUrl.endsWith('/real_e2e/worker.js'))throw new Error(`unexpected Worker URL: ${payload.workerUrl}`);
 if(await page.locator('#download').isDisabled())throw new Error('GLB download not enabled');
 const downloadPromise=page.waitForEvent('download'); await page.locator('#download').click(); if((await downloadPromise).suggestedFilename()!=='pixal3d.glb')throw new Error('unexpected GLB filename');
 
@@ -135,15 +133,12 @@ await page.evaluate(()=>{window.__mockMode='error';}); await page.locator('#run'
 await page.waitForFunction(()=>document.querySelector('#progress-text')?.textContent==='failed');
 if(await page.locator('#run').isDisabled())throw new Error('Generate stayed disabled after Worker failure');
 
-// Switch to SV: MV cache must immediately become incompatible, and public download is disabled
-// because this deployment has no verified public SV manifest.
 await page.locator('#input-mode').selectOption('sv');
 await page.waitForFunction(()=>!document.querySelector('#sv-panel')?.hidden);
 await page.waitForFunction(()=>document.querySelector('#model-status')?.textContent?.includes('SV input requires'));
 if(!(await page.locator('#download-models').isDisabled()))throw new Error('SV release download should be disabled without a configured manifest');
 if(!((await page.locator('#model-family-note').textContent())||'').includes('MV weights are never substituted'))throw new Error('missing fail-closed SV model guidance');
 
-// Install a local verified SV set, then one RGBA image must synthesize one-frame camera metadata.
 const svFiles = [{ name:'pixal3d-models.json', mimeType:'application/json', buffer:Buffer.from(JSON.stringify(svLocalManifest)) }, ...svLocalModels.map(m=>({name:m.name,mimeType:'application/octet-stream',buffer:m.buffer}))];
 await page.locator('#model-files').setInputFiles(svFiles);
 await page.waitForFunction(() => document.querySelector('#model-status')?.textContent?.includes('Ready') && document.querySelector('#model-status')?.textContent?.includes('SV'));
