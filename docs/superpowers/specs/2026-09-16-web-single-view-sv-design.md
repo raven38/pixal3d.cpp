@@ -18,11 +18,11 @@ The first browser release intentionally does **not** port MoGe-2. It uses a cano
 
 ### Input mode adapter
 
-Replace the current calibration-only input surface with a small mode-aware adapter that supports:
+Add a mode-aware input layer that supports:
 
 1. **Single image / SV**
    - exactly one pre-matted RGBA image;
-   - object-centric alpha crop matching PR #5 where practical in browser JS;
+   - object-centric alpha crop matching PR #5 in browser JS;
    - synthesize a private one-frame `transforms.json` with canonical front orientation;
    - `mesh_scale=1.0`;
    - default horizontal FOV = 20 degrees (`0.3490658503988659` rad);
@@ -36,18 +36,16 @@ Replace the current calibration-only input surface with a small mode-aware adapt
 3. **Explicit transforms / MV**
    - preserve current behavior.
 
-The adapter exposes `mode`, patched files, readiness, FOV and view count so `main.js` can select the matching model family.
-
 ### Model-set selection
 
-Keep the existing role-based worker unchanged. The app chooses a model manifest by input mode:
+Keep the existing role-based worker unchanged. The app chooses a model family by input mode:
 
 - MV -> existing `pixal3d-q8_0-v1` manifest.
-- SV -> a separate manifest URL/source.
+- SV -> a separate manifest URL/source or a locally installed verified SV manifest.
 
-The browser cache must be keyed by manifest identity rather than assuming one global model set. Switching modes may reuse files only when the selected manifest proves the same name/size/SHA; otherwise it installs the requested model set normally.
+The existing OPFS namespace continues to hold one active verified manifest at a time. On every mode switch and before inference, the app derives the cached manifest family and requires it to match the selected input mode. A cache containing MV weights is therefore not usable for SV, and vice versa.
 
-Until a verified public SV Q8_0 manifest is published, the deployed UI must still support local verified installation of an SV manifest + GGUF set and must clearly report that the public SV download set is not configured. It must never silently run MV weights for a single image.
+Until a verified public SV Q8_0 manifest is published, the deployed UI supports local verified installation of an SV manifest + GGUF set and clearly reports that one-click public SV download is not configured. It must never silently run MV weights for a single image.
 
 ### Worker
 
@@ -61,30 +59,33 @@ Expose independent source configuration for the two model families:
 - SV manifest: deployment-configurable via `PIXAL3D_SV_MODEL_MANIFEST_URL` / query parameter `sv_manifest_url`.
 - SV base URL: `PIXAL3D_SV_MODEL_BASE_URL` / query parameter `sv_model_base_url` / dedicated persisted setting.
 
-If no public SV manifest is configured, `Download release models` in SV mode fails before downloading with an actionable message and the local verified install path remains usable.
+If no public SV manifest is configured, the SV release-download button is disabled with actionable text and the local verified install path remains usable.
 
 ## UX
 
 The input card has a mode selector:
 
-- `Single image (SV)` — default for the new path.
-- `4-view / transforms (MV)` — existing behavior.
+- `Single image (SV)`.
+- `4-view / transforms (MV)`.
+
+To preserve the currently usable public deployment, **MV remains the default when no verified public SV manifest is configured**. When a deployment supplies an SV manifest, the app may default to SV. `?mode=sv` or `?mode=mv` explicitly selects a mode.
 
 SV mode shows one drop target, a compact advanced FOV field, and camera summary (`front`, `20.0 deg`, `mesh_scale 1.0`). MV mode renders the existing calibration UI.
 
-Model storage status always names the installed model set. If the cached set does not match the active input mode, Generate stays disabled and the UI tells the user which family is required.
+Model storage status always names the installed model set/family. If the cached set does not match the active input mode, Generate stays disabled and the UI tells the user which family is required.
 
 ## Validation
 
-Weightless browser tests must cover:
+Weightless browser tests cover:
 
-- one RGBA image -> one-frame transforms metadata;
+- one RGBA image -> browser crop + one-frame transforms metadata;
 - default FOV 20 degrees, mesh_scale 1.0 and expected camera distance;
 - invalid manual FOV fails closed;
-- single-image mode requests an SV model set and never accepts an MV manifest;
-- MV canonical rig behavior remains unchanged;
+- single-image mode rejects an installed MV manifest;
+- MV canonical-rig / explicit-transforms behavior remains unchanged;
 - model source resolution distinguishes MV and SV;
-- production build includes both configured manifest assets when present.
+- without a configured SV manifest, the public SV download action is disabled and local verified installation remains available;
+- production build includes `single_view.js` and injects optional SV source globals only when supplied, without fabricating a manifest.
 
 Existing browser production smoke and canonical-rig tests must remain green.
 
