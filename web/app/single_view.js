@@ -43,6 +43,27 @@ export function modelFamilyForManifest(manifest) {
   return null;
 }
 
+export function resolveSvModelSource({ search, windowObj, storage } = {}) {
+  const w = windowObj === undefined ? (typeof window !== 'undefined' ? window : null) : windowObj;
+  const q = new URLSearchParams(search ?? w?.location?.search ?? '');
+  const store = storage === undefined ? w?.localStorage : storage;
+  const read = (key) => {
+    try { return store?.getItem?.(key) || ''; } catch { return ''; }
+  };
+  return {
+    manifestUrl: q.get('sv_manifest_url') || w?.PIXAL3D_SV_MODEL_MANIFEST_URL || read('pixal3d.svManifestUrl') || '',
+    modelBaseUrl: q.get('sv_model_base_url') || w?.PIXAL3D_SV_MODEL_BASE_URL || read('pixal3d.svModelBaseUrl') || '',
+  };
+}
+
+export function saveSvModelBaseUrl(url, storage = (typeof window !== 'undefined' ? window.localStorage : null)) {
+  const v = String(url || '').trim();
+  try {
+    if (v) storage?.setItem?.('pixal3d.svModelBaseUrl', v);
+    else storage?.removeItem?.('pixal3d.svModelBaseUrl');
+  } catch {}
+}
+
 function canvas2d(width, height) {
   if (typeof OffscreenCanvas !== 'undefined') {
     const canvas = new OffscreenCanvas(width, height);
