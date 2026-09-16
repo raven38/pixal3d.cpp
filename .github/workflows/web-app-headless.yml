@@ -5,6 +5,7 @@ on:
     paths:
       - 'web/app/**'
       - 'web/real_e2e/calibration.js'
+      - 'scripts/build_web_dist.sh'
       - '.github/workflows/web-app-headless.yml'
   workflow_dispatch:
 
@@ -16,21 +17,42 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install Playwright
         working-directory: web
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: Serve repository
+      - name: Run canonical MV rig contract
+        working-directory: web
+        run: npm run test:rig -- ../docker/linux-webgpu-gate/e2e/views
+      - name: Run single-view camera/model-family contract
+        working-directory: web
+        run: npm run test:sv
+      - name: Build production UI bundle
+        working-directory: web
+        env:
+          PIXAL3D_WEB_ALLOW_MISSING_WASM: '1'
+        run: npm run build
+      - name: Verify production bundle contents
+        run: |
+          test -f web/dist/single_view.js
+          test -f web/dist/real_e2e/worker.js
+          test -f web/dist/models/pixal3d-q8_0-v1/pixal3d-models.json
+          grep -q 'PIXAL3D_MODEL_BASE_URL' web/dist/index.html
+          if grep -q 'PIXAL3D_SV_MODEL_MANIFEST_URL' web/dist/index.html; then
+            echo 'unexpected SV manifest injected without explicit deployment configuration' >&2
+            exit 1
+          fi
+      - name: Serve production bundle
         run: |
           python3 -m http.server 8199 --bind 127.0.0.1 > /tmp/pixal3d-web.log 2>&1 &
           echo $! > /tmp/pixal3d-web.pid
-          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8199/web/app/ >/dev/null && exit 0; sleep .5; done
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8199/web/dist/ >/dev/null && exit 0; sleep .5; done
           cat /tmp/pixal3d-web.log; exit 1
       - name: Run production UI smoke
         env:
-          WEB_APP_URL: http://127.0.0.1:8199/web/app/
+          WEB_APP_URL: http://127.0.0.1:8199/web/dist/
         run: node web/app/test_headless.mjs
       - name: Show server log on failure
         if: failure()
