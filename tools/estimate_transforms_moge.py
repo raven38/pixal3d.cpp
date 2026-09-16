@@ -7,8 +7,10 @@ is computed from FOV plus the caller-provided mesh_scale. The output is a
 normal Pixal3D transforms.json so the existing camera-aware runtime stays
 unchanged.
 
-Manual-FOV mode intentionally has no torch/MoGe/Pillow dependency; it exists
-both as a useful fallback and as a lightweight CI contract.
+The wrapper stages the official Pixal3D object-centric crop as RGBA. Automatic
+MoGe inference explicitly composites that alpha onto black, matching both the
+official Python preprocess_image output and pixal3d.cpp's alpha-premultiplied
+conditioning pixels. Manual-FOV mode still avoids torch/MoGe/Pillow entirely.
 """
 
 from __future__ import annotations
@@ -54,30 +56,41 @@ def validate_fov(value: float) -> float:
 
 
 def distance_from_fov(camera_angle_x: float, mesh_scale: float) -> float:
-    # Official Pixal3D inference.py, distance_from_fov(), with extend_pixel=0,
-    # grid_point=(-1,0,0), target=(0,resolution-1). Algebraically resolution
-    # cancels and the expression reduces to this closed form.
+    # Official Pixal3D inference.py, distance_from_fov(), with extend_pixel=0.
     return 1.0 / (2.0 * mesh_scale * math.tan(camera_angle_x / 2.0))
+
+
+def load_black_composited_rgb(image_path: Path):
+    """Return the image Pixal3D/MoGe should see: alpha composited onto black."""
+    try:
+        from PIL import Image
+    except Exception as exc:
+        die(f"automatic FOV estimation needs Pillow; import failed: {exc}")
+    with Image.open(image_path) as raw:
+        rgba = raw.convert("RGBA")
+    black = Image.new("RGB", rgba.size, (0, 0, 0))
+    black.paste(rgba.convert("RGB"), mask=rgba.getchannel("A"))
+    return black
 
 
 def estimate_fov_moge(image_path: Path, model_name: str, device: str) -> float:
     try:
         import numpy as np
         import torch
-        from PIL import Image
         from moge.model.v2 import MoGeModel
     except Exception as exc:
         die(
-            "automatic FOV estimation needs torch, numpy, Pillow and MoGe-2 "
-            f"(moge); import failed: {exc}"
+            "automatic FOV estimation needs torch, numpy and MoGe-2 (moge); "
+            f"import failed: {exc}"
         )
 
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Match official Pixal3D get_camera_params_wild_moge(): open the image and
-    # convert directly to RGB. Do not invent an alpha-compositing policy here.
-    rgb = Image.open(image_path).convert("RGB")
+    # The staged RGBA is already the official Pixal3D object crop. Composite it
+    # onto black so MoGe sees exactly the same RGB as the C++ alpha-premultiplied
+    # conditioner; never expose hidden RGB values under transparent pixels.
+    rgb = load_black_composited_rgb(image_path)
     image_np = np.asarray(rgb, dtype=np.float32) / 255.0
     image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).to(device)
 
