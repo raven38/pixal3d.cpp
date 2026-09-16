@@ -5,6 +5,11 @@ The wrapper mirrors the official Pixal3D single-image object crop, estimates/wri
 camera metadata in a private temporary views directory, and invokes trellis-cli with
 the dedicated single-view flow weights.  The staged image remains RGBA so the C++
 conditioner and MoGe observe the same black-composited pixels.
+
+For the one-image path, mesh_scale is a projection gauge rather than an observable
+physical object size.  Match official Pixal3D by fixing that gauge to 1.0 by default;
+--mesh-scale remains available as an advanced override and is paired with the
+corresponding camera-distance recomputation by the estimator.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_ESTIMATOR = HERE / "estimate_transforms_moge.py"
+DEFAULT_MESH_SCALE = 1.0
 
 
 def fail(message: str) -> "NoReturn":
@@ -97,7 +103,15 @@ def main() -> None:
     )
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--models", required=True, type=Path)
-    parser.add_argument("--mesh-scale", required=True, type=float)
+    parser.add_argument(
+        "--mesh-scale",
+        type=float,
+        default=DEFAULT_MESH_SCALE,
+        help=(
+            "single-view projection gauge (default: 1.0, matching official Pixal3D); "
+            "advanced override only, not a physical-size estimate"
+        ),
+    )
     parser.add_argument("-o", "--output", required=True, type=Path)
     parser.add_argument("--trellis-cli", type=Path, default=Path("./build/trellis-cli"))
     parser.add_argument("--estimator", type=Path, default=DEFAULT_ESTIMATOR)
@@ -148,7 +162,10 @@ def main() -> None:
         ]
         if args.fov is not None:
             estimate_cmd += ["--manual-fov", repr(args.fov)]
-        print("[estimated] camera metadata", file=sys.stderr)
+        print(
+            f"[estimated] camera metadata (mesh_scale={args.mesh_scale:g})",
+            file=sys.stderr,
+        )
         subprocess.run(estimate_cmd, check=True)
 
         run_cmd = [
