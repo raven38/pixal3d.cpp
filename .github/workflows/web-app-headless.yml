@@ -25,12 +25,14 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Run canonical MV rig contract
         working-directory: web
-        run: npm run test:rig
+        run: npm run test:rig -- ../docker/linux-webgpu-gate/e2e/views
       - name: Run single-view camera/model-family contract
         working-directory: web
         run: npm run test:sv
-      - name: Build production bundle
+      - name: Build production UI bundle
         working-directory: web
+        env:
+          PIXAL3D_WEB_ALLOW_MISSING_WASM: '1'
         run: npm run build
       - name: Verify production bundle contents
         run: |
