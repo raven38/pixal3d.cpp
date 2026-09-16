@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -35,17 +34,29 @@ rgba = Image.open(images[0]).convert('RGBA')
 a = rgba.getchannel('A')
 black = Image.new('RGB', rgba.size, (0, 0, 0))
 black.paste(rgba.convert('RGB'), mask=a)
+tf = json.loads((views / 'transforms.json').read_text())
 out.write_text(json.dumps({
     'argv': args,
     'size': list(rgba.size),
     'alpha_extrema': list(a.getextrema()),
     'corner_rgb': list(black.getpixel((0, 0))),
     'image_name': images[0].name,
+    'mesh_scale': tf['mesh_scale'],
+    'distance': -tf['frames'][0]['transform_matrix'][1][3],
 }))
 """,
         encoding="utf-8",
     )
     path.chmod(0o755)
+
+
+def run_runner(*args):
+    return subprocess.run(
+        [sys.executable, str(RUNNER), *map(str, args)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 
 def main():
@@ -66,24 +77,20 @@ def main():
         fake_cli = d / "fake_trellis_cli.py"
         make_fake_cli(fake_cli)
 
-        p = subprocess.run(
-            [
-                sys.executable, str(RUNNER),
-                "--image", str(image),
-                "--models", str(models),
-                "--mesh-scale", "1.0",
-                "--fov", "0.3490658503988659",
-                "--trellis-cli", str(fake_cli),
-                "--output", str(out),
-            ],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        # Default one-image gauge: no --mesh-scale required, canonical mesh_scale=1.0.
+        p = run_runner(
+            "--image", image,
+            "--models", models,
+            "--fov", "0.3490658503988659",
+            "--trellis-cli", fake_cli,
+            "--output", out,
         )
         assert p.returncode == 0, p.stderr
         assert "camera metadata" in p.stderr
         assert "single-view Pixal3D weights" in p.stderr
         payload = json.loads(out.read_text())
+        assert payload["mesh_scale"] == 1.0, payload
+        default_distance = payload["distance"]
         assert payload["size"][0] == payload["size"][1], payload
         assert payload["size"][0] < 80, payload  # object-centric crop, not the raw 100x80 canvas
         assert payload["alpha_extrema"] == [0, 255], payload
@@ -93,19 +100,39 @@ def main():
         wi = argv.index("--pixal3d-weights")
         assert argv[wi + 1] == "sv", argv
 
-        p = subprocess.run(
-            [
-                sys.executable, str(RUNNER),
-                "--image", str(d / "missing.png"),
-                "--models", str(models),
-                "--mesh-scale", "1.0",
-                "--fov", "0.3",
-                "--trellis-cli", str(fake_cli),
-                "--output", str(out),
-            ],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        # Advanced override stays available. The official distance equation scales as 1/mesh_scale.
+        out_override = d / "out_override.glb"
+        p = run_runner(
+            "--image", image,
+            "--models", models,
+            "--mesh-scale", "0.5",
+            "--fov", "0.3490658503988659",
+            "--trellis-cli", fake_cli,
+            "--output", out_override,
+        )
+        assert p.returncode == 0, p.stderr
+        override = json.loads(out_override.read_text())
+        assert override["mesh_scale"] == 0.5, override
+        assert abs(override["distance"] - 2.0 * default_distance) < 1e-9, (override, payload)
+
+        # Explicit invalid override still fails closed.
+        p = run_runner(
+            "--image", image,
+            "--models", models,
+            "--mesh-scale", "0",
+            "--fov", "0.3490658503988659",
+            "--trellis-cli", fake_cli,
+            "--output", d / "invalid.glb",
+        )
+        assert p.returncode != 0
+        assert "mesh_scale" in p.stderr
+
+        p = run_runner(
+            "--image", d / "missing.png",
+            "--models", models,
+            "--fov", "0.3",
+            "--trellis-cli", fake_cli,
+            "--output", out,
         )
         assert p.returncode != 0
         assert "input image not found" in p.stderr
