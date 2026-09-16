@@ -9,12 +9,24 @@ mv_base_url="${1:-https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/main}"
 # SV は verified manifest が公開されるまで空でよい。環境変数または第2/3引数で注入する。
 sv_manifest_url="${PIXAL3D_SV_MODEL_MANIFEST_URL:-${2:-}}"
 sv_base_url="${PIXAL3D_SV_MODEL_BASE_URL:-${3:-}}"
+allow_missing_wasm="${PIXAL3D_WEB_ALLOW_MISSING_WASM:-0}"
 
 rm -rf "$out"
 mkdir -p "$out/real_e2e" "$out/vendor"
 
 cp "$root"/web/app/{index.html,main.js,model_store.js,release_store.js,preflight.js,sha256.js,single_view.js} "$out/"
-cp "$root"/web/real_e2e/{calibration.js,worker.js,pixal3d_real_geometry.js,pixal3d_real_geometry.wasm} "$out/real_e2e/"
+cp "$root"/web/real_e2e/{calibration.js,worker.js} "$out/real_e2e/"
+wasm_js="$root/web/real_e2e/pixal3d_real_geometry.js"
+wasm_bin="$root/web/real_e2e/pixal3d_real_geometry.wasm"
+if [[ -f "$wasm_js" && -f "$wasm_bin" ]]; then
+  cp "$wasm_js" "$wasm_bin" "$out/real_e2e/"
+elif [[ "$allow_missing_wasm" == "1" ]]; then
+  echo "warning: generated WebGPU WASM artifacts absent; building UI-only smoke bundle" >&2
+else
+  echo "missing generated WebGPU runtime: $wasm_js / $wasm_bin" >&2
+  echo "build pixal3d-webgpu-real-geometry-wasm before production deploy" >&2
+  exit 1
+fi
 cp "$root/app/public/vendor/model-viewer.min.js" "$out/vendor/"
 
 # MV manifest は既存 release identity として同梱する。SV manifest は size/SHA 検証済みの
