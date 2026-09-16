@@ -54,6 +54,8 @@ void print_usage(const char* argv0, bool server) {
         "      --res 512|1024|1536 geometry resolution\n"
         "      --max-tokens N      HR token budget              (default 49152)\n"
         "      --views DIR         Pixal3D multiview mode: DIR has transforms.json + RGBA\n"
+        "      --pixal3d-weights V sv|mv flow weights (default mv). sv expects 1 view;\n"
+        "                          mv expects 4. Requires --views.\n"
         "                          views (frame 0 = main/front view). Mutually exclusive\n"
         "                          with the positional/--image input; mandatory cascade\n"
         "                          (--res 512 is not supported -- no res-512 texture flow)\n"
@@ -123,6 +125,11 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
         else if (a == "--views")                { const char* v = need(a.c_str()); if (!v) return false; p.views = v; }
+        else if (a == "--pixal3d-weights")      { const char* v = need(a.c_str()); if (!v) return false;
+                                                  const std::string w = v;
+                                                  if (w != "sv" && w != "mv") {
+                                                      fprintf(stderr, "[trellis] --pixal3d-weights expects 'sv' or 'mv', got '%s'\n", v); return false; }
+                                                  p.pixal3d_weights = w; p.pixal3d_weights_set = true; }
         else if (a == "--num-views")            { const char* v = need(a.c_str()); if (!v) return false;
                                                   if (!parse_int_strict(v, p.num_views) || p.num_views <= 0) {
                                                       fprintf(stderr, "[trellis] --num-views expects a positive integer, got '%s'\n", v); return false; }
@@ -163,6 +170,12 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
 
     // Assign positionals now that --views (if any) is known: normally <image> <out.glb>;
     // in --views mode there is no positional image, so the lone positional is the output.
+    // --pixal3d-weights は Pixal3D (--views) 経路専用。指定だけして TRELLIS.2 経路で走ると
+    // 「SV を実行した」と誤認されるので、ここで落とす。
+    if (p.pixal3d_weights_set && p.views.empty()) {
+        fprintf(stderr, "[trellis] --pixal3d-weights requires --views DIR (it selects Pixal3D flow weights)\n");
+        return false;
+    }
     if (!p.views.empty()) {
         if (!p.image.empty()) { fprintf(stderr, "[trellis] --views and --image/positional image are mutually exclusive\n"); return false; }
         if (npos > 1)         { fprintf(stderr, "[trellis] unexpected argument: %s\n", pos[1].c_str()); return false; }

@@ -27,6 +27,13 @@ struct TrellisParams {
     float mesh_scale = 0.0f;     // --mesh-scale F: transforms.json が無いときの必須スケール。
                                  // ある場合は parse 成功後の上書きとして働く。
     bool mesh_scale_set = false; // --mesh-scale が明示されたか（0.0 は無効値であって未指定ではない）
+    // --pixal3d-weights sv|mv: どちらの flow 重み系列を読むか。公式は 4 段それぞれに単視点版
+    // （接尾辞なし）と多視点版（_mv）を配布しており、config とテンソル構造は同一で重みだけが
+    // 違う。既定は mv（従来の挙動）。共有の 5 モデルは系列に依存しないので名前を変えない。
+    // 注意: 本フラグは「SV 重みを --views 規約（transforms.json、frames 1 件）で動かす」ための
+    // もので、公式 SV パイプライン（inference.py の camera_params / MoGe 推定）の再現ではない。
+    std::string pixal3d_weights = "mv";
+    bool pixal3d_weights_set = false;
     std::string output = "model.glb";                           // output .glb
     std::string copyright;                                      // glTF asset.copyright metadata
     std::string models = "models";              // GGUF dir; override with --models DIR

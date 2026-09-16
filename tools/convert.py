@@ -56,6 +56,18 @@ MANIFEST = {
                        f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16_mv.json", "pixal3d-slat-flow"),
     "pixal3d_tex_flow_1024_mv":   (f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.safetensors",
                        f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16_mv.json", "pixal3d-slat-flow"),
+    # Pixal3D single-view flow DiTs. The official checkpoints ship an `_mv` and a plain
+    # variant per stage; their config json is byte-identical and so are the tensor
+    # name/shape/dtype sets (701 / 700 entries, verified against the safetensors headers),
+    # so the same pixal3d-* architectures load both — only the weights differ.
+    "pixal3d_ss_flow_sv":         (f"{MODELS}/ckpts/ss_flow_img_dit_1_3B_64_bf16.safetensors",
+                       f"{MODELS}/ckpts/ss_flow_img_dit_1_3B_64_bf16.json",         "pixal3d-ss-flow"),
+    "pixal3d_shape_flow_512_sv":  (f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.safetensors",
+                       f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_512_bf16.json", "pixal3d-slat-flow"),
+    "pixal3d_shape_flow_1024_sv": (f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.safetensors",
+                       f"{MODELS}/ckpts/slat_flow_img2shape_dit_1_3B_1024_bf16.json", "pixal3d-slat-flow"),
+    "pixal3d_tex_flow_1024_sv":   (f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16.safetensors",
+                       f"{MODELS}/ckpts/slat_flow_imgshape2tex_dit_1_3B_1024_bf16.json", "pixal3d-slat-flow"),
     "pixal3d_naf": (f"{NAF_CKPT}.safetensors", f"{NAF_CKPT}.json", "pixal3d-naf"),
 }
 
