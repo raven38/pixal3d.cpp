@@ -2,24 +2,42 @@
 
 The production browser app uses the shared C++/WASM runtime. JavaScript owns only input, model delivery/storage, preflight, progress, and result presentation.
 
-## Initial release surface
+## Browser inference modes
 
-- Chrome / Chromium
-- WebGPU required
-- resolution 1024 only
-- pre-matted RGBA multiview input + `transforms.json`
-- explicit positive `mesh_scale`
-- release model set: `models/pixal3d-q8_0-v1/pixal3d-models.json`
+### Single image (SV)
+
+- one pre-matted RGBA image
+- no user-authored `transforms.json`
+- browser object-centric alpha crop
+- canonical front camera
+- `mesh_scale = 1.0`
+- horizontal FOV 20° by default, with an advanced manual override
+- dedicated Pixal3D **single-view** flow weights only
+
+The browser synthesizes the same one-frame camera metadata consumed by the existing Pixal3D WASM path. The first Web release does **not** port MoGe-2; browser-native camera/FOV estimation is a follow-up.
+
+Single-image mode never falls back to the multiview checkpoints. The cached model manifest must identify an SV family (`model_family: "sv"` or `_sv.gguf` flow filenames) before Generate can be enabled.
+
+### Multiview (MV)
+
+The existing modes remain unchanged:
+
+- pre-matted RGBA multiview input + `transforms.json`, or
+- exactly four canonical turntable views (front/right/back/left) without JSON, with explicit positive `mesh_scale` confirmation.
+
+Resolution is 1024 in the browser for both families.
 
 ## Model delivery
 
-The committed manifest is the release identity. The default manifest URL is:
+### MV public release
+
+The committed MV release manifest remains:
 
 ```text
 /models/pixal3d-q8_0-v1/pixal3d-models.json
 ```
 
-The GGUF bytes themselves are intentionally not committed to this repository. A deployment supplies their base URL by one of these mechanisms, in priority order:
+The default MV GGUF base URL can be configured with:
 
 ```js
 window.PIXAL3D_MODEL_BASE_URL = 'https://models.example.com/pixal3d-q8_0-v1';
@@ -31,40 +49,65 @@ or:
 ?model_base_url=https://models.example.com/pixal3d-q8_0-v1
 ```
 
-or through the Model download base URL field, which persists the value in origin-local `localStorage`.
+or the Model download base URL field, which persists to origin-local `localStorage`.
 
-A custom manifest can be selected with `window.PIXAL3D_MODEL_MANIFEST_URL` or `?manifest_url=...`, but release deployments should use the committed Q8_0 v1 manifest unless intentionally testing another signed/verified set.
+A custom MV manifest can still be selected with `window.PIXAL3D_MODEL_MANIFEST_URL` or `?manifest_url=...`.
+
+### SV model source
+
+A verified public SV Q8_0 manifest is a separate release artifact. Until it is published with exact file sizes and SHA-256 values, the production deployment does **not** invent one and does not silently reuse the MV set.
+
+An SV source can be configured with:
+
+```js
+window.PIXAL3D_SV_MODEL_MANIFEST_URL = 'https://models.example.com/pixal3d-sv-q8_0-v1/pixal3d-models.json';
+window.PIXAL3D_SV_MODEL_BASE_URL = 'https://models.example.com/pixal3d-sv-q8_0-v1';
+```
+
+or query parameters:
+
+```text
+?mode=sv&sv_manifest_url=https://models.example.com/pixal3d-sv-q8_0-v1/pixal3d-models.json&sv_model_base_url=https://models.example.com/pixal3d-sv-q8_0-v1
+```
+
+When no public SV manifest is configured, select **Single image (SV)** and use **Install local verified set…** with `pixal3d-models.json` plus all GGUFs. The manifest must describe the SV family.
 
 ### Model-host requirements
 
 The model host must:
 
-- serve the nine manifest-listed GGUF files by exact filename
+- serve the manifest-listed GGUF files by exact filename
 - allow CORS from the Pixal3D Web origin
 - preserve exact bytes; the browser verifies exact `size_bytes` and SHA-256
 - support normal streaming responses for multi-GB objects
 - use HTTPS for production deployments
 
-A failed or interrupted file is never marked complete. The browser stores a pending manifest in the Pixal3D OPFS namespace and, on retry, re-hashes already-complete files and reuses them instead of transferring them again. Partial/corrupt files are removed and fetched again. The production `pixal3d-models.json` commit marker is written only after all nine files verify.
+A failed or interrupted file is never marked complete. The browser stores a pending manifest in the Pixal3D OPFS namespace and, on retry, re-hashes already-complete files and reuses them instead of transferring them again. Partial/corrupt files are removed and fetched again. The production `pixal3d-models.json` commit marker is written only after every required file verifies.
 
 ## OPFS safety
 
 Only the origin-owned `pixal3d-models-v1` OPFS namespace is managed or recursively deleted. User-selected filesystem files/directories are never deletion targets. Cache deletion is disabled while model installation or generation is active.
 
+The cache currently holds one active model-set manifest at a time. Switching SV/MV modes checks manifest family compatibility and keeps Generate disabled when the cached set belongs to the other family.
+
 ## Preflight
 
-Before a model download, the UI checks `navigator.storage.estimate()` against the manifest's required bytes plus a 512 MiB safety margin. Already-occupied bytes from a resumable target set are credited so an interrupted 7.5 GiB install can continue without requiring another full 7.5 GiB of free quota.
+Before a model download, the UI checks `navigator.storage.estimate()` against the manifest's required bytes plus a 512 MiB safety margin. Already-occupied bytes from a resumable target set are credited.
 
-Before generation, the UI requires a WebGPU adapter and records its exposed buffer limits. WebGPU does not expose aggregate VRAM, so the C++ runtime's existing `TRELLIS_DEVICE_BUDGET_MB` / token-budget checks remain the authoritative long-run memory gate.
+Before generation, the UI requires a WebGPU adapter and records its exposed buffer limits. WebGPU does not expose aggregate VRAM, so the C++ runtime's existing device/token-budget checks remain the authoritative long-run memory gate.
 
 ## Release verification
 
-The fast Playwright gate uses a tiny nine-file HTTP model set and covers:
+The Playwright gate covers both families without downloading real models:
 
 ```text
-HTTP fetch -> OPFS streaming write -> incremental SHA-256 -> Ready
-           -> safe OPFS delete
-           -> local verified fallback -> mock inference -> GLB download
+MV remote manifest -> OPFS streaming write -> incremental SHA-256 -> Ready
+                   -> safe OPFS delete
+                   -> local verified MV -> mock inference -> GLB download
+                   -> switch to SV (MV cache rejected)
+                   -> local verified SV -> one RGBA input
+                   -> browser crop + synthesized camera JSON
+                   -> mock SV inference
 ```
 
-The final real-device gate remains issue #37: real Chrome/WebGPU with the full 7.54 GiB Q8_0 set, full 1024 inference, browser restart/cache reuse, and cache deletion.
+A real-device release gate with the full public SV checkpoint set remains separate from this weightless browser contract.
