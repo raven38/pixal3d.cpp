@@ -8,8 +8,9 @@
   `MODEL_MANIFEST_CONFORMANCE_OK 18 cases`、`schema-test` / `check-committed` OK、
   `test_headless.mjs`（production bundle、9 本固定名モック + 契約違反キャッシュ注入）OK、
   `test_cache_failure_modes.mjs` 16/16 ok（case 3 は「manifest 段階で拒否・GGUF 転送 0」）
-- 後送り: `.github/workflows/model-manifest.yml` の paths に `web/app/manifest_conformance.json` を足す
-  （push token に workflow scope が無い）
+- 2026-09-17 追記: token に workflow scope を付与後、`.github/workflows/model-manifest.yml` の paths に
+  `web/app/manifest_conformance.json` を追加し、`web-app-headless.yml` の bundle 検査に
+  `test -f web/dist/model_family.js` を追加（`d01fa2a`）
 - 対象: `web/app/single_view.js::modelFamilyForManifest` / `web/app/release_store.js::validateReleaseManifest` /
   `web/app/model_store.js::validateManifest` と、それらを叩くテスト、`scripts/build_web_dist.sh`
 - 変更しないもの: C++ ランタイム、`tools/model_manifest.py` の規則そのもの、committed 3 manifest、
@@ -155,8 +156,8 @@ vector の manifest は Python の shape 要件も満たす形で書く）。
   `tools/model_manifest.py`（self-test のみ）、`test_single_view.mjs`、`test_headless.mjs`、
   `test_cache_failure_modes.mjs`、`web/app/README.md`
 - CI: `web-app-headless.yml`（paths に `web/app/**` と `scripts/build_web_dist.sh` を含む）は本変更で走る。
-  `model-manifest.yml` は `tools/model_manifest.py` 変更で走る。**vector だけを変えたときに Python CI が
-  走らない**（paths に `web/app/manifest_conformance.json` を足すには workflow scope が要る）→ 後送り項目
+  `model-manifest.yml` は `tools/model_manifest.py` と `web/app/manifest_conformance.json` の変更で走る
+  （後者は `d01fa2a` で paths に追加。vector を変えると Python・JS 両 CI が走る）
 - 破壊的変更: 固定名以外の name を既知 role に付けた manifest、および 9 本未満の manifest は、以後
   ブラウザでも拒否される（release / local とも）。公開 manifest は全て適合
 
