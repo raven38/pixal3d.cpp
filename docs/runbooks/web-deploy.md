@@ -84,6 +84,10 @@ for f in index.html real_e2e/pixal3d_real_geometry.js real_e2e/pixal3d_real_geom
 done | diff - <(grep -E ' \./(index.html|real_e2e/pixal3d_real_geometry.js|real_e2e/pixal3d_real_geometry.wasm|real_e2e/worker.js|main.js)$' /tmp/dist-receipt.txt | sed 's| \./|  |')
 ```
 
+SV の配信元まで含めた本番経路の確認（生成なし・約 5 分 + 7.54 GiB 取得）:
+`node app/smoke_sv_install.mjs https://pixal3d-web.raven38.workers.dev/ <profile dir> <report.json>`
+（取得 9 本 → `Ready … SV` → 再起動で再転送 0 → 削除で 0）。
+
 **rollback**: `cd web && npx wrangler rollback --config ../wrangler.jsonc`（直前 version を選ぶ）。
 rollback 後も `smoke_production.mjs` を回し、receipt に rollback 先 version ID を追記する。
 

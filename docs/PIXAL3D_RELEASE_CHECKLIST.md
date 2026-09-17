@@ -467,6 +467,25 @@ runtime rebuilt from a clean checkout for the first time (design:
 | Previous runtime | `46b2016392aa7b34e49c5d9ea8ae7a6bbc0a4ff80a8fb381223bb6cdefd1b073` (3,616,383 B, built 2026-09-09; the runtime behind every gate row above) |
 | Model sources (pinned) | MV `https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/1f82a6b7e0b64de4fe7c96c66db7977fc61a1203` · SV `https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/c5dfd4c2352e39a392c5ff2f90bdcbb96d3c7403` (+ `/pixal3d-models.json`, SHA256 `e127c0f7…c61e`) |
 | Served bytes | 14/14 files equal the pre-deploy receipt (`/index.html` is a 307 to `/`; compare via `/`) |
+
+Deploy receipt (`web/dist`, the bytes the SV gate ran against and that were uploaded):
+
+| file | SHA256 |
+|---|---|
+| `index.html` | `d4c16d61e11145983bd14bb10efa6ea8e01167ecfa72613a80cde5d8f6498091` |
+| `main.js` | `4802239b871bb632a7ab850dd08f5c20958d9be769bbade25514bdac8b53cc2c` |
+| `model_store.js` | `391ec063c0b5c673a3de09f3700a99b84b670cb83bc76f4d9f3796c480c5ecf6` |
+| `models/pixal3d-q8_0-v1/pixal3d-models.json` | `5648ee78259808ff2b664574a666cd880c2c2b584ab8cd225bf80480e17d669f` |
+| `preflight.js` | `a41f96c1b86f08509f8140c67d58b16c97e947910a55c3a30ba497f262b1be45` |
+| `real_e2e/build-info.json` | `cffef2929aae6973b98871b951d08ff884da8fcf471cf8b25a9ab9459be8d5f1` |
+| `real_e2e/calibration.js` | `e48752ea6959d7b28d2db980b329ab4fb2ba408983060dfe8a22d5d86a5d18d6` |
+| `real_e2e/pixal3d_real_geometry.js` | `e5c462c61a3fd27f9e895a6137b0d97884e223665309dd546f9d44f13a868394` |
+| `real_e2e/pixal3d_real_geometry.wasm` | `e43a4aa5238cdb8eb7be0f499b90f5c40f9e0bd270b232f02cf4c1697ab3a208` |
+| `real_e2e/worker.js` | `d042ef6b862909c7f20bd4a57a06dde3e020ef42a065f36585a9258b2e669c8f` |
+| `release_store.js` | `b36fc1817b3f08eae1cbfc83d2d01ddd324c57af913cb0b4fc5bfff6de5e37cf` |
+| `sha256.js` | `805e98ffe8e0f0974192fbda2c6282dc659d3cc4f9ffd890cf37d9d832fcab37` |
+| `single_view.js` | `e22fdcb5f53067ad7121270edeff163fb4c15fcd072138b82b9f83df06a11b73` |
+| `vendor/model-viewer.min.js` | `283b0672384614b4847636c306fc93fe4b1fcadc76d668b4e47f0ca76bcf033b` |
 | Smoke | `web/app/smoke_production.mjs`: `WEB_PRODUCTION_SMOKE_OK 13 checks` (both URLs injected, `build-info.json` served and equal to the wasm, input-mode visible, default `sv` because SV is configured, SV/MV manifests resolve to their family, Download enabled in both) |
 
 #### Single-image SV release gate on the deploy candidate (2026-09-17, #11, M4 Max / Metal)
@@ -491,6 +510,12 @@ front view (`view00_azim000.png`, 1024², RGBA), Chrome for Testing 153.0.8010.1
 | renders | front/back/left/right/top: symmetric ears, single eye, nose ring, closed back — **no spike-like MV@V=1 failure** |
 | restart, same profile | `Ready`, **0 GGUF re-transfers** (manifest only), generation started from cache |
 | cache delete | usage 3,797,012,618 → **0** |
+
+The SV gate above ran against the deploy candidate served locally (byte-identical to production per the
+receipt). The SV model path through the **production origin** was then exercised without generation:
+`web/app/smoke_sv_install.mjs https://pixal3d-web.raven38.workers.dev/` → install 260 s, 9 GGUF requests
+(HF 302 → CDN), `Ready · pixal3d-sv-q8_0 v1 · SV · 7.54 GB · 9 verified model(s)`; restart 0 re-transfers;
+delete 3,797,012,618 → 0 (`ok=true`).
 
 The first attempt of this gate ended with `Target page, context or browser has been closed` during
 Shape-1024 (the headed Chrome window was closed externally); the rerun on the same profile skipped
