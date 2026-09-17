@@ -87,6 +87,15 @@ def main():
         else:
             raise AssertionError("inconsistent canonical focal estimates were accepted")
 
+        # Direct canonical-4view directory mode must keep the same natural filename
+        # ordering contract as the C++ canonical rig (view2 before view10).
+        natural = d / "natural"
+        natural.mkdir()
+        natural_names = ["view1.png", "view2.png", "view10.png", "view11.png"]
+        for name in natural_names:
+            (natural / name).write_bytes(b"fixture")
+        assert [p.name for p in estimator.list_images(natural, expected_count=4)] == natural_names
+
         # Changing FOV in the canonical rig must preserve the existing 20-degree
         # projection gauge by scaling orbit distance with tan(fov/2), while keeping
         # the front/right/back/left orientations and mesh_scale contract unchanged.
