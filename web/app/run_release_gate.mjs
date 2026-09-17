@@ -136,7 +136,8 @@ async function openApp(context) {
   // SV は ?mode=sv と sv_manifest_url / sv_model_base_url（single_view.js resolveSvModelSource）。
   const query = mode === 'sv'
     ? `?mode=sv&sv_manifest_url=${encodeURIComponent(`${modelsBase}/pixal3d-models.json`)}&sv_model_base_url=${encodeURIComponent(modelsBase)}`
-    : `?model_base_url=${encodeURIComponent(modelsBase)}`;
+    // SV が配備で設定されていると既定モードが SV になる（main.js）ので、MV も mode を明示する。
+    : `?mode=mv&model_base_url=${encodeURIComponent(modelsBase)}`;
   await page.goto(`${appBase}${query}`, { waitUntil: 'domcontentloaded' });
   return page;
 }
