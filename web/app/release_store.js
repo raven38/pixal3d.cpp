@@ -1,6 +1,7 @@
 import { Sha256 } from './sha256.js';
 import { cacheStatus, MODEL_MANIFEST_NAME } from './model_store.js';
 import { storagePreflight } from './preflight.js';
+import { manifestContractErrors } from './model_family.js';
 
 const ROOT = 'pixal3d-models-v1';
 const PENDING_MANIFEST_NAME = '.pixal3d-pending.json';
@@ -24,6 +25,9 @@ export function validateReleaseManifest(m) {
     names.add(f.name); roles.add(f.role);
   }
   if (m.files.length !== 9) throw new Error(`Release manifest must contain exactly 9 required models; got ${m.files.length}`);
+  // name<->role / model_family 契約（tools/model_manifest.py と同規則）。
+  const contract = manifestContractErrors(m);
+  if (contract.length) throw new Error(`Release manifest violates the model-set contract: ${contract.join('; ')}`);
   return m;
 }
 

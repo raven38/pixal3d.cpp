@@ -5,7 +5,7 @@
 //
 //   1. 同サイズ・別内容の配信 → SHA-256 で拒否し、ready にしない
 //   2. 更新の中断（2本目で失敗）→ 混在セットが ready にならない
-//   3. role の付け替えだけの manifest → 同一視されず再取得が要る
+//   3. role の付け替えだけの manifest → name<->role 契約違反として manifest 段階で拒否（GGUF 転送 0）
 //   4. 必須ファイルの欠落 → ready にしない
 //   5. delete は自 OPFS namespace だけ消す（無関係なディレクトリは残る）
 //   6. **再読み込みで GGUF の再転送が 0**（#9 の中心的な受け入れ条件）
@@ -19,10 +19,14 @@ const APP_URL = process.env.WEB_APP_URL || 'http://127.0.0.1:8199/web/app/';
 const MANIFEST_URL = 'https://models.test/manifest.json';
 const BASE_URL = 'https://models.test/files';
 
-// release manifest は必須 9 ファイル・role 重複なしを要求する（release_store.js）。
+// release manifest は必須 9 ファイル・role 重複なし・固定の name<->role 契約を要求する
+// （release_store.js → model_family.js、tools/model_manifest.py と同規則）。模擬モデルも固定名を使う。
 const ROLES = ['image_encoder', 'naf', 'ss_flow', 'ss_decoder', 'shape_flow_512',
   'shape_decoder', 'shape_flow_1024', 'texture_flow_1024', 'texture_decoder'];
-const bodies = Object.fromEntries(ROLES.map((r, i) => [`model-${i}.gguf`, `body-of-${r}-${'x'.repeat(8)}`]));
+const NAMES = ['dinov3.gguf', 'pixal3d_naf.gguf', 'pixal3d_ss_flow_mv.gguf', 'ss_dec.gguf',
+  'pixal3d_shape_flow_512_mv.gguf', 'shape_dec.gguf', 'pixal3d_shape_flow_1024_mv.gguf',
+  'pixal3d_tex_flow_1024_mv.gguf', 'tex_dec.gguf'];
+const bodies = Object.fromEntries(ROLES.map((r, i) => [NAMES[i], `body-of-${r}-${'x'.repeat(8)}`]));
 
 const manifestFor = (bodyMap, { version = 'v1', roles = ROLES } = {}) => ({
   schema_version: 1,
@@ -138,7 +142,7 @@ const status = (page) => page.evaluate(async () => {
   const mid = await status(page);
   check(!mid.ready, `an interrupted refresh does not leave a mixed set ready (ready=${mid.ready}, missing=${mid.missing})`);
 
-  // 3. role 付け替えのみ → 同一視されない（再取得が必要）
+  // 3. role 付け替えのみ → name<->role 契約違反。manifest 取得時点で拒否され、GGUF は 1 本も取りに行かない
   const swapped = manifestFor(bodies, { version: 'v1', roles: [ROLES[1], ROLES[0], ...ROLES.slice(2)] });
   await ctx.unroute('https://models.test/**');
   await ctx.route('https://models.test/**', async (route) => {
@@ -150,9 +154,10 @@ const status = (page) => page.evaluate(async () => {
   });
   const beforeSwap = served.gguf.length;
   const r3 = await install(page);
-  check(r3.ok && r3.ready, 'role-reassigned manifest installs');
-  check(served.gguf.length > beforeSwap,
-        `role reassignment with identical hashes is not treated as the same set (${served.gguf.length - beforeSwap} files re-fetched)`);
+  check(!r3.ok && /contract/i.test(r3.error),
+        `role-reassigned manifest is rejected before download (${r3.ok ? 'installed!' : r3.error?.slice(0, 90)})`);
+  check(served.gguf.length === beforeSwap,
+        `role reassignment fetched ${served.gguf.length - beforeSwap} GGUF file(s) (expected 0)`);
   await ctx.close();
 }
 

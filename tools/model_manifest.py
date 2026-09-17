@@ -261,8 +261,38 @@ def self_test() -> dict:
         bad = json.loads(json.dumps(sv))
         bad["files"][0]["required"] = False
         assert any("must be required" in e for e in validate_manifest_shape(bad))
+
+    conformance_test()
     print("MODEL_MANIFEST_SELF_TEST_OK")
     return m
+
+
+# ブラウザ側 web/app/model_family.js と共有する conformance vector。family の期待値
+# ('sv' / 'mv' / None) を、Python 側は「validate_manifest_shape が空なら明示値 or 推定値、
+# エラーがあれば None」で判定して照合する。JS 側は test_single_view.mjs が同じファイルを読む。
+CONFORMANCE_VECTOR = Path(__file__).resolve().parent.parent / "web" / "app" / "manifest_conformance.json"
+
+
+def family_for_manifest(m: dict) -> str | None:
+    """契約違反ゼロなら family、あれば None（web/app/model_family.js modelFamilyForManifest と同じ意味）。"""
+    if validate_manifest_shape(m):
+        return None
+    explicit = m.get("model_family")
+    if explicit in MODEL_FAMILIES:
+        return explicit
+    return infer_family(m["files"]) or DEFAULT_MODEL_FAMILY
+
+
+def conformance_test(path: Path = CONFORMANCE_VECTOR) -> None:
+    cases = json.loads(path.read_text())["cases"]
+    assert len(cases) >= 18, f"conformance vector too small: {len(cases)}"
+    bad = []
+    for c in cases:
+        got = family_for_manifest(c["manifest"])
+        if got != c["family"]:
+            bad.append(f'{c["id"]}: expected {c["family"]!r}, got {got!r} ({c["note"]})')
+    assert not bad, "conformance vector mismatches:\n  " + "\n  ".join(bad)
+    print(f"MODEL_MANIFEST_CONFORMANCE_OK {len(cases)} cases")
 
 
 def schema_test(schema_path: Path) -> None:
