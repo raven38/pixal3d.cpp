@@ -39,17 +39,20 @@ out_wasm="${repo}/web/real_e2e/pixal3d_real_geometry.wasm"
 
 sha() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 commit="$(git -C "$repo" rev-parse HEAD)"
-dirty="$(git -C "$repo" status --porcelain --untracked-files=no -- src include web/ss patches CMakeLists.txt thirdparty/ggml | grep -c . || true)"
+# thirdparty/ggml は configure 時の patch 適用で常に dirty になるので別枠で記録する。
+dirty="$(git -C "$repo" status --porcelain --untracked-files=no -- src include web/ss patches CMakeLists.txt | grep -c . || true)"
 emcc_version="$(emcc --version | head -1)"
 ggml_commit="$(git -C "$repo/thirdparty/ggml" rev-parse HEAD)"
-python3 - "$out_js" "$out_wasm" "$commit" "$dirty" "$emcc_version" "$ggml_commit" "$(sha "$out_js")" "$(sha "$out_wasm")" <<'PY'
+ggml_patches="$(cd "$repo/patches/ggml-webgpu" && ls *.patch | tr '\n' ' ')"
+python3 - "$out_js" "$out_wasm" "$commit" "$dirty" "$emcc_version" "$ggml_commit" "$ggml_patches" "$(sha "$out_js")" "$(sha "$out_wasm")" <<'PY'
 import json, os, sys
-js, wasm, commit, dirty, emcc, ggml, sha_js, sha_wasm = sys.argv[1:9]
+js, wasm, commit, dirty, emcc, ggml, patches, sha_js, sha_wasm = sys.argv[1:10]
 info = {
     "target": "pixal3d-webgpu-real-geometry-wasm",
     "source_commit": commit,
     "source_dirty_files": int(dirty),
     "ggml_commit": ggml,
+    "ggml_patches": patches.split(),
     "emcc": emcc,
     "files": {
         os.path.basename(js): {"size_bytes": os.path.getsize(js), "sha256": sha_js},

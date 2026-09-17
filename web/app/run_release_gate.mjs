@@ -5,6 +5,10 @@
 // キャッシュ削除で使用量が減ることまでを 1 本で通し、記録用 JSON を書く。
 //
 //   node web/app/run_release_gate.mjs <models_dir> <views_dir> [--seed 1] [--out report.json]
+//   node web/app/run_release_gate.mjs <models_dir> <image.png> --mode sv [...]     # 1 枚画像の SV 経路（#11）
+//
+// --mode sv では <views_dir> の代わりに RGBA 画像 1 枚を渡す。app は ?mode=sv で開き、SV の
+// 配信元は sv_manifest_url / sv_model_base_url（single_view.js resolveSvModelSource）で与える。
 //
 // 前提: リポジトリを http://127.0.0.1:8199 で serve していること（app 本体の配信元）。
 // モデル配信元はこのスクリプトが別ポートで立て、GGUF 本体へのリクエストを数える。
@@ -23,6 +27,8 @@ const seed = Number(flag('--seed', '1'));
 const outPath = flag('--out', 'web_release_gate.json');
 const appBase = process.env.WEB_APP_URL || 'http://127.0.0.1:8199/web/app/';
 const genTimeoutMs = Number(flag('--gen-timeout-min', '120')) * 60 * 1000;
+const mode = flag('--mode', 'mv');
+if (mode !== 'mv' && mode !== 'sv') throw new Error(`--mode must be mv or sv, got ${mode}`);
 
 function flag(name, dflt) {
   const i = argv.indexOf(name);
@@ -89,11 +95,26 @@ const shutdown = async () => {
 };
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await shutdown(); process.exit(130); });
 
-const viewFiles = fs.readdirSync(viewsDir, { withFileTypes: true })
-  .flatMap((e) => (e.isDirectory()
-    ? fs.readdirSync(path.join(viewsDir, e.name)).map((n) => path.join(viewsDir, e.name, n))
-    : [path.join(viewsDir, e.name)]))
-  .filter((f) => /\.(png|jpe?g|json)$/i.test(f));
+const viewFiles = mode === 'sv'
+  ? [path.resolve(viewsDir)]
+  : fs.readdirSync(viewsDir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory()
+      ? fs.readdirSync(path.join(viewsDir, e.name)).map((n) => path.join(viewsDir, e.name, n))
+      : [path.join(viewsDir, e.name)]))
+    .filter((f) => /\.(png|jpe?g|json)$/i.test(f));
+if (mode === 'sv' && !fs.statSync(viewFiles[0]).isFile()) throw new Error(`--mode sv expects one image file, got ${viewFiles[0]}`);
+
+// 入力の投入は mode で分岐する。MV は calibration の複数ファイル入力、SV は #sv-image の 1 枚
+// （ブラウザ側で object-centric crop + canonical camera を作り終えると #run が有効になる）。
+async function feedInput(page) {
+  if (mode === 'sv') {
+    await page.locator('#sv-image').setInputFiles(viewFiles);
+    await page.waitForFunction(() => /ready/.test(document.querySelector('#sv-file')?.textContent || ''), null, { timeout: 120_000 });
+  } else {
+    await page.locator('input[accept="image/*,.json,application/json"]').setInputFiles(viewFiles);
+    await page.waitForFunction((n) => document.querySelectorAll('.cal-view').length === n, viewFiles.filter((f) => !f.endsWith('.json')).length, { timeout: 60_000 });
+  }
+}
 
 async function openApp(context) {
   const page = await context.newPage();
@@ -112,7 +133,11 @@ async function openApp(context) {
     }
   });
   // main の app は ?model_base_url= と #model-base-url を使う（release_store.js:73）。
-  await page.goto(`${appBase}?model_base_url=${encodeURIComponent(modelsBase)}`, { waitUntil: 'domcontentloaded' });
+  // SV は ?mode=sv と sv_manifest_url / sv_model_base_url（single_view.js resolveSvModelSource）。
+  const query = mode === 'sv'
+    ? `?mode=sv&sv_manifest_url=${encodeURIComponent(`${modelsBase}/pixal3d-models.json`)}&sv_model_base_url=${encodeURIComponent(modelsBase)}`
+    : `?model_base_url=${encodeURIComponent(modelsBase)}`;
+  await page.goto(`${appBase}${query}`, { waitUntil: 'domcontentloaded' });
   return page;
 }
 
@@ -158,8 +183,8 @@ try {
   step('storage_after_install', report.storage_after_install);
 
   // ---- 2. 1024 フル生成 → GLB ---------------------------------------------
-  await page.locator('input[accept="image/*,.json,application/json"]').setInputFiles(viewFiles);
-  await page.waitForFunction((n) => document.querySelectorAll('.cal-view').length === n, viewFiles.filter((f) => !f.endsWith('.json')).length, { timeout: 60_000 });
+  await feedInput(page);
+  if (mode === 'sv') step('sv_input', { image: path.basename(viewFiles[0]), summary: await page.locator('#sv-summary').textContent(), file: await page.locator('#sv-file').textContent() });
   await page.fill('#seed', String(seed));
   await page.waitForFunction(() => !document.querySelector('#run')?.disabled, null, { timeout: 60_000 });
   const g0 = Date.now();
@@ -210,7 +235,7 @@ try {
   // 再起動後のキャッシュから実際に生成が始まることを確認する（完走まではやらない:
   // 1回の完走で 20〜40 分かかるため、ここでは「キャッシュからモデルを読んで
   // 最初のライブ段に入る」ところまでを証拠にする）。
-  await page.locator('input[accept="image/*,.json,application/json"]').setInputFiles(viewFiles);
+  await feedInput(page);
   await page.waitForFunction(() => !document.querySelector('#run')?.disabled, null, { timeout: 60_000 });
   await page.locator('#run').click();
   await page.waitForFunction(() => /ss|cond|flow|stage|proj/i.test(document.querySelector('#log')?.textContent || ''), null, { timeout: 15 * 60 * 1000 });
@@ -233,7 +258,9 @@ try {
   step('delete', { usage_before: before.usage, usage_after: after.usage, freed: before.usage - after.usage, state: await stateText(page) });
   if (!(after.usage < before.usage)) throw new Error('cache delete did not reduce OPFS usage');
 
-  report.model_set = { model_set: manifest.model_set, version: manifest.version };
+  report.model_set = { model_set: manifest.model_set, version: manifest.version, model_family: manifest.model_family || 'mv' };
+  report.mode = mode;
+  report.models_url = modelsBase;
   // shasum/sha256sum の有無に依存しない（コンテナ内に shasum が無く ok=false になった実績）
   report.manifest_sha256 = createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
   // gate 側の commit と、実際にテストした app の配信元は別物なので分けて記録する

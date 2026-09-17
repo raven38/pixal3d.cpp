@@ -19,7 +19,12 @@ on:
       - '.github/workflows/web-wasm-runtime.yml'
   pull_request:
     paths:
+      - 'src/**'
+      - 'include/**'
       - 'web/ss/CMakeLists.txt'
+      - 'CMakeLists.txt'
+      - 'patches/ggml-webgpu/**'
+      - 'thirdparty/ggml'
       - 'scripts/build_wasm_real_geometry.sh'
       - '.github/workflows/web-wasm-runtime.yml'
   workflow_dispatch:

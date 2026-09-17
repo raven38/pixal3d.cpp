@@ -67,3 +67,6 @@ web/dist/
 # wrangler のローカル状態
 .wrangler/
 web/real_e2e/SHA256SUMS
+# emcmake の configure 検査が repo 直下に残す
+/a.out.js
+/a.out.wasm
