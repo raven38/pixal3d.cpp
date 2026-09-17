@@ -8,7 +8,7 @@ is computed from FOV plus the caller-provided mesh_scale.
 The optional canonical 4-view path keeps the existing front/right/back/left
 extrinsics fixed, estimates normalized fx independently for the four staged
 Pixal3D crops, aggregates one shared focal length in focal space, and writes a
-normal Pixal3D transforms.json.  It deliberately does not estimate free MV
+normal Pixal3D transforms.json. It deliberately does not estimate free MV
 extrinsics.
 
 Input images are expected to be the Pixal3D object-centric RGBA crops staged by
@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -39,13 +40,26 @@ def die(message: str) -> "NoReturn":
     raise SystemExit(2)
 
 
+def natural_name_key(path: Path) -> tuple:
+    """Match the C++ canonical rig's natural ordering (view2 before view10)."""
+    parts = re.split(r"(\d+)", path.name)
+    key = []
+    for part in parts:
+        if part.isdigit():
+            normalized = part.lstrip("0") or "0"
+            key.append((1, len(normalized), normalized, part))
+        else:
+            key.append((0, part))
+    return tuple(key), path.name
+
+
 def list_images(directory: Path, expected_count: int = 1) -> list[Path]:
     if not directory.is_dir():
         die(f"views directory does not exist: {directory}")
     images = sorted(
         (p for p in directory.iterdir()
          if p.is_file() and not p.name.startswith(".") and p.suffix.lower() in IMAGE_EXTS),
-        key=lambda p: p.name.encode("utf-8"),
+        key=natural_name_key,
     )
     if len(images) != expected_count:
         expected = "one image" if expected_count == 1 else f"{expected_count} images"
@@ -84,7 +98,7 @@ def shared_fov_from_focal_estimates(
     """Return (median normalized fx, FOV, max relative deviation).
 
     Canonical front/right/back/left views are assumed to share one camera model.
-    Aggregate in focal space so no per-view FOV noise reaches Pixal3D.  A strongly
+    Aggregate in focal space so no per-view FOV noise reaches Pixal3D. A strongly
     inconsistent set fails closed because the canonical-view assumption is then
     not trustworthy.
     """
