@@ -1,6 +1,6 @@
 # Web 本番デプロイの再現性と SV UI の配備（issue #10）
 
-- ステータス: 実装中（2026-09-17、codex 設計レビュー 10 件を反映した改訂 1）
+- ステータス: 実施済み（2026-09-17。codex 設計レビュー 10 件を反映した改訂 1。配備 version `3933e60f…`、SV/MV gate とも新ランタイムで PASS — `docs/PIXAL3D_RELEASE_CHECKLIST.md`）
 - 関連: #8（SV UI、マージ済み）、#9 / PR #13（SV モデルセット公開）、#11（実ブラウザ SV gate）
 
 ## 背景と問題

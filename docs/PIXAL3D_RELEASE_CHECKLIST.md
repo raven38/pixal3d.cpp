@@ -370,6 +370,9 @@ Supported target: Chrome/Chromium + WebGPU, resolution 1024 only. Inference stay
 | Second launch reuses the cached 7.54 GiB `pixal3d-q8_0 v1` set without retransferring it | ✅ | browser restart on the same profile: 0 GGUF re-transfers |
 | Cache deletion frees only origin-owned Pixal3D storage | ✅ | real Chrome: usage → 0; headless: an unrelated OPFS directory survives |
 | Public single-view (SV) Q8_0 model set + manifest published | ✅ #9 | `pixal3d-sv-q8_0 v1` on Hugging Face (see "Single-view Web model set" above); real-Chrome SV gate is #11, production deploy is #10 |
+| Production deployment reproducible from a clean checkout + merged SV UI deployed | ✅ #10 | `web-wasm-runtime` CI artifact (emsdk 6.0.9), `docs/runbooks/web-deploy.md`, version `3933e60f…` (2026-09-17), `smoke_production.mjs` 13/13 |
+| Real Chrome/WebGPU single-image SV release gate | ✅ #11 | `run_release_gate.mjs --mode sv` on the deployed dist: IoU 0.9754, 1 component, no spike failure, 0 re-transfers (table below) |
+| MV release gate re-run on the rebuilt runtime | ✅ | production URL, IoU 0.9795 / GLB 31,020,608 B — identical to 2026-09-11 (table below) |
 
 The Web release model set is `pixal3d-q8_0 v1` (7.54 GiB), per §12's GPU-budget headroom finding. Its native E2E gate and the real Chrome/WebGPU release gate both pass against this exact manifest.
 
@@ -448,6 +451,72 @@ One real bug was found and fixed on the way. Hugging Face answers a request that
 `Failed to fetch` while every `curl` probe succeeded. `web/app/release_store.js` now fetches with
 `referrerPolicy: 'no-referrer'`. This is invisible to any test that does not run a real browser
 against a real cross-origin host.
+
+### Production deployment with the SV UI and a reproducible runtime (2026-09-17, #10)
+
+Deployed the merged single-image SV mode (PR #8) to the existing Worker, with the WebGPU/WASM
+runtime rebuilt from a clean checkout for the first time (design:
+`docs/design/2026-09-17-web-deploy-reproducible.md`, runbook: `docs/runbooks/web-deploy.md`).
+
+| | value |
+|---|---|
+| Worker / URL | `pixal3d-web` · `https://pixal3d-web.raven38.workers.dev/` (unchanged) |
+| Cloudflare version | `3933e60f-7bd4-420b-8cdf-cf06f426a941` (100 %, 2026-09-17T09:47:48Z); previous active version `65d1d151-889d-4e6c-aaf1-e520ec0fa9bc` (rollback target) |
+| App files | identical to `origin/main` `8592a56` (PR #8); deploy tooling from PR #14 |
+| Runtime | CI artifact of `web-wasm-runtime` run 35189943680 (emsdk **6.0.9**, merge ref `baa6796`): `pixal3d_real_geometry.js` `e5c462c61a3fd27f9e895a6137b0d97884e223665309dd546f9d44f13a868394`, `.wasm` `e43a4aa5238cdb8eb7be0f499b90f5c40f9e0bd270b232f02cf4c1697ab3a208` (3,650,886 B). Two independent CI runs produced identical digests; the macOS Homebrew emcc 6.0.9 build differs in the wasm, so production uses the CI artifact only |
+| Previous runtime | `46b2016392aa7b34e49c5d9ea8ae7a6bbc0a4ff80a8fb381223bb6cdefd1b073` (3,616,383 B, built 2026-09-09; the runtime behind every gate row above) |
+| Model sources (pinned) | MV `https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/1f82a6b7e0b64de4fe7c96c66db7977fc61a1203` · SV `https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/c5dfd4c2352e39a392c5ff2f90bdcbb96d3c7403` (+ `/pixal3d-models.json`, SHA256 `e127c0f7…c61e`) |
+| Served bytes | 14/14 files equal the pre-deploy receipt (`/index.html` is a 307 to `/`; compare via `/`) |
+| Smoke | `web/app/smoke_production.mjs`: `WEB_PRODUCTION_SMOKE_OK 13 checks` (both URLs injected, `build-info.json` served and equal to the wasm, input-mode visible, default `sv` because SV is configured, SV/MV manifests resolve to their family, Download enabled in both) |
+
+#### Single-image SV release gate on the deploy candidate (2026-09-17, #11, M4 Max / Metal)
+
+`web/app/run_release_gate.mjs --mode sv` against the exact `web/dist` that was deployed (served
+locally, byte-identical receipt), models from the pinned SV repository, input = the official cyclops
+front view (`view00_azim000.png`, 1024², RGBA), Chrome for Testing 153.0.8010.12 headed,
+`--enable-unsafe-webgpu`. Report `ok=true`.
+
+| | value |
+|---|---|
+| adapter | `maxBufferSize` 4,294,967,292 · `maxStorageBufferBindingSize` 4,294,967,292 · `device ok (shader-f16, subgroups)` |
+| install | 826 s, 9 GGUF requests, `Ready · pixal3d-sv-q8_0 v1 · SV · 7.54 GB · 9 verified model(s)` |
+| browser preprocessing | 1024² → object-centric crop 926² (1.1 margin), 874,820 B; `Canonical front camera · FOV 20.0° · mesh_scale 1.0 · distance 2.8356`, `V=1` |
+| SS | active voxels **3,786** (64³), `nonfinite=0` |
+| Shape-512 → 1024 | upsample 1,010,474 coords → **14,871** tokens (MV cyclops: 17,795) |
+| raw mesh | V 3,953,680 / F 7,937,104, bbox (0.7327, 0.8160, 0.9171) |
+| Texture Flow | tokens 14,871, graph peak 1538.0 MB, resident 2494.1 MB |
+| final GLB | **29,333,892 B**, V 235,404 / F 471,892, one geometric component after position weld, bbox extents (0.7362, 0.8195, 0.9207) |
+| generation | `complete` in 6119 s (SS 252 s · Shape-512 328 s · Shape-1024 2396 s · Texture 1617 s; the machine had other load) |
+| front silhouette IoU | **0.9754** (`tools/silhouette_iou.py` with the replicated crop + canonical camera), projected-size ratio 0.974 |
+| renders | front/back/left/right/top: symmetric ears, single eye, nose ring, closed back — **no spike-like MV@V=1 failure** |
+| restart, same profile | `Ready`, **0 GGUF re-transfers** (manifest only), generation started from cache |
+| cache delete | usage 3,797,012,618 → **0** |
+
+The first attempt of this gate ended with `Target page, context or browser has been closed` during
+Shape-1024 (the headed Chrome window was closed externally); the rerun on the same profile skipped
+the install and reproduced SS 3,786 / 14,871 tokens exactly.
+
+#### MV release gate on the deployed runtime (2026-09-17)
+
+Same gate as 2026-09-11 (`run_release_gate.mjs`, now opened with an explicit `?mode=mv` because a
+configured SV source makes SV the default mode), against the **production URL** after the deploy,
+models from the pinned MV repository, official cyclops 4 views, seed 1, same machine/browser.
+Report `ok=true`.
+
+| | 2026-09-11 (runtime `46b20163…`) | 2026-09-17 (runtime `e43a4aa5…`) |
+|---|---|---|
+| install | 1210 s (resume) | 582 s, 9 GGUF requests, `Ready · pixal3d-q8_0 v1 · MV · 7.54 GB` |
+| SS active voxels | — | 4,438 |
+| Shape-1024 tokens / raw mesh | 17,795 / V 4,798,704 | **17,795 / V 4,798,704** (identical) |
+| Texture Flow resident | 2517.0 MB | **2517.0 MB** |
+| generation | 4902 s | 7228 s (SS 264 · Shape-512 362 · Shape-1024 1814 · Texture 1136; other load on the machine) |
+| GLB | 31,020,608 B | **31,020,608 B** (identical size) |
+| mean silhouette IoU / scale ratio | 0.9795 / 0.993 | **0.9795 / 0.993** (per view 0.9791 · 0.9779 · 0.9820 · 0.9789) |
+| restart / delete | 0 re-transfers / usage → 0 | 0 re-transfers / 3,797,012,676 → **0** |
+
+No regression of the MV path on the rebuilt runtime; both families now have a real-Chrome PASS on
+the same wasm SHA256 (`e43a4aa5238cdb8eb7be0f499b90f5c40f9e0bd270b232f02cf4c1697ab3a208`), which
+is the acceptance condition of `docs/design/2026-09-17-web-deploy-reproducible.md`.
 
 ### Failure modes of the browser cache (`web/app/test_cache_failure_modes.mjs`)
 
