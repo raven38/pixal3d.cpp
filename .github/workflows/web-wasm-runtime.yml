@@ -1,0 +1,66 @@
+name: Web WASM runtime
+
+# 本番 Web 配信物が使う WebGPU/WASM ランタイム（pixal3d_real_geometry.{js,wasm}）を
+# クリーンなチェックアウトから決定的に組み立てる。成果物は artifact として保存し、
+# デプロイ担当はこの artifact を web/real_e2e/ に置いてから scripts/build_web_dist.sh を走らせる
+# （docs/runbooks/web-deploy.md）。emsdk はここでピン留めした版だけが正。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'web/ss/CMakeLists.txt'
+      - 'CMakeLists.txt'
+      - 'patches/ggml-webgpu/**'
+      - 'thirdparty/ggml'
+      - 'scripts/build_wasm_real_geometry.sh'
+      - '.github/workflows/web-wasm-runtime.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'web/ss/CMakeLists.txt'
+      - 'CMakeLists.txt'
+      - 'patches/ggml-webgpu/**'
+      - 'thirdparty/ggml'
+      - 'scripts/build_wasm_real_geometry.sh'
+      - '.github/workflows/web-wasm-runtime.yml'
+  workflow_dispatch:
+
+env:
+  EMSDK_VERSION: 6.0.9
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
+      - name: Toolchain
+        run: |
+          emcc --version | head -1
+          cmake --version | head -1
+      - name: Build pixal3d-webgpu-real-geometry-wasm
+        run: bash scripts/build_wasm_real_geometry.sh --fresh --build-dir build-wasm-ci
+      - name: Record digests
+        run: |
+          cat web/real_e2e/build-info.json
+          sha256sum web/real_e2e/pixal3d_real_geometry.js web/real_e2e/pixal3d_real_geometry.wasm | tee web/real_e2e/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixal3d-real-geometry-wasm-${{ github.sha }}
+          path: |
+            web/real_e2e/pixal3d_real_geometry.js
+            web/real_e2e/pixal3d_real_geometry.wasm
+            web/real_e2e/build-info.json
+            web/real_e2e/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90

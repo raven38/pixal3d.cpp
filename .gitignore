@@ -55,6 +55,7 @@ web/full_e2e/pixal3d_full_e2e.js
 web/full_e2e/pixal3d_full_e2e.wasm
 web/real_e2e/pixal3d_real_geometry.js
 web/real_e2e/pixal3d_real_geometry.wasm
+web/real_e2e/build-info.json
 build-wasm-ss/
 
 # macOS が自動生成する。追跡すると PR に混入する
@@ -65,3 +66,7 @@ web/dist/
 
 # wrangler のローカル状態
 .wrangler/
+web/real_e2e/SHA256SUMS
+# emcmake の configure 検査が repo 直下に残す
+/a.out.js
+/a.out.wasm

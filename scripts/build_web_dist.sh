@@ -4,9 +4,13 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/web/dist"
-# MV の既定モデル配信元。第1引数で上書きできる。
+# MV の既定モデル配信元。第1引数で上書きできる。本番は HF の commit SHA で固定した
+# `resolve/<sha>` を渡し、同じ Worker version が後日も同じバイト列を配ることを保証する
+# （docs/runbooks/web-deploy.md）。
 mv_base_url="${1:-https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/main}"
-# SV は verified manifest が公開されるまで空でよい。環境変数または第2/3引数で注入する。
+# SV の配信元は既定では注入しない（CI が「明示設定なしに SV manifest を注入しない」ことを
+# assert している）。本番は環境変数または第2/3引数で raven38/pixal3d-sv-q8_0-v1 を明示する
+# （docs/runbooks/web-deploy.md）。
 sv_manifest_url="${PIXAL3D_SV_MODEL_MANIFEST_URL:-${2:-}}"
 sv_base_url="${PIXAL3D_SV_MODEL_BASE_URL:-${3:-}}"
 allow_missing_wasm="${PIXAL3D_WEB_ALLOW_MISSING_WASM:-0}"
@@ -18,8 +22,29 @@ cp "$root"/web/app/{index.html,main.js,model_store.js,release_store.js,preflight
 cp "$root"/web/real_e2e/{calibration.js,worker.js} "$out/real_e2e/"
 wasm_js="$root/web/real_e2e/pixal3d_real_geometry.js"
 wasm_bin="$root/web/real_e2e/pixal3d_real_geometry.wasm"
+wasm_info="$root/web/real_e2e/build-info.json"
 if [[ -f "$wasm_js" && -f "$wasm_bin" ]]; then
   cp "$wasm_js" "$wasm_bin" "$out/real_e2e/"
+  # 配信している wasm の出所（source commit / emcc / SHA256）を同梱する。
+  # scripts/build_wasm_real_geometry.sh（または CI artifact）が書く。
+  # 本番ビルドでは出所の記録を必須にし、js / wasm の両方が build-info の size + SHA256 と一致
+  # しなければ止める（別ビルドの glue と wasm の組み合わせはロード時に壊れる）。
+  if [[ ! -f "$wasm_info" ]]; then
+    echo "missing web/real_e2e/build-info.json: build the runtime with scripts/build_wasm_real_geometry.sh or use the CI artifact" >&2
+    exit 1
+  fi
+  python3 - "$wasm_info" "$wasm_js" "$wasm_bin" <<'PY'
+import hashlib, json, os, sys
+info = json.load(open(sys.argv[1]))
+for path in sys.argv[2:4]:
+    want = info["files"][os.path.basename(path)]
+    data = open(path, "rb").read()
+    got = hashlib.sha256(data).hexdigest()
+    if got != want["sha256"] or len(data) != want["size_bytes"]:
+        raise SystemExit(f"build-info.json does not describe {os.path.basename(path)}: sha256 {got} / {len(data)} B vs {want['sha256']} / {want['size_bytes']} B")
+print(f"runtime provenance: commit {info['source_commit'][:12]} · {info['emcc']}")
+PY
+  cp "$wasm_info" "$out/real_e2e/"
 elif [[ "$allow_missing_wasm" == "1" ]]; then
   echo "warning: generated WebGPU WASM artifacts absent; building UI-only smoke bundle" >&2
 else
@@ -29,8 +54,8 @@ else
 fi
 cp "$root/app/public/vendor/model-viewer.min.js" "$out/vendor/"
 
-# MV manifest は既存 release identity として同梱する。SV manifest は size/SHA 検証済みの
-# public set が別途公開されるまで捏造しない。
+# MV manifest は既存 release identity として同梱する。SV manifest は配信元（HF）の
+# `pixal3d-models.json` を実行時に取得するので同梱しない（identity は HF 側の 1 か所）。
 mkdir -p "$out/models/pixal3d-q8_0-v1"
 cp "$root/models/pixal3d-q8_0-v1/pixal3d-models.json" "$out/models/pixal3d-q8_0-v1/"
 
