@@ -6,6 +6,7 @@ on:
       - 'models/pixal3d-model-set.schema.json'
       - 'models/*/pixal3d-models.json'
       - 'tools/model_manifest.py'
+      - 'web/app/manifest_conformance.json'
       - 'docs/PIXAL3D_RELEASE_CHECKLIST.md'
       - '.github/workflows/model-manifest.yml'
   push:
@@ -14,6 +15,7 @@ on:
       - 'models/pixal3d-model-set.schema.json'
       - 'models/*/pixal3d-models.json'
       - 'tools/model_manifest.py'
+      - 'web/app/manifest_conformance.json'
       - 'docs/PIXAL3D_RELEASE_CHECKLIST.md'
       - '.github/workflows/model-manifest.yml'
   workflow_dispatch:

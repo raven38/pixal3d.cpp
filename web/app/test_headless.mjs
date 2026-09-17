@@ -2,28 +2,25 @@ import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAF0lEQVR4nAXBAQEAAAjDIG7/zhMW0CF4IBYDAUWmUmEAAAAASUVORK5CYII=', 'base64');
-const localModels = [
-  { name: 'mock-image.gguf', role: 'image_encoder', buffer: Buffer.from('mock-image-model') },
-  { name: 'mock-shape.gguf', role: 'shape_decoder', buffer: Buffer.from('mock-shape-model') },
-];
-const localManifest = {
-  schema_version: 1, model_set: 'pixal3d-test-mv', model_family: 'mv', version: 'test-1',
-  files: localModels.map((m) => ({ name: m.name, role: m.role, required: true, size_bytes: m.buffer.length, sha256: createHash('sha256').update(m.buffer).digest('hex') })),
-};
-const svLocalModels = [
-  { name: 'mock-sv-image.gguf', role: 'image_encoder', buffer: Buffer.from('mock-sv-image-model') },
-  { name: 'mock-sv-shape.gguf', role: 'shape_decoder', buffer: Buffer.from('mock-sv-shape-model') },
-];
-const svLocalManifest = {
-  schema_version: 1, model_set: 'pixal3d-test-sv', model_family: 'sv', version: 'test-1',
-  files: svLocalModels.map((m) => ({ name: m.name, role: m.role, required: true, size_bytes: m.buffer.length, sha256: createHash('sha256').update(m.buffer).digest('hex') })),
-};
-const roles = ['image_encoder','naf','ss_flow','ss_decoder','shape_flow_512','shape_decoder','shape_flow_1024','texture_flow_1024','texture_decoder'];
-const remoteModels = roles.map((role, i) => ({ name: role.includes('flow') ? `remote-${i}-${role}_mv.gguf` : `remote-${i}.gguf`, role, buffer: Buffer.from(`remote-model-${i}-${role}`) }));
-const remoteManifest = {
-  schema_version: 1, model_set: 'pixal3d-remote-test', model_family: 'mv', version: 'v1',
-  files: remoteModels.map((m) => ({ name: m.name, role: m.role, required: true, size_bytes: m.buffer.length, sha256: createHash('sha256').update(m.buffer).digest('hex') })),
-};
+// manifest の name<->role は固定契約（web/app/model_family.js = tools/model_manifest.py model_files）。
+// weightless のまま、9 本の固定名に小さなダミーバイト列を割り当てる。
+const modelSet = (family, prefix) => [
+  ['dinov3.gguf', 'image_encoder'], ['pixal3d_naf.gguf', 'naf'],
+  [`pixal3d_ss_flow_${family}.gguf`, 'ss_flow'], ['ss_dec.gguf', 'ss_decoder'],
+  [`pixal3d_shape_flow_512_${family}.gguf`, 'shape_flow_512'], ['shape_dec.gguf', 'shape_decoder'],
+  [`pixal3d_shape_flow_1024_${family}.gguf`, 'shape_flow_1024'],
+  [`pixal3d_tex_flow_1024_${family}.gguf`, 'texture_flow_1024'], ['tex_dec.gguf', 'texture_decoder'],
+].map(([name, role], i) => ({ name, role, buffer: Buffer.from(`${prefix}-${i}-${role}`) }));
+const manifestOf = (models, extra) => ({
+  schema_version: 1, ...extra,
+  files: models.map((m) => ({ name: m.name, role: m.role, required: true, size_bytes: m.buffer.length, sha256: createHash('sha256').update(m.buffer).digest('hex') })),
+});
+const localModels = modelSet('mv', 'mock');
+const localManifest = manifestOf(localModels, { model_set: 'pixal3d-test-mv', model_family: 'mv', version: 'test-1' });
+const svLocalModels = modelSet('sv', 'mock-sv');
+const svLocalManifest = manifestOf(svLocalModels, { model_set: 'pixal3d-test-sv', model_family: 'sv', version: 'test-1' });
+const remoteModels = modelSet('mv', 'remote-model');
+const remoteManifest = manifestOf(remoteModels, { model_set: 'pixal3d-remote-test', model_family: 'mv', version: 'v1' });
 const transforms = {
   camera_angle_x: 0.7, mesh_scale: 0.206,
   frames: [
@@ -157,6 +154,26 @@ if(Math.abs(payload.transforms.camera_angle_x-0.3490658503988659)>1e-12)throw ne
 const distance=-payload.transforms.frames[0].transform_matrix[1][3];
 const expectedDistance=1/(2*Math.tan(payload.transforms.camera_angle_x/2));
 if(Math.abs(distance-expectedDistance)>1e-12)throw new Error(`SV camera distance mismatch: ${distance} vs ${expectedDistance}`);
+
+// 契約に違反する manifest（role 入れ替え）が OPFS に残っていても、読み戻しで拒否され Ready にならない。
+// 旧バージョンで入れたカスタム名 / 部分セットのキャッシュはこの経路で「未インストール」扱いになる。
+const tampered = await page.evaluate(async () => {
+  const root = await navigator.storage.getDirectory();
+  const d = await root.getDirectoryHandle('pixal3d-models-v1');
+  const h = await d.getFileHandle('pixal3d-models.json');
+  const m = JSON.parse(await (await h.getFile()).text());
+  const a = m.files.find((f) => f.role === 'image_encoder'); const b = m.files.find((f) => f.role === 'ss_flow');
+  [a.role, b.role] = [b.role, a.role];
+  const w = await h.createWritable(); await w.write(JSON.stringify(m)); await w.close();
+  const mod = await import(new URL('model_store.js', location.href).href);
+  return mod.cacheStatus();
+});
+if(tampered.ready||tampered.manifest!==null)throw new Error(`contract-violating cached manifest was accepted: ${JSON.stringify(tampered)}`);
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForFunction(() => document.querySelector('#model-status')?.textContent?.length > 0);
+const afterReload=await page.locator('#model-status').textContent();
+if(afterReload?.includes('Ready'))throw new Error(`UI reported Ready on a contract-violating cache: ${afterReload}`);
+if(!(await page.locator('#run').isDisabled()))throw new Error('Generate enabled on a contract-violating cache');
 
 console.log('WEB_RELEASE_OPFS_PREFLIGHT_MV_AND_SV_MOCK_INFERENCE_OK');
 await browser.close();

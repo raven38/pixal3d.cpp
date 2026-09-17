@@ -14,7 +14,7 @@ allow_missing_wasm="${PIXAL3D_WEB_ALLOW_MISSING_WASM:-0}"
 rm -rf "$out"
 mkdir -p "$out/real_e2e" "$out/vendor"
 
-cp "$root"/web/app/{index.html,main.js,model_store.js,release_store.js,preflight.js,sha256.js,single_view.js} "$out/"
+cp "$root"/web/app/{index.html,main.js,model_store.js,release_store.js,preflight.js,sha256.js,single_view.js,model_family.js} "$out/"
 cp "$root"/web/real_e2e/{calibration.js,worker.js} "$out/real_e2e/"
 wasm_js="$root/web/real_e2e/pixal3d_real_geometry.js"
 wasm_bin="$root/web/real_e2e/pixal3d_real_geometry.wasm"

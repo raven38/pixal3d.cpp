@@ -1,0 +1,1321 @@
+{
+  "_comment": "Python (tools/model_manifest.py self-test) と JS (web/app/test_single_view.mjs) が共有する name<->role / model_family 契約の conformance vector。family は期待値: 'sv' | 'mv' | null(拒否)。手で保守する（各 case は完全展開）。",
+  "cases": [
+    {
+      "id": "sv_complete_inferred",
+      "note": "SV 9 本、model_family 省略 → 名前から推定",
+      "family": "sv",
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sv_complete_explicit",
+      "note": "SV 9 本、model_family: sv",
+      "family": "sv",
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "sv"
+      }
+    },
+    {
+      "id": "mv_complete_inferred",
+      "note": "MV 9 本、model_family 省略（既存公開 manifest の形）",
+      "family": "mv",
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-mv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_mv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "ffc788b23852e80c58d8a31bb1dbc1f4c6e2984e6ccebe89e92a095f1d5cee6a"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_mv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "b2940a7a0af58dabb65b903658e88f542b2a34cd6139574484b8ae3b4eaf572d"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_mv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7e244be4ee63b8a5b42fe11e868fffcb39bba076ae8688de9fb35413c942505e"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_mv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "c1f6607d6b04146928f50b3c32f1683a74b2e8e90108a9f0d0ccabc2e3af91ec"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mv_complete_explicit",
+      "note": "MV 9 本、model_family: mv",
+      "family": "mv",
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-mv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_mv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "ffc788b23852e80c58d8a31bb1dbc1f4c6e2984e6ccebe89e92a095f1d5cee6a"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_mv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "b2940a7a0af58dabb65b903658e88f542b2a34cd6139574484b8ae3b4eaf572d"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_mv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7e244be4ee63b8a5b42fe11e868fffcb39bba076ae8688de9fb35413c942505e"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_mv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "c1f6607d6b04146928f50b3c32f1683a74b2e8e90108a9f0d0ccabc2e3af91ec"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "mv"
+      }
+    },
+    {
+      "id": "sv_explicit_unknown_name_on_flow_role",
+      "note": "model_family: sv でも ss_flow に未知名 foo.gguf は拒否（レビュー指摘の例）",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "foo.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "sv"
+      }
+    },
+    {
+      "id": "sv_role_swap",
+      "note": "dinov3.gguf と pixal3d_ss_flow_sv.gguf の role 入れ替えは拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "sv"
+      }
+    },
+    {
+      "id": "mv_names_with_sv_metadata",
+      "note": "MV 名の集合に model_family: sv は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-mv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_mv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "ffc788b23852e80c58d8a31bb1dbc1f4c6e2984e6ccebe89e92a095f1d5cee6a"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_mv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "b2940a7a0af58dabb65b903658e88f542b2a34cd6139574484b8ae3b4eaf572d"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_mv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7e244be4ee63b8a5b42fe11e868fffcb39bba076ae8688de9fb35413c942505e"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_mv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "c1f6607d6b04146928f50b3c32f1683a74b2e8e90108a9f0d0ccabc2e3af91ec"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "sv"
+      }
+    },
+    {
+      "id": "sv_names_with_mv_metadata",
+      "note": "SV 名の集合に model_family: mv は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "mv"
+      }
+    },
+    {
+      "id": "mixed_families",
+      "note": "ss_flow だけ _mv、他 _sv の混在は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_mv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unknown_family_value",
+      "note": "model_family: xx は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "xx"
+      }
+    },
+    {
+      "id": "known_name_not_required",
+      "note": "既知名に required:false は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": false,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate_role",
+      "note": "role 重複は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          },
+          {
+            "name": "extra_dup_role.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1099,
+            "sha256": "1edb283b460851c3cc948ba2d358b13249357829e9e19e1d20cd09d6a0cff476"
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate_name",
+      "note": "name 重複は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          },
+          {
+            "name": "dinov3.gguf",
+            "role": "extra_role",
+            "required": true,
+            "size_bytes": 1099,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sv_with_unknown_extra",
+      "note": "未知名 + 未知 role の余剰 1 件は family 判定では許容（release は 9 件固定で別途拒否）",
+      "family": "sv",
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          },
+          {
+            "name": "notes.gguf",
+            "role": "extra_notes",
+            "required": true,
+            "size_bytes": 1099,
+            "sha256": "18ee1b0cf53295aaf4838d36113d040350bb507ad5b1448c4c30ab7df9247f31"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sv_suffix_not_at_end",
+      "note": "_sv.gguf が末尾でない名前は sv と推定しない（endsWith）",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf.bak",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sv_missing_tex_dec",
+      "note": "8 本（tex_dec.gguf 欠落）は拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "pixal3d_ss_flow_sv.gguf",
+            "role": "ss_flow",
+            "required": true,
+            "size_bytes": 1002,
+            "sha256": "f5d674b5410850672cdb5511f6636a7345a83fb9d90432b7d5515d80342c3393"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "pixal3d_shape_flow_512_sv.gguf",
+            "role": "shape_flow_512",
+            "required": true,
+            "size_bytes": 1004,
+            "sha256": "c21ba0b7326cfd3dfe9b08d9d47e23e23fbe8607d9f2136bea07788875433560"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "pixal3d_shape_flow_1024_sv.gguf",
+            "role": "shape_flow_1024",
+            "required": true,
+            "size_bytes": 1006,
+            "sha256": "7fb20b8df705d4cd43da8b8aed7fc866531094c60a74f18b20da1432d25a8324"
+          },
+          {
+            "name": "pixal3d_tex_flow_1024_sv.gguf",
+            "role": "texture_flow_1024",
+            "required": true,
+            "size_bytes": 1007,
+            "sha256": "213c00549ca5322aa263ad71e1b9489eb01559027258f3183177833061c29f92"
+          }
+        ]
+      }
+    },
+    {
+      "id": "no_flows_no_family",
+      "note": "flow 無し・model_family 無しは family 不明として拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "no_flows_explicit_sv",
+      "note": "flow 無し・model_family: sv でも 9 本完備でないので拒否",
+      "family": null,
+      "manifest": {
+        "schema_version": 1,
+        "model_set": "pixal3d-conformance-sv",
+        "version": "v1",
+        "files": [
+          {
+            "name": "dinov3.gguf",
+            "role": "image_encoder",
+            "required": true,
+            "size_bytes": 1000,
+            "sha256": "c4678af1d7098da89492673a411cf0f29d9eab2f1ff7e054751bea0e4949b805"
+          },
+          {
+            "name": "pixal3d_naf.gguf",
+            "role": "naf",
+            "required": true,
+            "size_bytes": 1001,
+            "sha256": "fb44a6c3a8f0eee8f0ea7b5b25c666cfb3148dc981950c56aa1b03b47ea5bac6"
+          },
+          {
+            "name": "ss_dec.gguf",
+            "role": "ss_decoder",
+            "required": true,
+            "size_bytes": 1003,
+            "sha256": "a5b241ee2da21054047a6edec6f4c195eede95c1ace165c98908923c6cf2b546"
+          },
+          {
+            "name": "shape_dec.gguf",
+            "role": "shape_decoder",
+            "required": true,
+            "size_bytes": 1005,
+            "sha256": "b7571bbceb2832fa0ae54fad8e586b1a7a0583965617a8e6563462adcbc806a3"
+          },
+          {
+            "name": "tex_dec.gguf",
+            "role": "texture_decoder",
+            "required": true,
+            "size_bytes": 1008,
+            "sha256": "539bf26578e2397781a8ce448dc25554a295af5354221fc86305e6961edaa64a"
+          }
+        ],
+        "model_family": "sv"
+      }
+    }
+  ]
+}
