@@ -28,7 +28,10 @@ export function validateReleaseManifest(m) {
 }
 
 function manifestIdentity(m) {
-  return m ? `${m.model_set}\n${m.version}\n${m.files.map((f) => `${f.name}:${f.role}:${f.required}:${f.sha256}:${f.size_bytes}`).join('\n')}` : '';
+  // model_family は実行可否を決める契約値なので identity に含める。無印 (MV) manifest の
+  // identity は従来どおりにして、配備済みキャッシュを無効化しない。
+  const family = typeof m?.model_family === 'string' ? `\nfamily:${m.model_family}` : '';
+  return m ? `${m.model_set}\n${m.version}\n${m.files.map((f) => `${f.name}:${f.role}:${f.required}:${f.sha256}:${f.size_bytes}`).join('\n')}${family}` : '';
 }
 
 async function originRoot() {

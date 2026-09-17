@@ -54,6 +54,19 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def infer_family(files: list) -> str | None:
+    """flow 4 role のファイル名末尾から family を推定する。混在・不明は None。"""
+    flow_roles = {"ss_flow", "shape_flow_512", "shape_flow_1024", "texture_flow_1024"}
+    names = [ent.get("name") for ent in files
+             if isinstance(ent, dict) and ent.get("role") in flow_roles and isinstance(ent.get("name"), str)]
+    if not names:
+        return None
+    for fam in MODEL_FAMILIES:
+        if all(n.endswith(f"_{fam}.gguf") for n in names):
+            return fam
+    return None
+
+
 def validate_manifest_shape(m: dict) -> list[str]:
     errors: list[str] = []
     if not isinstance(m, dict):
@@ -70,21 +83,29 @@ def validate_manifest_shape(m: dict) -> list[str]:
         errors.append("version missing")
     if "source" in m and not isinstance(m["source"], str):
         errors.append("source must be a string")
-    # model_family が無い manifest は従来どおり mv として扱う（既存 release との互換）。
-    family = m.get("model_family", DEFAULT_MODEL_FAMILY)
-    if family not in MODEL_FAMILIES:
-        errors.append("model_family must be one of: " + ", ".join(MODEL_FAMILIES))
-        family = DEFAULT_MODEL_FAMILY
-
     files = m.get("files")
     if not isinstance(files, list) or not files:
         return errors + ["files must be a non-empty array"]
+
+    # family の決定は web/app/single_view.js modelFamilyForManifest と同じ規則:
+    # flow のファイル名 (*_mv.gguf / *_sv.gguf) から推定し、model_family が明示されて
+    # いればそれと一致しなければならない。混在・不明・不一致は拒否する。
+    explicit = m.get("model_family")
+    if explicit is not None and explicit not in MODEL_FAMILIES:
+        errors.append("model_family must be one of: " + ", ".join(MODEL_FAMILIES))
+        explicit = None
+    inferred = infer_family(files)
+    if explicit is not None and inferred is not None and explicit != inferred:
+        errors.append(f"model_family {explicit} does not match the flow file names ({inferred})")
+    family = explicit or inferred or DEFAULT_MODEL_FAMILY
 
     expected = model_files(family)
     seen_names: set[str] = set()
     seen_roles: set[str] = set()
     expected_roles = {spec["role"] for spec in expected.values() if spec["required"]}
     expected_names = {name for name, spec in expected.items() if spec["required"]}
+    role_of_name = {name: spec["role"] for name, spec in expected.items()}
+    name_of_role = {spec["role"]: name for name, spec in expected.items()}
     for i, ent in enumerate(files):
         p = f"files[{i}]"
         if not isinstance(ent, dict):
@@ -107,6 +128,14 @@ def validate_manifest_shape(m: dict) -> list[str]:
             errors.append(f"duplicate role: {role}")
         else:
             seen_roles.add(role)
+        # name と role の対応を固定する（role の入れ替えで別種の GGUF を別段へ渡させない）。
+        if isinstance(name, str) and isinstance(role, str):
+            if name in role_of_name and role_of_name[name] != role:
+                errors.append(f"{p}: {name} must have role {role_of_name[name]}, not {role}")
+            elif name not in role_of_name and role in name_of_role:
+                errors.append(f"{p}: role {role} must be {name_of_role[role]}, not {name}")
+            if name in role_of_name and ent.get("required") is not True:
+                errors.append(f"{p}: {name} must be required")
         if not isinstance(ent.get("required"), bool):
             errors.append(f"{p}.required must be bool")
         if not isinstance(ent.get("size_bytes"), int) or ent["size_bytes"] <= 0:
@@ -145,7 +174,7 @@ def generate(root: Path, version: str, model_set: str, source: str | None,
         raise SystemExit("missing required model files: " + ", ".join(missing))
     out = {"schema_version": 1, "model_set": model_set, "version": version, "files": files}
     if family != DEFAULT_MODEL_FAMILY:
-        # mv は省略時の既定なので、既存 manifest を変えないよう sv のときだけ明示する。
+        # 既存の mv manifest を変えないよう、mv 以外のときだけ明示する（省略時はファイル名から推定）。
         out["model_family"] = family
     if source:
         out["source"] = source
@@ -210,14 +239,28 @@ def self_test() -> dict:
         assert verify(root, sv) == []
         assert all(not n.endswith("_mv.gguf") for n in (f["name"] for f in sv["files"]))
         bad = json.loads(json.dumps(sv))
-        del bad["model_family"]  # 無印は mv 扱い → _mv の flow が欠けていると判定される
-        assert any("missing required model files" in e for e in validate_manifest_shape(bad))
+        del bad["model_family"]  # 省略時はブラウザと同じくファイル名から sv と推定される
+        assert validate_manifest_shape(bad) == []
         bad = json.loads(json.dumps(sv))
         bad["model_family"] = "xx"
         assert any("model_family must be one of" in e for e in validate_manifest_shape(bad))
         bad = json.loads(json.dumps(m))
         bad["model_family"] = "sv"  # mv のファイル群に sv と書いても通らない
+        assert any("does not match the flow file names" in e for e in validate_manifest_shape(bad))
+        bad = json.loads(json.dumps(sv))
+        bad["model_family"] = "mv"
+        assert any("does not match the flow file names" in e for e in validate_manifest_shape(bad))
+        # 混在（ss_flow だけ mv）は family 不明 → 既定 mv の集合を満たさず拒否
+        bad = json.loads(json.dumps(sv))
+        bad["files"][2]["name"] = "pixal3d_ss_flow_mv.gguf"
         assert any("missing required model files" in e for e in validate_manifest_shape(bad))
+        # role の入れ替え（dinov3 <-> ss_flow）は名前と role の対応違反として拒否
+        bad = json.loads(json.dumps(sv))
+        bad["files"][0]["role"], bad["files"][2]["role"] = bad["files"][2]["role"], bad["files"][0]["role"]
+        assert any("must have role" in e for e in validate_manifest_shape(bad))
+        bad = json.loads(json.dumps(sv))
+        bad["files"][0]["required"] = False
+        assert any("must be required" in e for e in validate_manifest_shape(bad))
     print("MODEL_MANIFEST_SELF_TEST_OK")
     return m
 

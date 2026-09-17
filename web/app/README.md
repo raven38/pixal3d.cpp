@@ -55,7 +55,17 @@ A custom MV manifest can still be selected with `window.PIXAL3D_MODEL_MANIFEST_U
 
 ### SV model source
 
-A verified public SV Q8_0 manifest is a separate release artifact. Until it is published with exact file sizes and SHA-256 values, the production deployment does **not** invent one and does not silently reuse the MV set.
+The verified public SV Q8_0 set is `pixal3d-sv-q8_0 v1` on Hugging Face
+([`raven38/pixal3d-sv-q8_0-v1`](https://huggingface.co/raven38/pixal3d-sv-q8_0-v1); manifest
+`models/pixal3d-sv-q8_0-v1/pixal3d-models.json`, `model_family: sv`). The production build does **not**
+bake it in: the SV source must be configured explicitly at deploy time (`scripts/build_web_dist.sh`
+arguments 2/3 or `PIXAL3D_SV_MODEL_MANIFEST_URL` / `PIXAL3D_SV_MODEL_BASE_URL`), and the app never
+silently reuses the MV set for a single image:
+
+```text
+sv_manifest_url   = https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/main/pixal3d-models.json
+sv_model_base_url = https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/main
+```
 
 An SV source can be configured with:
 
