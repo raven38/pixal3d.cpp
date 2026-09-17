@@ -37,6 +37,7 @@ jobs:
       - name: Verify production bundle contents
         run: |
           test -f web/dist/single_view.js
+          test -f web/dist/model_family.js
           test -f web/dist/real_e2e/worker.js
           test -f web/dist/models/pixal3d-q8_0-v1/pixal3d-models.json
           grep -q 'PIXAL3D_MODEL_BASE_URL' web/dist/index.html
