@@ -17,19 +17,32 @@ import sys
 import tempfile
 from pathlib import Path
 
-MODEL_FILES = {
-    "dinov3.gguf": {"role": "image_encoder", "required": True},
-    "pixal3d_naf.gguf": {"role": "naf", "required": True},
-    "pixal3d_ss_flow_mv.gguf": {"role": "ss_flow", "required": True},
-    "ss_dec.gguf": {"role": "ss_decoder", "required": True},
-    "pixal3d_shape_flow_512_mv.gguf": {"role": "shape_flow_512", "required": True},
-    "shape_dec.gguf": {"role": "shape_decoder", "required": True},
-    "pixal3d_shape_flow_1024_mv.gguf": {"role": "shape_flow_1024", "required": True},
-    "pixal3d_tex_flow_1024_mv.gguf": {"role": "texture_flow_1024", "required": True},
-    "tex_dec.gguf": {"role": "texture_decoder", "required": True},
-}
+# flow 重みは model_family（mv = multiview, sv = single-view）ごとに別ファイル。
+# decoder / image_encoder / naf は両 family で共通（同じバイト列を共有する）。
+MODEL_FAMILIES = ("mv", "sv")
+DEFAULT_MODEL_FAMILY = "mv"
 
-ROOT_KEYS = {"schema_version", "model_set", "version", "source", "files"}
+
+def model_files(family: str = DEFAULT_MODEL_FAMILY) -> dict:
+    if family not in MODEL_FAMILIES:
+        raise ValueError(f"unknown model_family: {family!r}")
+    return {
+        "dinov3.gguf": {"role": "image_encoder", "required": True},
+        "pixal3d_naf.gguf": {"role": "naf", "required": True},
+        f"pixal3d_ss_flow_{family}.gguf": {"role": "ss_flow", "required": True},
+        "ss_dec.gguf": {"role": "ss_decoder", "required": True},
+        f"pixal3d_shape_flow_512_{family}.gguf": {"role": "shape_flow_512", "required": True},
+        "shape_dec.gguf": {"role": "shape_decoder", "required": True},
+        f"pixal3d_shape_flow_1024_{family}.gguf": {"role": "shape_flow_1024", "required": True},
+        f"pixal3d_tex_flow_1024_{family}.gguf": {"role": "texture_flow_1024", "required": True},
+        "tex_dec.gguf": {"role": "texture_decoder", "required": True},
+    }
+
+
+# 既存の MV manifest との互換のため MODEL_FILES は mv 集合を指したままにする。
+MODEL_FILES = model_files(DEFAULT_MODEL_FAMILY)
+
+ROOT_KEYS = {"schema_version", "model_set", "version", "model_family", "source", "files"}
 FILE_KEYS = {"name", "role", "required", "size_bytes", "sha256"}
 
 
@@ -57,15 +70,21 @@ def validate_manifest_shape(m: dict) -> list[str]:
         errors.append("version missing")
     if "source" in m and not isinstance(m["source"], str):
         errors.append("source must be a string")
+    # model_family が無い manifest は従来どおり mv として扱う（既存 release との互換）。
+    family = m.get("model_family", DEFAULT_MODEL_FAMILY)
+    if family not in MODEL_FAMILIES:
+        errors.append("model_family must be one of: " + ", ".join(MODEL_FAMILIES))
+        family = DEFAULT_MODEL_FAMILY
 
     files = m.get("files")
     if not isinstance(files, list) or not files:
         return errors + ["files must be a non-empty array"]
 
+    expected = model_files(family)
     seen_names: set[str] = set()
     seen_roles: set[str] = set()
-    expected_roles = {spec["role"] for spec in MODEL_FILES.values() if spec["required"]}
-    expected_names = {name for name, spec in MODEL_FILES.items() if spec["required"]}
+    expected_roles = {spec["role"] for spec in expected.values() if spec["required"]}
+    expected_names = {name for name, spec in expected.items() if spec["required"]}
     for i, ent in enumerate(files):
         p = f"files[{i}]"
         if not isinstance(ent, dict):
@@ -105,10 +124,11 @@ def validate_manifest_shape(m: dict) -> list[str]:
     return errors
 
 
-def generate(root: Path, version: str, model_set: str, source: str | None) -> dict:
+def generate(root: Path, version: str, model_set: str, source: str | None,
+             family: str = DEFAULT_MODEL_FAMILY) -> dict:
     files = []
     missing = []
-    for name, spec in MODEL_FILES.items():
+    for name, spec in model_files(family).items():
         p = root / name
         if not p.is_file():
             if spec["required"]:
@@ -124,6 +144,9 @@ def generate(root: Path, version: str, model_set: str, source: str | None) -> di
     if missing:
         raise SystemExit("missing required model files: " + ", ".join(missing))
     out = {"schema_version": 1, "model_set": model_set, "version": version, "files": files}
+    if family != DEFAULT_MODEL_FAMILY:
+        # mv は省略時の既定なので、既存 manifest を変えないよう sv のときだけ明示する。
+        out["model_family"] = family
     if source:
         out["source"] = source
     return out
@@ -176,6 +199,25 @@ def self_test() -> dict:
         (root / "dinov3.gguf").write_bytes(b"corrupt")
         errs = verify(root, m)
         assert any("size mismatch dinov3.gguf" in e or "sha256 mismatch dinov3.gguf" in e for e in errs)
+
+    # sv family: _sv の flow 名が要求され、mv の名前は満たさない。family の混在は拒否する。
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        for i, name in enumerate(model_files("sv")):
+            (root / name).write_bytes((name + str(i)).encode())
+        sv = generate(root, "test", "pixal3d-sv-test", None, family="sv")
+        assert sv["model_family"] == "sv"
+        assert verify(root, sv) == []
+        assert all(not n.endswith("_mv.gguf") for n in (f["name"] for f in sv["files"]))
+        bad = json.loads(json.dumps(sv))
+        del bad["model_family"]  # 無印は mv 扱い → _mv の flow が欠けていると判定される
+        assert any("missing required model files" in e for e in validate_manifest_shape(bad))
+        bad = json.loads(json.dumps(sv))
+        bad["model_family"] = "xx"
+        assert any("model_family must be one of" in e for e in validate_manifest_shape(bad))
+        bad = json.loads(json.dumps(m))
+        bad["model_family"] = "sv"  # mv のファイル群に sv と書いても通らない
+        assert any("missing required model files" in e for e in validate_manifest_shape(bad))
     print("MODEL_MANIFEST_SELF_TEST_OK")
     return m
 
@@ -198,6 +240,14 @@ def schema_test(schema_path: Path) -> None:
         pass
     else:
         raise AssertionError("schema unexpectedly accepted an unknown top-level property")
+    bad = json.loads(json.dumps(manifest))
+    bad["model_family"] = "xx"
+    try:
+        jsonschema.validate(instance=bad, schema=schema)
+    except jsonschema.ValidationError:
+        pass
+    else:
+        raise AssertionError("schema unexpectedly accepted an unknown model_family")
     for bad_name in (".", ".."):
         bad = json.loads(json.dumps(manifest))
         bad["files"][0]["name"] = bad_name
@@ -247,6 +297,7 @@ def main() -> int:
     g.add_argument("models_dir", type=Path)
     g.add_argument("--version", required=True)
     g.add_argument("--model-set", default="pixal3d-q8_0")
+    g.add_argument("--model-family", choices=MODEL_FAMILIES, default=DEFAULT_MODEL_FAMILY)
     g.add_argument("--source")
     g.add_argument("--output", type=Path, required=True)
     v = sub.add_parser("verify")
@@ -269,7 +320,7 @@ def main() -> int:
         schema_test(a.schema)
         return 0
     if a.cmd == "generate":
-        m = generate(a.models_dir, a.version, a.model_set, a.source)
+        m = generate(a.models_dir, a.version, a.model_set, a.source, family=a.model_family)
         a.output.write_text(json.dumps(m, indent=2) + "\n")
         print(a.output)
         return 0

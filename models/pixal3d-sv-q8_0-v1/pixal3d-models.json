@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "model_set": "pixal3d-sv-q8_0",
+  "version": "v1",
+  "files": [
+    {
+      "name": "dinov3.gguf",
+      "role": "image_encoder",
+      "required": true,
+      "size_bytes": 323657920,
+      "sha256": "0dd4ffd4b46a248f5b7d49c35275d68461fbf73f57ddb4c1fa8afb4f7bb45a0d"
+    },
+    {
+      "name": "pixal3d_naf.gguf",
+      "role": "naf",
+      "required": true,
+      "size_bytes": 1334656,
+      "sha256": "c4f6cd80e94c8d120360ba50a3633322e6ecce0163966e3b7650b24f99c18569"
+    },
+    {
+      "name": "pixal3d_ss_flow_sv.gguf",
+      "role": "ss_flow",
+      "required": true,
+      "size_bytes": 1426559744,
+      "sha256": "75eeb538c5485e02f091d1fc8a55c8132035076a4e01b7e9607883deff3852c4"
+    },
+    {
+      "name": "ss_dec.gguf",
+      "role": "ss_decoder",
+      "required": true,
+      "size_bytes": 147379392,
+      "sha256": "2790b5eecb261cc877d9bf175ce2bd6dd48cd65be8c042c5f5bc023dfca01cf7"
+    },
+    {
+      "name": "pixal3d_shape_flow_512_sv.gguf",
+      "role": "shape_flow_512",
+      "required": true,
+      "size_bytes": 1476761760,
+      "sha256": "13f5df430ca49e6011827a3eeb208f047bdbad1fd4e52549809eaab63b83e19e"
+    },
+    {
+      "name": "shape_dec.gguf",
+      "role": "shape_decoder",
+      "required": true,
+      "size_bytes": 881361568,
+      "sha256": "0de7c7a675022dd8696d526a9279e5a50b2a35c8a79452f434a72dc53d40f169"
+    },
+    {
+      "name": "pixal3d_shape_flow_1024_sv.gguf",
+      "role": "shape_flow_1024",
+      "required": true,
+      "size_bytes": 1476761760,
+      "sha256": "7cb1ecb189719edbbb991d16271ad0f8ab8bf54154df7795830aadba27f0efae"
+    },
+    {
+      "name": "pixal3d_tex_flow_1024_sv.gguf",
+      "role": "texture_flow_1024",
+      "required": true,
+      "size_bytes": 1476813984,
+      "sha256": "06ef23d3badafc6f8ffcecebbc2bd0297461852b6c125dc4448f80d78040ee17"
+    },
+    {
+      "name": "tex_dec.gguf",
+      "role": "texture_decoder",
+      "required": true,
+      "size_bytes": 881344576,
+      "sha256": "88b4fced46455e02f316664d5c43584a311921dd9a1cdc1b7b7d981cca9214d4"
+    }
+  ],
+  "model_family": "sv",
+  "source": "Single-view flows: TencentARC/Pixal3D ckpts/{ss_flow_img_dit_1_3B_64_bf16,slat_flow_img2shape_dit_1_3B_512_bf16,slat_flow_img2shape_dit_1_3B_1024_bf16,slat_flow_imgshape2tex_dit_1_3B_1024_bf16}.safetensors (without the _mv suffix) -> tools/convert.py (F16 GGUF) -> tools/quantize_gguf.py <src> <dst> Q8_0. dinov3.gguf, pixal3d_naf.gguf, ss_dec.gguf, shape_dec.gguf, tex_dec.gguf are byte-identical to pixal3d-q8_0 v1."
+}

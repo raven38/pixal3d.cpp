@@ -10,6 +10,7 @@
     "schema_version": { "const": 1 },
     "model_set": { "type": "string", "minLength": 1 },
     "version": { "type": "string", "minLength": 1 },
+    "model_family": { "enum": ["mv", "sv"], "description": "Flow-weight family: mv (multiview; the default when absent) or sv (single-view)." },
     "source": { "type": "string" },
     "files": {
       "type": "array",
