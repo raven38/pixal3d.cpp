@@ -29,27 +29,8 @@ export function makeSingleViewTransforms(imageName, fovRad = DEFAULT_SV_FOV) {
   };
 }
 
-export function modelFamilyForManifest(manifest) {
-  const explicit = manifest?.model_family;
-  if (explicit !== undefined && explicit !== 'sv' && explicit !== 'mv') return null;
-  if (!Array.isArray(manifest?.files)) return (explicit === 'sv' || explicit === 'mv') ? explicit : null;
-  const flowRoles = new Set(['ss_flow', 'shape_flow_512', 'shape_flow_1024', 'texture_flow_1024']);
-  const flows = manifest.files.filter((f) => flowRoles.has(f?.role));
-  if (!flows.length) return (explicit === 'sv' || explicit === 'mv') ? explicit : null;
-
-  const hasSv = flows.some((f) => typeof f?.name === 'string' && f.name.includes('_sv.gguf'));
-  const hasMv = flows.some((f) => typeof f?.name === 'string' && f.name.includes('_mv.gguf'));
-  if (hasSv && hasMv) return null;
-  if (explicit === 'sv' && hasMv) return null;
-  if (explicit === 'mv' && hasSv) return null;
-  if (explicit === 'sv' || explicit === 'mv') return explicit;
-
-  const allSv = flows.every((f) => typeof f?.name === 'string' && f.name.includes('_sv.gguf'));
-  const allMv = flows.every((f) => typeof f?.name === 'string' && f.name.includes('_mv.gguf'));
-  if (allSv) return 'sv';
-  if (allMv) return 'mv';
-  return null;
-}
+// family 判定は name<->role 契約と一体なので model_family.js に置く（Python model_manifest.py と同規則）。
+export { modelFamilyForManifest } from './model_family.js';
 
 export function resolveSvModelSource({ search, windowObj, storage } = {}) {
   const w = windowObj === undefined ? (typeof window !== 'undefined' ? window : null) : windowObj;

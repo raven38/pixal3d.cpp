@@ -1,3 +1,5 @@
+import { manifestContractErrors } from './model_family.js';
+
 const ROOT = 'pixal3d-models-v1';
 export const MODEL_MANIFEST_NAME = 'pixal3d-models.json';
 const MANIFEST_SCHEMA_VERSION = 1;
@@ -13,7 +15,7 @@ function isSafeName(name) {
   return typeof name === 'string' && name.length > 0 && !name.includes('/') && !name.includes('\\') && name !== '.' && name !== '..';
 }
 
-function validateManifest(manifest) {
+export function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Invalid model manifest');
   if (manifest.schema_version !== MANIFEST_SCHEMA_VERSION) throw new Error(`Unsupported model manifest schema_version: ${manifest.schema_version}`);
   if (typeof manifest.model_set !== 'string' || !manifest.model_set) throw new Error('Model manifest model_set is missing');
@@ -31,6 +33,10 @@ function validateManifest(manifest) {
     if (!Number.isSafeInteger(ent.size_bytes) || ent.size_bytes <= 0) throw new Error(`Manifest size_bytes invalid for ${ent.name}`);
     if (typeof ent.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(ent.sha256)) throw new Error(`Manifest sha256 invalid for ${ent.name}`);
   }
+  // name<->role / model_family 契約と required 9 本の完備（tools/model_manifest.py と同規則）。
+  // 部分セットを通すと cacheStatus() が ready=true を返して Generate が有効になり、worker で落ちる。
+  const contract = manifestContractErrors(manifest);
+  if (contract.length) throw new Error(`Model manifest violates the model-set contract: ${contract.join('; ')}`);
   return manifest;
 }
 

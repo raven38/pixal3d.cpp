@@ -1,6 +1,7 @@
 import { Sha256 } from './sha256.js';
 import { cacheStatus, MODEL_MANIFEST_NAME } from './model_store.js';
 import { storagePreflight } from './preflight.js';
+import { manifestContractErrors } from './model_family.js';
 
 const ROOT = 'pixal3d-models-v1';
 const PENDING_MANIFEST_NAME = '.pixal3d-pending.json';
@@ -24,11 +25,17 @@ export function validateReleaseManifest(m) {
     names.add(f.name); roles.add(f.role);
   }
   if (m.files.length !== 9) throw new Error(`Release manifest must contain exactly 9 required models; got ${m.files.length}`);
+  // name<->role / model_family 契約（tools/model_manifest.py と同規則）。
+  const contract = manifestContractErrors(m);
+  if (contract.length) throw new Error(`Release manifest violates the model-set contract: ${contract.join('; ')}`);
   return m;
 }
 
 function manifestIdentity(m) {
-  return m ? `${m.model_set}\n${m.version}\n${m.files.map((f) => `${f.name}:${f.role}:${f.required}:${f.sha256}:${f.size_bytes}`).join('\n')}` : '';
+  // model_family は実行可否を決める契約値なので identity に含める。無印 (MV) manifest の
+  // identity は従来どおりにして、配備済みキャッシュを無効化しない。
+  const family = typeof m?.model_family === 'string' ? `\nfamily:${m.model_family}` : '';
+  return m ? `${m.model_set}\n${m.version}\n${m.files.map((f) => `${f.name}:${f.role}:${f.required}:${f.sha256}:${f.size_bytes}`).join('\n')}${family}` : '';
 }
 
 async function originRoot() {

@@ -16,7 +16,34 @@ The production browser app uses the shared C++/WASM runtime. JavaScript owns onl
 
 The browser synthesizes the same one-frame camera metadata consumed by the existing Pixal3D WASM path. The first Web release does **not** port MoGe-2; browser-native camera/FOV estimation is a follow-up.
 
-Single-image mode never falls back to the multiview checkpoints. The cached model manifest must identify an SV family (`model_family: "sv"` or `_sv.gguf` flow filenames) before Generate can be enabled.
+Single-image mode never falls back to the multiview checkpoints. The cached model manifest must resolve to the SV family under the manifest contract below (`model_family: "sv"`, or all four flow roles named `*_sv.gguf`) before Generate can be enabled.
+
+### Model manifest contract (shared with `tools/model_manifest.py`)
+
+`web/app/model_family.js` enforces the same name↔role / `model_family` rules as the Python
+validator, so a manifest that passes `python tools/model_manifest.py check-committed` is exactly
+what the browser accepts, and vice versa. The rules:
+
+1. `model_family`, when present, is `mv` or `sv`.
+2. The family is inferred from the four flow filenames (all `*_mv.gguf` → `mv`, all `*_sv.gguf` →
+   `sv`, mixed or unknown → rejected); an explicit `model_family` must agree with the inferred one.
+3. The nine known filenames are bound to fixed roles (`dinov3.gguf` = `image_encoder`,
+   `pixal3d_ss_flow_<family>.gguf` = `ss_flow`, …). A known filename with a different role, an
+   unknown filename on a known role (for example `foo.gguf` as `ss_flow`), a known filename with
+   `required: false`, or a duplicate name/role is rejected.
+4. All nine required files/roles of the family must be present.
+
+This applies to the public release manifest (`release_store.js`), to **Install local verified
+set…** and the OPFS read-back (`model_store.js`), and to the family check that gates Generate
+(`modelFamilyForManifest`). The browser worker resolves files by role, so a custom filename used to
+run in the browser only; since this contract it is rejected everywhere, matching the native CLI's
+fixed filenames. A cached manifest that violates the contract is treated as not installed and must
+be reinstalled. The three committed manifests all conform. Intentional differences from the Python
+validator: the release manifest requires exactly nine entries (Python allows extra unknown-name /
+unknown-role files; the local install and family check allow them too), and Python's remaining
+shape checks (unknown keys, `source` type, …) stay Python-only. The shared conformance vector
+`web/app/manifest_conformance.json` is executed by both `python tools/model_manifest.py self-test`
+and `npm run test:sv`.
 
 ### Multiview (MV)
 
@@ -55,7 +82,17 @@ A custom MV manifest can still be selected with `window.PIXAL3D_MODEL_MANIFEST_U
 
 ### SV model source
 
-A verified public SV Q8_0 manifest is a separate release artifact. Until it is published with exact file sizes and SHA-256 values, the production deployment does **not** invent one and does not silently reuse the MV set.
+The verified public SV Q8_0 set is `pixal3d-sv-q8_0 v1` on Hugging Face
+([`raven38/pixal3d-sv-q8_0-v1`](https://huggingface.co/raven38/pixal3d-sv-q8_0-v1); manifest
+`models/pixal3d-sv-q8_0-v1/pixal3d-models.json`, `model_family: sv`). The production build does **not**
+bake it in: the SV source must be configured explicitly at deploy time (`scripts/build_web_dist.sh`
+arguments 2/3 or `PIXAL3D_SV_MODEL_MANIFEST_URL` / `PIXAL3D_SV_MODEL_BASE_URL`), and the app never
+silently reuses the MV set for a single image:
+
+```text
+sv_manifest_url   = https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/main/pixal3d-models.json
+sv_model_base_url = https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/main
+```
 
 An SV source can be configured with:
 
