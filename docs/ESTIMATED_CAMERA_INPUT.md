@@ -1,32 +1,41 @@
-# One-image camera estimation (no transforms.json)
+# Camera/FOV estimation without user-authored transforms.json
 
-Issue #4 tracks removing the requirement for user-authored camera metadata. This branch adds the first milestone: a **single pre-matted image** can be cropped/normalized like official Pixal3D, converted into camera metadata, and run with the dedicated Pixal3D single-view flow weights.
+Issue #4 tracks removing the requirement for user-authored camera metadata. Two bounded helpers are available without changing the downstream Pixal3D camera contract:
 
-This branch depends on the runtime support from PR #6 (`--pixal3d-weights sv`). It deliberately refuses the older `V=1` + multiview-weight path because that combination was measured to break down badly.
+- one pre-matted image -> MoGe-2 FOV -> canonical front camera -> dedicated SV flow weights;
+- explicit front/right/back/left images -> MoGe-2 per-view focal estimates -> one shared FOV -> fixed canonical 4-view extrinsics -> MV flow weights.
 
-## What is estimated
+Both paths write a private ordinary `transforms.json` and feed the existing runtime rather than duplicating projection math.
 
-The bundled helper follows TencentARC/Pixal3D `inference.py`:
+## Shared preprocessing contract
 
-1. The wrapper mirrors `pipeline.preprocess_image()` for pre-matted RGBA input: downscale the longest side to at most 1024, find the `alpha > 0.8` object bbox, and take the centered square crop with the reference 1.1 margin.
-2. The crop stays RGBA for pixal3d.cpp. Its conditioner premultiplies RGB by alpha, so transparent pixels become black.
-3. MoGe-2 (`Ruicheng/moge-2-vitl`) sees the same crop explicitly alpha-composited onto black. Hidden RGB values under transparent pixels never leak into the camera estimator.
-4. MoGe predicts normalized camera intrinsics and horizontal FOV is derived from normalized `fx`:
+The wrappers mirror the Pixal3D object-centric preprocessing used for camera estimation:
 
-   `fov_x = 2 * atan(1 / (2 * fx_normalized))`
+1. downscale the longest side to at most 1024;
+2. find the `alpha > 0.8` foreground bbox;
+3. take a centered square crop with the existing 1.1 margin;
+4. preserve RGBA for pixal3d.cpp;
+5. explicitly alpha-composite the same staged crop onto black before MoGe.
 
-5. The one-image projection gauge uses **`mesh_scale = 1.0` by default**, matching official Pixal3D. This is not an estimate of physical object size. `--mesh-scale` remains available as an advanced override.
-6. Camera distance is derived from FOV and scale using the official single-image equation (with `extend_pixel=0`):
+This keeps hidden RGB under transparent pixels out of the estimator and makes the generator and camera estimator observe the same crop.
 
-   `distance = 1 / (2 * mesh_scale * tan(fov_x / 2))`
+MoGe-2 (`Ruicheng/moge-2-vitl`) predicts normalized camera intrinsics. Horizontal FOV is derived from normalized `fx` as:
 
-7. The remaining one-view gauge freedom is fixed to the canonical front-view camera orientation already used by Pixal3D.
+```text
+fov_x = 2 * atan(1 / (2 * fx_normalized))
+```
 
-Because the grid normalization and camera distance both scale with `1 / mesh_scale`, changing `mesh_scale` while recomputing the corresponding distance is a single-view projection-gauge change, not a claim about real-world meters or centimeters. The result is written as a private ordinary `transforms.json`, so no downstream projection math is duplicated.
+## One-image path
 
-## Generate a GLB from one image
+The single-image path fixes the unobservable projection gauge to `mesh_scale = 1.0` by default, matching official Pixal3D. This is not an estimate of physical object size. `--mesh-scale` remains an advanced override.
 
-The input must already be a pre-matted RGBA image with a real alpha channel. This milestone does not run background removal in Python.
+Camera distance uses the official single-image equation (`extend_pixel=0`):
+
+```text
+distance = 1 / (2 * mesh_scale * tan(fov_x / 2))
+```
+
+Generate with:
 
 ```bash
 python3 tools/run_pixal3d_estimated.py \
@@ -36,29 +45,13 @@ python3 tools/run_pixal3d_estimated.py \
   --output character.glb
 ```
 
-No scale argument is required for the normal one-image path; the wrapper uses the canonical `mesh_scale=1.0` gauge. To override it for experiments:
-
-```bash
-python3 tools/run_pixal3d_estimated.py \
-  --image character.png \
-  --models pixal3d_models \
-  --mesh-scale 0.5 \
-  --output character.glb
-```
-
-The override is still validated as finite and positive, and the camera distance is recomputed from the same official equation.
-
-The wrapper creates a private temporary views directory, writes the official-style object crop as `input.png`, estimates camera metadata, then invokes:
+The private runtime call is equivalent to:
 
 ```text
 trellis-cli --views <private-dir> --pixal3d-weights sv ...
 ```
 
-The temporary `transforms.json` is not a user-facing input. The selected model directory must contain the four SV flow files introduced by PR #6 (`pixal3d_*_sv.gguf`) plus the shared Pixal3D models. Until an SV release manifest is published, prepare that model directory using PR #6's conversion/download instructions rather than the current MV-only installer set.
-
-### Manual FOV fallback
-
-To bypass MoGe and supply horizontal FOV directly (radians):
+To bypass MoGe and provide horizontal FOV directly (radians):
 
 ```bash
 python3 tools/run_pixal3d_estimated.py \
@@ -68,11 +61,80 @@ python3 tools/run_pixal3d_estimated.py \
   --output character.glb
 ```
 
-Manual-FOV mode skips torch/MoGe, but the wrapper still uses Pillow for the reference-compatible RGBA crop.
+Manual-FOV mode skips torch/MoGe, but still uses Pillow for the matched RGBA crop.
+
+## Canonical 4-view shared-FOV path
+
+For known turntable views, camera orientation is already observed by construction. Do not inject free pose-estimation noise into front/right/back/left. Instead, pass the four identities explicitly:
+
+```bash
+python3 tools/run_pixal3d_canonical4_estimated.py \
+  --front front.png \
+  --right right.png \
+  --back back.png \
+  --left left.png \
+  --models pixal3d_models \
+  --mesh-scale 0.7 \
+  --trellis-cli ./build/trellis-cli \
+  --output character.glb
+```
+
+The wrapper stages the files as `01_front.png` through `04_left.png`, runs MoGe-2 once across those four staged crops, and records each normalized focal estimate. The downstream camera uses one shared focal length:
+
+```text
+fx_shared = median(fx_front, fx_right, fx_back, fx_left)
+fov_x = 2 * atan(1 / (2 * fx_shared))
+```
+
+The four canonical rotations remain exactly the existing 0° / 90° / 180° / 270° rig. `mesh_scale` remains explicit and keeps its existing MV meaning; no physical object scale is inferred.
+
+### Canonical distance when FOV changes
+
+The existing no-JSON canonical rig is calibrated at:
+
+```text
+FOV_0      = 20°
+distance_0 = 3.1192049980163574
+```
+
+When a different shared FOV is selected, the helper preserves that rig's image-plane projection gauge by scaling only the orbit distance:
+
+```text
+distance = distance_0 * tan(FOV_0 / 2) / tan(fov_x / 2)
+```
+
+This leaves the canonical rotations and MV `mesh_scale` contract unchanged.
+
+### Inconsistent focal estimates
+
+The automatic 4-view path computes the maximum relative deviation from the median focal estimate:
+
+```text
+spread = max_i |fx_i / fx_shared - 1|
+```
+
+The default fail-closed threshold is `0.25` (25%). If the four views disagree more strongly, the helper refuses to write camera metadata instead of silently trusting a questionable median. The threshold can be adjusted with `--max-focal-spread` for experiments.
+
+For orthographic-looking character sheets or inputs where MoGe should not be trusted, keep the deterministic fixed/manual FOV path:
+
+```bash
+python3 tools/run_pixal3d_canonical4_estimated.py \
+  --front front.png --right right.png --back back.png --left left.png \
+  --models pixal3d_models \
+  --mesh-scale 0.7 \
+  --fov 0.3490658503988659 \
+  --output character.glb
+```
+
+The private runtime call uses the normal MV family:
+
+```text
+trellis-cli --views <private-dir> --pixal3d-weights mv ...
+```
 
 ## Dependencies
 
-The wrapper always needs:
+Both wrappers always need:
 
 - Pillow (object crop / RGBA staging)
 
@@ -82,38 +144,41 @@ Automatic FOV estimation additionally imports:
 - NumPy
 - MoGe-2 (`from moge.model.v2 import MoGeModel`)
 
-The default model is `Ruicheng/moge-2-vitl`. The helper chooses CUDA when available and otherwise falls back to CPU; `--device` can override this.
+The default model is `Ruicheng/moge-2-vitl`. The estimator chooses CUDA when available and otherwise falls back to CPU; `--device` can override this.
 
-These Python dependencies and the MoGe checkpoint are **not** bundled into the standalone C++ runtime in this milestone.
+These Python dependencies and the MoGe checkpoint are not bundled into the standalone C++ runtime.
 
 ## Important scope limits
 
-- The wrapper fixes the unobservable **single-view projection gauge** to `mesh_scale=1.0` by default. It does **not** estimate real-world object size.
-- `--mesh-scale` is an advanced positive finite override only; it is not needed for the normal one-image UX.
-- This milestone estimates the one-image camera/FOV case only. The bundled helper rejects multiple images instead of inventing relative poses.
-- PR #3's exact four-view front/right/back/left canonical rig remains a separate known-camera shortcut; its scale handling is unchanged.
-- Generation uses the dedicated Pixal3D **SV flow checkpoint family** through PR #6, not the multiview weights with `V=1`.
-- Arbitrary multi-image relative-pose estimation and browser-native camera estimation remain follow-ups under Issue #4.
+- Neither helper estimates physical object scale.
+- The one-image path estimates FOV only and fixes the remaining pose gauge to the canonical front camera.
+- The canonical 4-view path estimates one shared FOV only; front/right/back/left extrinsics remain fixed.
+- Arbitrary multi-image relative-pose estimation remains a separate part of Issue #4 and should use a joint camera/geometry estimator rather than this canonical helper.
+- Browser-native FOV estimation remains separate (#12).
+- Near-orthographic character sheets may be better served by fixed/manual 20° than by a pinhole FOV estimate; do not treat MoGe as authoritative there without validation.
 
 ## Validation
 
-`tools/test_estimate_transforms_moge.py` verifies, without downloading MoGe weights, that:
+`tools/test_estimate_transforms_moge.py` verifies without downloading MoGe weights that:
 
-- the official FOV-to-distance equation is reproduced,
-- the generated JSON has the expected one-frame camera convention,
-- invalid `mesh_scale` fails closed,
-- multiple images are rejected by the bundled one-image backend,
-- transparent hidden RGB is black-composited before MoGe.
+- the official one-image FOV-to-distance equation is reproduced;
+- single-image JSON keeps the expected camera convention;
+- hidden RGB is black-composited before MoGe;
+- canonical 4-view focal estimates are aggregated in focal space;
+- strongly inconsistent focal estimates fail closed;
+- changing canonical FOV rescales distance while preserving all four canonical rotations;
+- invalid `mesh_scale` fails closed.
 
-`tools/test_run_pixal3d_estimated.py` uses a real RGBA fixture and a recording fake CLI to verify that:
+`tools/test_run_pixal3d_estimated.py` verifies the single-image crop, SV weight selection, scale gauge, and failure handling with a recording fake CLI.
 
-- the object-centric alpha crop is applied,
-- the staged crop preserves alpha while transparent pixels resolve to black,
-- the private image is normalized to `input.png`,
-- the CLI is invoked with `--pixal3d-weights sv`,
-- omitting `--mesh-scale` produces canonical `mesh_scale=1.0`,
-- an explicit positive override changes both `mesh_scale` and the derived camera distance consistently,
-- invalid explicit scale still fails closed,
-- the wrapper refuses a CLI build that predates PR #6.
+`tools/test_run_pixal3d_canonical4_estimated.py` verifies that:
 
-A full quality acceptance run should compare official Pixal3D single-view inference against pixal3d.cpp using the same image, camera metadata, canonical scale gauge, seed, and SV checkpoint family. That run is separate from routine CI because it requires the full model set/GPU.
+- all four input images receive the object-centric RGBA crop;
+- transparent pixels resolve to black for conditioning/estimation;
+- explicit view identity maps to `01_front` / `02_right` / `03_back` / `04_left`;
+- generated camera metadata uses the canonical rotations and shared FOV;
+- `mesh_scale` stays explicit;
+- the runtime is invoked with `--pixal3d-weights mv`;
+- invalid scale and missing inputs fail closed.
+
+The no-model CI validates contracts only. The remaining #15 quality gate is a GPU/model comparison of the existing fixed-20° canonical baseline against automatic shared-FOV MoGe on representative perspective and near-orthographic inputs, including downstream silhouette/render/mesh metrics.
