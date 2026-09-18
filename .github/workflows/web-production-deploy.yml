@@ -20,12 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           submodules: recursive
 
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
+
+      - name: Record deployed source commit
+        run: git rev-parse HEAD | tee deployed-source-commit.txt
 
       - name: Build reproducible WebGPU/WASM runtime
         run: bash scripts/build_wasm_real_geometry.sh --fresh --build-dir build-wasm-release
@@ -118,6 +122,7 @@ jobs:
           name: web-production-deploy-${{ github.sha }}
           path: |
             web-dist-receipt.txt
+            deployed-source-commit.txt
             web/real_e2e/build-info.json
             web/real_e2e/SHA256SUMS
             deployed-build-info.json
