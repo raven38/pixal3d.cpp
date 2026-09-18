@@ -488,6 +488,26 @@ Deploy receipt (`web/dist`, the bytes the SV gate ran against and that were uplo
 | `vendor/model-viewer.min.js` | `283b0672384614b4847636c306fc93fe4b1fcadc76d668b4e47f0ca76bcf033b` |
 | Smoke | `web/app/smoke_production.mjs`: `WEB_PRODUCTION_SMOKE_OK 13 checks` (both URLs injected, `build-info.json` served and equal to the wasm, input-mode visible, default `sv` because SV is configured, SV/MV manifests resolve to their family, Download enabled in both) |
 
+### Production redeploy + Web alpha prerelease (2026-09-18)
+
+The family-aware manifest contract from #13 and the release/deploy automation from #18/#19/#20 are now live.
+
+| | value |
+|---|---|
+| Worker / URL | `pixal3d-web` · `https://pixal3d-web.raven38.workers.dev/` |
+| Production app source | `195cb691adc32c190179f3eda05a232882b6d616` (the later release-publisher-only change does not change Web app bytes) |
+| Cloudflare version | `2aea1919-4bfe-420a-82e1-f97b19ea3ff1` |
+| Deploy workflow | `Web production deploy` run 35307994760, successful rerun after repository Cloudflare secrets were configured |
+| Production smoke | `WEB_PRODUCTION_SMOKE_OK 13 checks` before and after deploy; production serves `model_family.js` and the family-aware `manifestContractErrors` validation |
+| Runtime | emsdk 6.0.9; `pixal3d_real_geometry.wasm` SHA256 `e43a4aa5238cdb8eb7be0f499b90f5c40f9e0bd270b232f02cf4c1697ab3a208` (3,650,886 B) |
+| Model revisions | MV `1f82a6b7e0b64de4fe7c96c66db7977fc61a1203`; SV `c5dfd4c2352e39a392c5ff2f90bdcbb96d3c7403` |
+| Web release | `v0.9.0-web-alpha`, prerelease published 2026-09-18; target `2837fd157a7933a0554699635428b1a35c5c0d0d` |
+| Release assets | `pixal3d_real_geometry.js`, `pixal3d_real_geometry.wasm`, `build-info.json`, `SHA256SUMS`, `web-release-metadata.json` |
+
+The release runtime rebuild reproduced the same WASM digest as production. #15 (canonical 4-view shared FOV)
+is completed/closed after #17; browser-native single-image FOV estimation remains #12 and arbitrary
+multi-view camera estimation remains #4.
+
 #### Single-image SV release gate on the deploy candidate (2026-09-17, #11, M4 Max / Metal)
 
 `web/app/run_release_gate.mjs --mode sv` against the exact `web/dist` that was deployed (served
