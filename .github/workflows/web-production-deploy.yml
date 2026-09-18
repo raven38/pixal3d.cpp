@@ -1,0 +1,125 @@
+name: Web production deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'release/web-alpha-deploy'
+
+permissions:
+  contents: read
+
+env:
+  EMSDK_VERSION: 6.0.9
+  PROD_URL: https://pixal3d-web.raven38.workers.dev/
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
+
+      - name: Build reproducible WebGPU/WASM runtime
+        run: bash scripts/build_wasm_real_geometry.sh --fresh --build-dir build-wasm-release
+
+      - name: Record runtime digests
+        run: |
+          cat web/real_e2e/build-info.json
+          sha256sum web/real_e2e/pixal3d_real_geometry.js web/real_e2e/pixal3d_real_geometry.wasm | tee web/real_e2e/SHA256SUMS
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Web test/deploy dependencies
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Web contracts
+        working-directory: web
+        run: |
+          npm run test:rig -- ../docker/linux-webgpu-gate/e2e/views
+          npm run test:sv
+
+      - name: Resolve immutable model revisions
+        id: models
+        shell: bash
+        run: |
+          set -euo pipefail
+          MV_SHA="$(curl -fsSL https://huggingface.co/api/models/raven38/pixal3d-q8_0-v1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          SV_SHA="$(curl -fsSL https://huggingface.co/api/models/raven38/pixal3d-sv-q8_0-v1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          test -n "$MV_SHA" && test -n "$SV_SHA"
+          echo "mv_sha=$MV_SHA" >> "$GITHUB_OUTPUT"
+          echo "sv_sha=$SV_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Build exact production dist
+        shell: bash
+        run: |
+          bash scripts/build_web_dist.sh             "https://huggingface.co/raven38/pixal3d-q8_0-v1/resolve/${{ steps.models.outputs.mv_sha }}"             "https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/${{ steps.models.outputs.sv_sha }}/pixal3d-models.json"             "https://huggingface.co/raven38/pixal3d-sv-q8_0-v1/resolve/${{ steps.models.outputs.sv_sha }}"
+          (cd web/dist && find . -type f | sort | xargs sha256sum) > web-dist-receipt.txt
+
+      - name: Verify production bundle locally
+        shell: bash
+        run: |
+          test -f web/dist/model_family.js
+          grep -q "manifestContractErrors" web/dist/release_store.js
+          python3 -m http.server 8199 --bind 127.0.0.1 >/tmp/pixal3d-web.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8199/web/dist/ >/dev/null && break
+            sleep .5
+          done
+          WEB_APP_URL=http://127.0.0.1:8199/web/dist/ node web/app/test_headless.mjs
+
+      - name: Require Cloudflare deployment credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
+
+      - name: Deploy the gated dist to the existing Worker
+        working-directory: web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config ../wrangler.jsonc
+
+      - name: Post-deploy production smoke
+        working-directory: web
+        run: node app/smoke_production.mjs "${{ env.PROD_URL }}"
+
+      - name: Verify production carries the family-aware manifest contract
+        shell: bash
+        run: |
+          curl -fsSL "${PROD_URL}release_store.js" | grep -q "manifestContractErrors"
+          curl -fsSL "${PROD_URL}model_family.js" | grep -q "manifestContractErrors"
+          curl -fsSL "${PROD_URL}real_e2e/build-info.json" > deployed-build-info.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open("deployed-build-info.json"))
+          print("deployed runtime:", x["source_commit"], x["files"]["pixal3d_real_geometry.wasm"]["sha256"])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-production-deploy-${{ github.sha }}
+          path: |
+            web-dist-receipt.txt
+            web/real_e2e/build-info.json
+            web/real_e2e/SHA256SUMS
+            deployed-build-info.json
+          if-no-files-found: warn
+          retention-days: 90
