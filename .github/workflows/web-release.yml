@@ -60,9 +60,9 @@ jobs:
 
           Browser-local Pixal3D inference with verified MV and SV Q8_0 model sets.
 
-          - App/source commit: `${GITHUB_SHA}`
-          - WebGPU/WASM: Emscripten 6.0.9; exact digests are attached in `SHA256SUMS`
-          - Model revisions and manifests: see `web-release-metadata.json`
+          - App/source commit: \`${GITHUB_SHA}\`
+          - WebGPU/WASM: Emscripten 6.0.9; exact digests are attached in \`SHA256SUMS\`
+          - Model revisions and manifests: see \`web-release-metadata.json\`
           - Verified target: Chrome/Chromium + WebGPU, resolution 1024
           - SV: dedicated single-view flow family; canonical 20° / manual FOV in the browser
           - MV: canonical 4-view path; native helper also supports MoGe-2 shared-FOV estimation
@@ -82,4 +82,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --prerelease             --title "Pixal3D Web alpha 0.9.0"             --notes-file web-release-notes.md             web/real_e2e/pixal3d_real_geometry.js             web/real_e2e/pixal3d_real_geometry.wasm             web/real_e2e/build-info.json             web/real_e2e/SHA256SUMS             web-release-metadata.json
+          gh release create "$GITHUB_REF_NAME"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --prerelease             --title "Pixal3D Web alpha ${GITHUB_REF_NAME#v}"             --notes-file web-release-notes.md             web/real_e2e/pixal3d_real_geometry.js             web/real_e2e/pixal3d_real_geometry.wasm             web/real_e2e/build-info.json             web/real_e2e/SHA256SUMS             web-release-metadata.json
