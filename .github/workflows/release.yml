@@ -20,6 +20,8 @@ permissions:
 # for Pascal/Volta devices; it does not replace Lemonade's current-CUDA asset.
 jobs:
   build:
+    # Web-only prereleases publish their own WASM assets; do not launch the heavy desktop matrix.
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-web-alpha') }}
     name: ${{ matrix.os }} · ${{ matrix.release_backend || matrix.backend }}
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental == true }}
@@ -312,6 +314,8 @@ jobs:
   #   trellis-studio-windows-x64-setup.exe
   #   trellis-studio-macos-arm64.dmg
   studio:
+    # Keep Web-only prereleases from rebuilding/uploading desktop installers.
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-web-alpha') }}
     name: ${{ matrix.os }} · Trellis Studio app
     runs-on: ${{ matrix.runner }}
     strategy:
