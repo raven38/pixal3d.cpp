@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*-web-alpha'
+    branches:
+      - 'release/web-alpha-publish'
 
 permissions:
   contents: write
@@ -18,7 +20,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           submodules: recursive
+
+      - name: Resolve release identity
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          else
+            RELEASE_TAG="v0.9.0-web-alpha"
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
 
       - uses: mymindstorm/setup-emsdk@v14
         with:
@@ -40,8 +59,8 @@ jobs:
           mv, sv = sys.argv[1:3]
           info = json.load(open("web/real_e2e/build-info.json"))
           out = {
-              "tag": os.environ["GITHUB_REF_NAME"],
-              "app_commit": os.environ["GITHUB_SHA"],
+              "tag": os.environ["RELEASE_TAG"],
+              "app_commit": os.environ["SOURCE_COMMIT"],
               "runtime": info,
               "mv_model_revision": mv,
               "sv_model_revision": sv,
@@ -60,7 +79,7 @@ jobs:
 
           Browser-local Pixal3D inference with verified MV and SV Q8_0 model sets.
 
-          - App/source commit: \`${GITHUB_SHA}\`
+          - App/source commit: \`${SOURCE_COMMIT}\`
           - WebGPU/WASM: Emscripten 6.0.9; exact digests are attached in \`SHA256SUMS\`
           - Model revisions and manifests: see \`web-release-metadata.json\`
           - Verified target: Chrome/Chromium + WebGPU, resolution 1024
@@ -82,4 +101,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --prerelease             --title "Pixal3D Web alpha ${GITHUB_REF_NAME#v}"             --notes-file web-release-notes.md             web/real_e2e/pixal3d_real_geometry.js             web/real_e2e/pixal3d_real_geometry.wasm             web/real_e2e/build-info.json             web/real_e2e/SHA256SUMS             web-release-metadata.json
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $RELEASE_TAG already exists; refusing to create a duplicate"
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_COMMIT" \
+            --prerelease \
+            --title "Pixal3D Web alpha ${RELEASE_TAG#v}" \
+            --notes-file web-release-notes.md \
+            web/real_e2e/pixal3d_real_geometry.js \
+            web/real_e2e/pixal3d_real_geometry.wasm \
+            web/real_e2e/build-info.json \
+            web/real_e2e/SHA256SUMS \
+            web-release-metadata.json
