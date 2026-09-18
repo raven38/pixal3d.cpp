@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -117,6 +118,92 @@ def main():
         argv = payload["argv"]
         wi = argv.index("--pixal3d-weights")
         assert argv[wi + 1] == "mv", argv
+        # The camera diagnostic outlives the private staging directory: it lands next
+        # to the GLB by default and reports the policy the wrapper asked for.
+        cam_path = d / "out.camera_estimation.json"
+        assert cam_path.is_file(), list(d.iterdir())
+        cam = json.loads(cam_path.read_text())
+        assert cam["source"] == "manual" and cam["fallback_used"] is False, cam
+        assert abs(cam["selected_fov_rad"] - FOV) < 1e-12 and cam["mesh_scale"] == 0.7, cam
+        assert abs(cam["fallback_fov"] - FOV) < 1e-12, cam   # default fallback = canonical 20°
+        assert "canonical 4-view" in p.stderr.lower() and "aggregation=front_back" in p.stderr, p.stderr
+
+        custom_cam = d / "diag" / "camera.json"
+        p = run_runner(
+            "--front", sources[0], "--right", sources[1], "--back", sources[2], "--left", sources[3],
+            "--models", models, "--mesh-scale", "0.7", "--fov", FOV, "--trellis-cli", fake_cli,
+            "--output", out, "--camera-json", custom_cam, "--no-fallback", "--aggregation", "median4",
+        )
+        assert p.returncode == 0, p.stderr
+        cam = json.loads(custom_cam.read_text())
+        assert cam["fallback_fov"] is None, cam
+        assert "aggregation=median4" in p.stderr and "fallback=none" in p.stderr, p.stderr
+
+        p = run_runner(
+            "--front", sources[0], "--right", sources[1], "--back", sources[2], "--left", sources[3],
+            "--models", models, "--mesh-scale", "0.7", "--fov", FOV, "--trellis-cli", fake_cli,
+            "--output", out, "--fallback-fov", "4.0",
+        )
+        assert p.returncode != 0 and "fallback_fov" in p.stderr, p.stderr
+
+        # Automatic path through the wrapper with precomputed focals: accepted estimate
+        # drives transforms.json; the sidecar lands next to the GLB only after success.
+        focals = d / "focals.json"
+        focals.write_text(json.dumps([1.60, 0.90, 1.40, 0.85]))
+        for stale in (cam_path, cam_path.with_name("out.camera_estimation.failed.json")):
+            if stale.exists():
+                stale.unlink()
+        p = run_runner(
+            "--front", sources[0], "--right", sources[1], "--back", sources[2], "--left", sources[3],
+            "--models", models, "--mesh-scale", "0.7", "--trellis-cli", fake_cli,
+            "--output", out, "--focals-json", focals,
+        )
+        assert p.returncode == 0, p.stderr
+        payload = json.loads(out.read_text())
+        cam = json.loads(cam_path.read_text())
+        assert cam["source"] == "moge-2-front_back" and cam["accepted"] is True, cam
+        assert abs(payload["camera_angle_x"] - cam["selected_fov_rad"]) < 1e-12, (payload, cam)
+        assert abs(cam["selected_fov_rad"] - 2.0 * math.atan(1.0 / 3.0)) < 1e-12, cam
+        assert not cam_path.with_name("out.camera_estimation.failed.json").exists()
+
+        # front/back inconsistent -> default fallback to the canonical 20° rig with a warning.
+        focals.write_text(json.dumps([1.60, 1.0, 1.0, 1.0]))
+        p = run_runner(
+            "--front", sources[0], "--right", sources[1], "--back", sources[2], "--left", sources[3],
+            "--models", models, "--mesh-scale", "0.7", "--trellis-cli", fake_cli,
+            "--output", out, "--focals-json", focals,
+        )
+        assert p.returncode == 0 and "falling back" in p.stderr, p.stderr
+        payload = json.loads(out.read_text()); cam = json.loads(cam_path.read_text())
+        assert cam["source"] == "fallback" and cam["fallback_used"] is True, cam
+        assert abs(payload["camera_angle_x"] - FOV) < 1e-12 and abs(payload["front_distance"] - CANONICAL_DISTANCE) < 1e-6
+
+        # --no-fallback: fail closed, no GLB overwrite, diagnostic saved under the .failed name.
+        out.write_text("stale")
+        p = run_runner(
+            "--front", sources[0], "--right", sources[1], "--back", sources[2], "--left", sources[3],
+            "--models", models, "--mesh-scale", "0.7", "--trellis-cli", fake_cli,
+            "--output", out, "--focals-json", focals, "--no-fallback",
+        )
+        assert p.returncode != 0, p.stderr
+        assert out.read_text() == "stale"
+        failed = json.loads(cam_path.with_name("out.camera_estimation.failed.json").read_text())
+        assert failed["source"] == "rejected" and failed["accepted"] is False, failed
+        assert json.loads(cam_path.read_text())["source"] == "fallback"   # previous success sidecar untouched
+
+        # trellis-cli failure: diagnostic goes to the .failed name, success sidecar not updated.
+        failing_cli = d / "failing_cli.py"
+        failing_cli.write_text("#!/usr/bin/env python3\nimport sys\nprint('--pixal3d-weights') if '--help' in sys.argv else sys.exit(3)\n")
+        failing_cli.chmod(0o755)
+        focals.write_text(json.dumps([1.60, 0.90, 1.40, 0.85]))
+        p = run_runner(
+            "--front", sources[0], "--right", sources[1], "--back", sources[2], "--left", sources[3],
+            "--models", models, "--mesh-scale", "0.7", "--trellis-cli", failing_cli,
+            "--output", out, "--focals-json", focals,
+        )
+        assert p.returncode == 3, p.stderr
+        assert json.loads(cam_path.read_text())["source"] == "fallback"
+        assert json.loads(cam_path.with_name("out.camera_estimation.failed.json").read_text())["source"] == "moge-2-front_back"
 
         p = run_runner(
             "--front", sources[0],
