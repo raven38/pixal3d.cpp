@@ -79,12 +79,15 @@ python3 tools/run_pixal3d_canonical4_estimated.py \
   --output character.glb
 ```
 
-The wrapper stages the files as `01_front.png` through `04_left.png`, runs MoGe-2 once across those four staged crops, and records each normalized focal estimate. The downstream camera uses one shared focal length:
+The wrapper stages the files as `01_front.png` through `04_left.png`, runs MoGe-2 once across those four staged crops, and records each normalized focal estimate. The downstream camera uses one shared focal length. The default aggregation is the **front/back mean**:
 
 ```text
-fx_shared = median(fx_front, fx_right, fx_back, fx_left)
-fov_x = 2 * atan(1 / (2 * fx_shared))
+fx_shared = (fx_front + fx_back) / 2          # --aggregation front_back (default)
+fx_shared = median(fx_front, fx_right, fx_back, fx_left)   # --aggregation median4
+fov_x     = 2 * atan(1 / (2 * fx_shared))
 ```
+
+Why front/back only: on real perspective turntables (85 clothed full-body sets with known 40° FOV) MoGe-2's right/left estimates were biased by about +12° in FOV on 84/85 sets while front/back medians were within 0.3° of the truth. The four-view median therefore lands about +5° high and its spread gate rejected 65% of those inputs; the front/back mean brought the median absolute FOV error from 5.65° to 2.49° (90th percentile 10.2° → 6.3°). Right/left estimates are still computed and reported, but only as a diagnostic.
 
 The four canonical rotations remain exactly the existing 0° / 90° / 180° / 270° rig. `mesh_scale` remains explicit and keeps its existing MV meaning; no physical object scale is inferred.
 
@@ -105,15 +108,45 @@ distance = distance_0 * tan(FOV_0 / 2) / tan(fov_x / 2)
 
 This leaves the canonical rotations and MV `mesh_scale` contract unchanged.
 
-### Inconsistent focal estimates
+### Inconsistent focal estimates and the fallback policy
 
-The automatic 4-view path computes the maximum relative deviation from the median focal estimate:
+Consistency is judged only on the views the aggregate uses; disagreement of the side views is a warning, not a rejection:
 
 ```text
-spread = max_i |fx_i / fx_shared - 1|
+front_back:  spread_used = max(fx_front, fx_back) / min(fx_front, fx_back) - 1   rejected when > --max-front-back-diff (default 0.25)
+median4:     spread_used = max_i |fx_i / fx_shared - 1|         rejected when > --max-focal-spread (default 0.25)
+always:      spread_all  = max_i |fx_i / fx_shared - 1|         reported; right/left deviation > --max-focal-spread only warns
 ```
 
-The default fail-closed threshold is `0.25` (25%). If the four views disagree more strongly, the helper refuses to write camera metadata instead of silently trusting a questionable median. The threshold can be adjusted with `--max-focal-spread` for experiments.
+When the automatic estimate is rejected:
+
+- `run_pixal3d_canonical4_estimated.py` falls back to the fixed 20° canonical rig (`--fallback-fov`, default `0.3490658503988659`) with a warning, so a batch does not stop on one bad set. Pass `--no-fallback` to fail closed instead.
+- `estimate_transforms_moge.py` fails closed unless `--fallback-fov` is given explicitly.
+
+### `camera_estimation.json`
+
+Experiment metadata is not mixed into `transforms.json`. The helper writes a sibling `camera_estimation.json` (the wrapper places it next to the GLB as `<output>.camera_estimation.json`, or at `--camera-json`) with the fields Issue #15 asks to expose:
+
+```json
+{
+  "source": "moge-2-front_back",
+  "estimator": "MoGe-2", "model": "Ruicheng/moge-2-vitl", "package": "3.0.0",
+  "package_commit": "<moge git sha>", "revision": "<HF snapshot revision actually loaded, or null>",
+  "image_names": ["01_front.png", "02_right.png", "03_back.png", "04_left.png"],
+  "fx": {"front": 1.42, "right": 0.91, "back": 1.39, "left": 0.88},
+  "fov_deg": {"front": 38.8, "right": 57.7, "back": 39.6, "left": 59.3},
+  "aggregation": "front_back",
+  "estimated_shared_fx": 1.405, "estimated_fov_rad": 0.6838, "estimated_fov_deg": 39.2,
+  "spread_all": 0.37, "spread_used": 0.022, "side_spread": 0.37, "accepted": true,
+  "thresholds": {"max_focal_spread": 0.25, "max_front_back_diff": 0.25},
+  "warnings": ["right/left focal estimates deviate ... side views are diagnostic only"],
+  "selected_fov_rad": 0.6838, "selected_fov_deg": 39.2, "fallback_used": false, "fallback_fov": 0.3490658503988659,
+  "mesh_scale": 0.7, "distance": 1.545, "transforms_file": "transforms.json"
+}
+```
+
+`estimated_*` always hold the MoGe aggregate (also when it was rejected); `selected_*` is what `transforms.json` uses. When the automatic estimate is rejected the wrapper keeps the diagnostic as `<output>.camera_estimation.failed.json` (fail-closed) or writes it with `"source": "fallback"` (fallback used); after a `trellis-cli` failure the diagnostic also goes to the `.failed.json` name so a stale GLB never sits next to a fresh success sidecar.
+`source` is `moge-2-front_back` / `moge-2-median4`, `fallback` (automatic estimate rejected, fallback FOV used), `manual` (`--fov`), or `rejected` (written before failing closed).
 
 For orthographic-looking character sheets or inputs where MoGe should not be trusted, keep the deterministic fixed/manual FOV path:
 
@@ -164,7 +197,9 @@ These Python dependencies and the MoGe checkpoint are not bundled into the stand
 - the official one-image FOV-to-distance equation is reproduced;
 - single-image JSON keeps the expected camera convention;
 - hidden RGB is black-composited before MoGe;
-- canonical 4-view focal estimates are aggregated in focal space;
+- canonical 4-view focal estimates are aggregated in focal space (front/back mean by default, median4 kept for comparison);
+- front/back inconsistency is rejected, side-view disagreement only warns, and the rejected case either falls back to an explicit FOV or fails closed;
+- `camera_estimation.json` is written in manual and automatic modes (the automatic path is exercised with `--focals-json`, which aggregates precomputed per-view fx without MoGe);
 - strongly inconsistent focal estimates fail closed;
 - changing canonical FOV rescales distance while preserving all four canonical rotations;
 - invalid `mesh_scale` fails closed.
