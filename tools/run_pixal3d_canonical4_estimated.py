@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,9 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_ESTIMATOR = HERE / "estimate_transforms_moge.py"
 DEFAULT_MODEL = "Ruicheng/moge-2-vitl"
 DEFAULT_MAX_FOCAL_SPREAD = 0.25
+DEFAULT_MAX_FRONT_BACK_DIFF = 0.25
+CANONICAL_FOV = 0.3490658503988659   # the existing fixed 20° canonical rig
+AGGREGATIONS = ("front_back", "median4")
 STAGED_NAMES = ("01_front.png", "02_right.png", "03_back.png", "04_left.png")
 
 
@@ -60,10 +64,23 @@ def main() -> None:
         "--max-focal-spread",
         type=float,
         default=DEFAULT_MAX_FOCAL_SPREAD,
-        help="fail if any per-view normalized fx differs from the median by more than this fraction",
+        help="four-view spread limit: rejects under --aggregation median4, only warns about right/left under front_back",
     )
     parser.add_argument("--fov", type=float, default=None,
                         help="manual shared horizontal FOV in radians; skips MoGe-2")
+    parser.add_argument("--aggregation", choices=AGGREGATIONS, default="front_back",
+                        help="shared focal from front/back mean (default) or the median of all four views")
+    parser.add_argument("--max-front-back-diff", type=float, default=DEFAULT_MAX_FRONT_BACK_DIFF,
+                        help="reject the automatic estimate when |fx_front / fx_back - 1| exceeds this (default: 0.25)")
+    parser.add_argument("--fallback-fov", type=float, default=CANONICAL_FOV,
+                        help="FOV (radians) used with a warning when the automatic estimate is rejected; "
+                             "default is the fixed 20° canonical rig")
+    parser.add_argument("--no-fallback", action="store_true",
+                        help="fail closed instead of falling back when the automatic estimate is rejected")
+    parser.add_argument("--focals-json", type=Path, default=None,
+                        help="skip MoGe-2 and aggregate precomputed per-view normalized fx from this JSON (offline re-aggregation)")
+    parser.add_argument("--camera-json", type=Path, default=None,
+                        help="where to write camera_estimation.json (default: <output>.camera_estimation.json)")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--res", type=int, choices=(1024, 1536), default=1024)
     parser.add_argument("--no-texture", action="store_true")
@@ -88,6 +105,11 @@ def main() -> None:
         fail(f"camera estimator not found: {estimator}")
     if not math.isfinite(args.max_focal_spread) or args.max_focal_spread < 0.0:
         fail("max_focal_spread must be finite and >= 0")
+    if not math.isfinite(args.max_front_back_diff) or args.max_front_back_diff < 0.0:
+        fail("max_front_back_diff must be finite and >= 0")
+    if not (math.isfinite(args.fallback_fov) and 0.0 < args.fallback_fov < math.pi):
+        fail("fallback_fov must satisfy 0 < fov < pi radians")
+    camera_json = (args.camera_json or output.with_name(output.stem + ".camera_estimation.json")).resolve()
 
     help_probe = subprocess.run(
         [str(cli), "--help"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
@@ -109,17 +131,33 @@ def main() -> None:
             "--output", str(transforms),
             "--canonical-4view",
             "--max-focal-spread", repr(args.max_focal_spread),
+            "--aggregation", args.aggregation,
+            "--max-front-back-diff", repr(args.max_front_back_diff),
+            "--camera-json", str(views / "camera_estimation.json"),
             "--model", args.model,
             "--device", args.device,
         ]
+        if not args.no_fallback:
+            estimate_cmd += ["--fallback-fov", repr(args.fallback_fov)]
         if args.fov is not None:
             estimate_cmd += ["--manual-fov", repr(args.fov)]
+        if args.focals_json is not None:
+            estimate_cmd += ["--focals-json", str(args.focals_json.resolve())]
         print(
-            f"[canonical 4-view] camera metadata (mesh_scale={mesh_scale:g}, "
-            f"focal_spread_limit={args.max_focal_spread:g})",
+            f"[canonical 4-view] camera metadata (mesh_scale={mesh_scale:g}, aggregation={args.aggregation}, "
+            f"front_back_diff_limit={args.max_front_back_diff:g}, focal_spread_limit={args.max_focal_spread:g}, "
+            f"fallback={'none' if args.no_fallback else f'{math.degrees(args.fallback_fov):.3f} deg'})",
             file=sys.stderr,
         )
-        subprocess.run(estimate_cmd, check=True)
+        estimate = subprocess.run(estimate_cmd)
+        staged_camera = views / "camera_estimation.json"
+        failed_camera = camera_json.with_name(camera_json.stem + ".failed.json")
+        if estimate.returncode != 0:
+            if staged_camera.is_file():
+                failed_camera.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(staged_camera, failed_camera)
+                print(f"[canonical 4-view] camera estimate rejected; diagnostic: {failed_camera}", file=sys.stderr)
+            raise SystemExit(estimate.returncode)
 
         run_cmd = [
             str(cli),
@@ -135,9 +173,15 @@ def main() -> None:
         print("[canonical 4-view] running multiview Pixal3D weights", file=sys.stderr)
         result = subprocess.run(run_cmd)
         if result.returncode != 0:
+            # keep the diagnostic, but never next to a possibly stale GLB under the success name
+            failed_camera.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(staged_camera, failed_camera)
+            print(f"[canonical 4-view] trellis-cli failed; diagnostic: {failed_camera}", file=sys.stderr)
             raise SystemExit(result.returncode)
+        camera_json.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(staged_camera, camera_json)
 
-    print(f"[canonical 4-view] wrote {output}", file=sys.stderr)
+    print(f"[canonical 4-view] wrote {output} (camera diagnostic: {camera_json})", file=sys.stderr)
 
 
 if __name__ == "__main__":
