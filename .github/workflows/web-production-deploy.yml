@@ -82,7 +82,7 @@ jobs:
             curl -fsS http://127.0.0.1:8199/web/dist/ >/dev/null && break
             sleep .5
           done
-          WEB_APP_URL=http://127.0.0.1:8199/web/dist/ node web/app/test_headless.mjs
+          node web/app/smoke_production.mjs http://127.0.0.1:8199/web/dist/
 
       - name: Require Cloudflare deployment credentials
         env:
