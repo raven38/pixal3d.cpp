@@ -92,22 +92,21 @@ def fov_from_normalized_fx(fx_normalized: float) -> float:
 
 
 def shared_fov_from_focal_estimates(
-    focal_estimates: list[float],
+    focals: list[float],
     max_relative_spread: float = DEFAULT_MAX_FOCAL_SPREAD,
 ) -> tuple[float, float, float]:
-    """Return (median normalized fx, FOV, max relative deviation).
+    """Aggregate per-view normalized fx into one shared focal length (median of all views).
 
-    Canonical front/right/back/left views are assumed to share one camera model.
-    Aggregate in focal space so no per-view FOV noise reaches Pixal3D. A strongly
-    inconsistent set fails closed because the canonical-view assumption is then
-    not trustworthy.
+    Kept as the ``median4`` aggregation. The default canonical path now uses
+    ``front_back`` (see ``aggregate_canonical_focals``): on real perspective
+    turntables MoGe-2 over-estimates FOV on the thin right/left views by ~+12°
+    while front/back are unbiased, so the four-view median is biased upward and
+    the four-view spread rejects most real inputs.
     """
-    if not focal_estimates:
-        raise ValueError("no focal estimates were provided")
+    values = [validate_normalized_fx(v) for v in focals]
     if not math.isfinite(max_relative_spread) or max_relative_spread < 0.0:
         raise ValueError("max_relative_spread must be finite and >= 0")
-    values = [validate_normalized_fx(v) for v in focal_estimates]
-    shared_fx = float(statistics.median(values))
+    shared_fx = statistics.median(values)
     spread = max(abs(v / shared_fx - 1.0) for v in values)
     if spread > max_relative_spread:
         raise ValueError(
@@ -115,6 +114,129 @@ def shared_fov_from_focal_estimates(
             f"max relative deviation {spread:.3f} exceeds {max_relative_spread:.3f}"
         )
     return shared_fx, fov_from_normalized_fx(shared_fx), spread
+
+
+AGGREGATIONS = ("front_back", "median4")
+DEFAULT_AGGREGATION = "front_back"
+DEFAULT_MAX_FRONT_BACK_DIFF = 0.25
+CANONICAL_ROLES = ("front", "right", "back", "left")
+
+
+def aggregate_canonical_focals(
+    focals: list[float],
+    aggregation: str = DEFAULT_AGGREGATION,
+    max_relative_spread: float = DEFAULT_MAX_FOCAL_SPREAD,
+    max_front_back_diff: float = DEFAULT_MAX_FRONT_BACK_DIFF,
+) -> dict:
+    """Aggregate the four canonical focal estimates and classify their consistency.
+
+    Returns a diagnostic dict (never raises for inconsistency):
+      shared_fx / fov             the aggregate, always computed
+      spread_all                  max_i |fx_i / shared_fx - 1| over all four views
+      spread_used                 the consistency statistic of the views the aggregate used
+      accepted                    False when the used views are mutually inconsistent
+      warnings                    side-view disagreement is diagnostic only
+    ``front_back``: shared_fx = mean(fx_front, fx_back); used-view statistic is
+    max(fx_front, fx_back) / min(fx_front, fx_back) - 1 against ``max_front_back_diff``.
+    ``median4``: shared_fx = median of all four; used-view statistic is spread_all
+    against ``max_relative_spread`` (the original PR #16 behaviour).
+    """
+    if aggregation not in AGGREGATIONS:
+        raise ValueError(f"unknown aggregation {aggregation!r}; expected one of {AGGREGATIONS}")
+    values = [validate_normalized_fx(v) for v in focals]
+    if len(values) != CANONICAL_VIEW_COUNT:
+        raise ValueError(f"canonical aggregation needs {CANONICAL_VIEW_COUNT} focal estimates")
+    for name, limit in (("max_relative_spread", max_relative_spread), ("max_front_back_diff", max_front_back_diff)):
+        if not math.isfinite(limit) or limit < 0.0:
+            raise ValueError(f"{name} must be finite and >= 0")
+    by_role = dict(zip(CANONICAL_ROLES, values))
+    warnings: list[str] = []
+    if aggregation == "front_back":
+        shared_fx = (by_role["front"] + by_role["back"]) / 2.0
+        # symmetric in front/back: ratio of the larger to the smaller estimate
+        spread_used = max(by_role["front"], by_role["back"]) / min(by_role["front"], by_role["back"]) - 1.0
+        accepted = spread_used <= max_front_back_diff
+        if not accepted:
+            warnings.append(
+                "front/back focal estimates disagree: "
+                f"max(fx_front, fx_back) / min(fx_front, fx_back) - 1 = {spread_used:.3f} exceeds {max_front_back_diff:.3f}"
+            )
+    else:
+        shared_fx = statistics.median(values)
+        spread_used = max(abs(v / shared_fx - 1.0) for v in values)
+        accepted = spread_used <= max_relative_spread
+        if not accepted:
+            warnings.append(
+                "canonical view focal estimates disagree: "
+                f"max relative deviation {spread_used:.3f} exceeds {max_relative_spread:.3f}"
+            )
+    spread_all = max(abs(v / shared_fx - 1.0) for v in values)
+    side_spread = max(abs(by_role[r] / shared_fx - 1.0) for r in ("right", "left"))
+    if aggregation == "front_back" and side_spread > max_relative_spread:
+        warnings.append(
+            "right/left focal estimates deviate from the front/back aggregate by "
+            f"{side_spread:.3f} (> {max_relative_spread:.3f}); side views are diagnostic only"
+        )
+    return {
+        "aggregation": aggregation,
+        "fx": by_role,
+        "fov_deg": {r: math.degrees(fov_from_normalized_fx(v)) for r, v in by_role.items()},
+        "shared_fx": shared_fx,
+        "fov": fov_from_normalized_fx(shared_fx),
+        "spread_all": spread_all,
+        "spread_used": spread_used,
+        "side_spread": side_spread,
+        "accepted": accepted,
+        "warnings": warnings,
+    }
+
+
+def load_focals_json(path: Path) -> list[float]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        try:
+            raw = [raw[r] for r in CANONICAL_ROLES]
+        except KeyError as exc:
+            raise ValueError(f"--focals-json object must have keys {CANONICAL_ROLES}; missing {exc}") from exc
+    if not isinstance(raw, list) or len(raw) != CANONICAL_VIEW_COUNT:
+        raise ValueError(f"--focals-json must hold {CANONICAL_VIEW_COUNT} normalized fx values")
+    return [validate_normalized_fx(float(v)) for v in raw]
+
+
+def choose_canonical_fov(agg: dict, fallback_fov: float | None) -> tuple[float, str, bool]:
+    """Fallback policy: accepted aggregate -> its FOV; rejected -> the explicit fallback FOV
+    (flagged) when one was given, otherwise ValueError so the caller fails closed."""
+    if agg["accepted"]:
+        return agg["fov"], f"moge-2-{agg['aggregation']}", False
+    if fallback_fov is not None:
+        return validate_fov(fallback_fov), "fallback", True
+    raise ValueError(agg["warnings"][0] + " (no --fallback-fov given; refusing to write camera metadata)")
+
+
+def estimator_identity(model_name: str) -> dict:
+    """Best-effort estimator identity for camera_estimation.json (never raises)."""
+    ident: dict = {"estimator": "MoGe-2", "model": model_name, "package": None,
+                   "package_commit": None, "revision": None}
+    try:
+        import importlib.metadata as md
+        ident["package"] = md.version("moge")
+        for f in md.files("moge") or []:
+            if f.name == "direct_url.json":
+                ident["package_commit"] = json.loads(f.read_text()).get("vcs_info", {}).get("commit_id")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        # the snapshot MoGe actually loaded (hf cache layout: .../snapshots/<revision>/model.pt),
+        # not the Hub HEAD, so a stale cache is reported truthfully
+        from huggingface_hub import try_to_load_from_cache
+        cached = try_to_load_from_cache(repo_id=model_name, filename="model.pt")
+        if isinstance(cached, str):
+            parts = Path(cached).parts
+            if "snapshots" in parts:
+                ident["revision"] = parts[parts.index("snapshots") + 1]
+    except Exception:  # noqa: BLE001
+        pass
+    return ident
 
 
 def distance_from_fov(camera_angle_x: float, mesh_scale: float) -> float:
@@ -228,6 +350,16 @@ def make_canonical4_transforms(image_names: list[str], fov: float, mesh_scale: f
     }
 
 
+def write_camera_json(args, diag: dict) -> Path:
+    """Write the diagnostic next to transforms.json (issue #15 §4: per-view fx, shared fx,
+    spread, estimator identity). Experiment metadata stays out of transforms.json itself."""
+    path = args.camera_json or (args.output.parent / "camera_estimation.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(diag, indent=2) + "\n", encoding="utf-8")
+    print(f"[camera] wrote {path}", file=sys.stderr)
+    return path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Estimate camera metadata and write Pixal3D transforms.json"
@@ -246,11 +378,50 @@ def main() -> None:
         "--max-focal-spread",
         type=float,
         default=DEFAULT_MAX_FOCAL_SPREAD,
-        help="maximum relative deviation from the median normalized fx in canonical-4view mode (default: 0.25)",
+        help="canonical-4view: rejection threshold for the four-view spread under --aggregation median4; "
+             "under front_back it only sets the right/left deviation that triggers a warning (default: 0.25)",
+    )
+    parser.add_argument(
+        "--aggregation",
+        choices=AGGREGATIONS,
+        default=DEFAULT_AGGREGATION,
+        help="canonical-4view shared focal: front_back = mean(fx_front, fx_back) (default; right/left are diagnostic only), "
+             "median4 = median of all four views (original behaviour)",
+    )
+    parser.add_argument(
+        "--max-front-back-diff",
+        type=float,
+        default=DEFAULT_MAX_FRONT_BACK_DIFF,
+        help="front_back aggregation: reject the automatic estimate when |fx_front / fx_back - 1| exceeds this (default: 0.25)",
+    )
+    parser.add_argument(
+        "--fallback-fov",
+        type=float,
+        default=None,
+        help="horizontal FOV in radians to use (with a warning) when the automatic canonical estimate is rejected; "
+             "without it the helper fails closed and writes nothing",
+    )
+    parser.add_argument(
+        "--camera-json",
+        type=Path,
+        default=None,
+        help="where to write the camera_estimation.json diagnostic (default: next to --output)",
+    )
+    parser.add_argument(
+        "--focals-json",
+        type=Path,
+        default=None,
+        help="canonical-4view: skip MoGe-2 and aggregate precomputed normalized fx from this JSON "
+             "(a list of four in front/right/back/left order, or an object keyed by those roles); "
+             "for offline re-aggregation and contract tests",
     )
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--device", default="auto", help="auto, cpu, cuda, cuda:0, ...")
     args = parser.parse_args()
+    if args.focals_json is not None and not args.canonical_4view:
+        parser.error("--focals-json requires --canonical-4view")
+    if args.fallback_fov is not None:
+        args.fallback_fov = validate_fov(args.fallback_fov)
 
     mesh_scale = validate_scale(args.mesh_scale)
     expected = CANONICAL_VIEW_COUNT if args.canonical_4view else 1
@@ -258,21 +429,48 @@ def main() -> None:
 
     shared_fx = None
     spread = None
+    diag: dict = {"source": None, "image_names": [p.name for p in image_paths], "mesh_scale": mesh_scale,
+                  "warnings": [], "fallback_used": False, "fallback_fov": args.fallback_fov}
     if args.manual_fov is not None:
         fov = validate_fov(args.manual_fov)
         source = "manual"
     elif args.canonical_4view:
-        focals = estimate_normalized_fx_moge(image_paths, args.model, args.device)
+        if args.focals_json is not None:
+            focals = load_focals_json(args.focals_json)
+        else:
+            focals = estimate_normalized_fx_moge(image_paths, args.model, args.device)
+        agg = aggregate_canonical_focals(
+            focals, aggregation=args.aggregation, max_relative_spread=args.max_focal_spread,
+            max_front_back_diff=args.max_front_back_diff,
+        )
+        diag.update({k: agg[k] for k in ("aggregation", "fx", "fov_deg", "spread_all", "spread_used",
+                                          "side_spread", "accepted")})
+        diag["estimated_shared_fx"] = agg["shared_fx"]
+        diag["estimated_fov_rad"] = agg["fov"]
+        diag["estimated_fov_deg"] = math.degrees(agg["fov"])
+        diag["thresholds"] = {"max_focal_spread": args.max_focal_spread, "max_front_back_diff": args.max_front_back_diff}
+        diag["warnings"] = list(agg["warnings"])
+        diag.update(estimator_identity(args.model))
+        for w in agg["warnings"]:
+            print(f"[camera] warning: {w}", file=sys.stderr)
         try:
-            shared_fx, fov, spread = shared_fov_from_focal_estimates(
-                focals, max_relative_spread=args.max_focal_spread
-            )
+            fov, source, fallback_used = choose_canonical_fov(agg, args.fallback_fov)
         except ValueError as exc:
+            diag["source"] = "rejected"     # nothing selected; estimated_* keep the rejected aggregate
+            write_camera_json(args, diag)
             die(str(exc))
-        source = "moge-2-shared"
+        if fallback_used:
+            diag["fallback_used"] = True
+            print(f"[camera] warning: automatic estimate rejected; falling back to manual FOV "
+                  f"{math.degrees(fov):.3f} deg", file=sys.stderr)
+        else:
+            shared_fx, spread = agg["shared_fx"], agg["spread_used"]
     else:
         fov = estimate_fov_moge(image_paths[0], args.model, args.device)
         source = "moge-2"
+    diag["source"] = source                 # what the written transforms.json actually uses
+    diag["selected_fov_rad"] = fov
+    diag["selected_fov_deg"] = math.degrees(fov)
 
     if args.canonical_4view:
         data = make_canonical4_transforms([p.name for p in image_paths], fov, mesh_scale)
@@ -283,6 +481,9 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    diag["distance"] = distance
+    diag["transforms_file"] = args.output.name
+    write_camera_json(args, diag)
     extra = ""
     if shared_fx is not None and spread is not None:
         extra = f" shared_fx={shared_fx:.9f} max_relative_spread={spread:.6f}"
