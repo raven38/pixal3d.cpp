@@ -1,0 +1,104 @@
+=== 3_img sv 2026-09-20T01:12:52+09:00
+[estimated] preprocessed 1024x1024 -> 1024x1024 RGBA
+[estimated] camera metadata (mesh_scale=1)
+[camera] loading MoGe-2 Ruicheng/moge-2-vitl on cuda
+[camera] view=input.png fx_normalized=1.630044341
+[camera] wrote /tmp/pixal3d-estimated-zlfrnurv/camera_estimation.json
+[camera] source=moge-2 fov=0.595257729 rad (34.106 deg) distance=1.630044341 mesh_scale=1
+[camera] wrote /tmp/pixal3d-estimated-zlfrnurv/transforms.json
+[estimated] running single-view Pixal3D weights
+[trellis] generating model with seed 42
+[1/6] Pixal3D multiview: load /tmp/pixal3d-estimated-zlfrnurv
+      V=1 views, mesh_scale=1.0000
+      flow weights: sv
+[2/6] SS proj conditioning + flow
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 24563 MiB):
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes, VRAM: 24563 MiB
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    0.3s  ~4s left    
+      [flow] [###.................]  2/12    0.7s  ~3s left    
+      [flow] [#####...............]  3/12    1.0s  ~3s left    
+      [flow] [######..............]  4/12    1.3s  ~3s left    
+      [flow] [########............]  5/12    1.7s  ~2s left    
+      [flow] [##########..........]  6/12    2.0s  ~2s left    
+      [flow] [###########.........]  7/12    2.3s  ~2s left    
+      [flow] [#############.......]  8/12    2.6s  ~1s left    
+      [flow] [###############.....]  9/12    3.0s  ~1s left    
+      [flow] [################....] 10/12    3.3s  ~1s left    
+      [flow] [##################..] 11/12    3.4s  ~0s left    
+      [flow] [####################] 12/12    3.6s  ~0s left    
+      [flow] 12 steps, 22 forwards, 3.6s
+      active voxels @res32 = 2697  (6.1s)
+[3/6] shape SLAT flow (LR 512 -> upsample -> HR 1024 cascade, max_tok=49152)
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    0.3s  ~3s left    
+      [flow] [###.................]  2/12    0.5s  ~2s left    
+      [flow] [#####...............]  3/12    0.7s  ~2s left    
+      [flow] [######..............]  4/12    0.9s  ~2s left    
+      [flow] [########............]  5/12    1.1s  ~2s left    
+      [flow] [##########..........]  6/12    1.3s  ~1s left    
+      [flow] [###########.........]  7/12    1.5s  ~1s left    
+      [flow] [#############.......]  8/12    1.7s  ~1s left    
+      [flow] [###############.....]  9/12    1.8s  ~1s left    
+      [flow] [################....] 10/12    1.9s  ~0s left    
+      [flow] [##################..] 11/12    2.0s  ~0s left    
+      [flow] [####################] 12/12    2.1s  ~0s left    
+      [flow] 12 steps, 20 forwards, 2.1s
+      [stats] LR slat (res32, MV) n=86304 mean=-0.0191 std=5.7581 min=-24.000 max=28.979 nan/inf=0
+      LR shape SLAT (6.3s)
+      upsampled coords @res512=724419 -> quantized @res1024 (grid 64, Pixal3D round/grid-1 formula) = 10179 tokens
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    1.5s  ~16s left   
+      [flow] [###.................]  2/12    2.8s  ~14s left   
+      [flow] [#####...............]  3/12    4.1s  ~12s left   
+      [flow] [######..............]  4/12    5.5s  ~11s left   
+      [flow] [########............]  5/12    6.8s  ~9s left    
+      [flow] [##########..........]  6/12    8.1s  ~8s left    
+      [flow] [###########.........]  7/12    9.4s  ~7s left    
+      [flow] [#############.......]  8/12   10.7s  ~5s left    
+      [flow] [###############.....]  9/12   11.4s  ~4s left    
+      [flow] [################....] 10/12   12.1s  ~2s left    
+      [flow] [##################..] 11/12   12.7s  ~1s left    
+      [flow] [####################] 12/12   13.4s  ~0s left    
+      [flow] 12 steps, 20 forwards, 13.4s
+      [stats] HR slat (MV) n=325728 mean=0.1212 std=5.4987 min=-26.269 max=27.513 nan/inf=0
+      HR shape SLAT (30.7s)
+[4/6] FlexiDualGrid shape decode -> mesh @res1024
+      decoded voxels @res1024 = 2760757
+      mesh V=2760757 F=5896766
+      filled 4886 small holes -> V=2765643 F=5924606
+      shape decode (14.2s)
+[5/6] texture SLAT flow (HR 1024, NAF@1024) + PBR decode
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    1.0s  ~10s left   
+      [flow] [###.................]  2/12    1.6s  ~8s left    
+      [flow] [#####...............]  3/12    2.3s  ~7s left    
+      [flow] [######..............]  4/12    2.9s  ~6s left    
+      [flow] [########............]  5/12    3.6s  ~5s left    
+      [flow] [##########..........]  6/12    4.2s  ~4s left    
+      [flow] [###########.........]  7/12    4.9s  ~3s left    
+      [flow] [#############.......]  8/12    5.6s  ~3s left    
+      [flow] [###############.....]  9/12    6.2s  ~2s left    
+      [flow] [################....] 10/12    6.9s  ~1s left    
+      [flow] [##################..] 11/12    7.5s  ~1s left    
+      [flow] [####################] 12/12    8.2s  ~0s left    
+      [flow] 12 steps, 12 forwards, 8.2s
+      PBR voxels=2760757 @res1024
+      texture SLAT + decode (39.4s)
+[6/6] write /mnt/hdd1/pixal3d/out/official/3_img/3_img.glb
+  weld: V 2765643->2756641 (9002 near-duplicates merged, eps=0.00012)
+  fill_holes: 4670 boundary loops filled (+19995 faces)
+  remesh_dc: 5819661 active voxels -> V=4688641 F=9397916 (eps=0.0009794, project_back=0.00)
+    [clean] faces=9397916, flipped 0 for consistent winding
+  remesh postproc: dropped 1402 floater comps -> V=4437286 F=8898076
+  decimate_qem_gpu(target=1000000): V 4437286->486901, F 8898076->988072
+  weld: V 486901->486895 (6 near-duplicates merged, eps=0.00012)
+  decimated postproc: dropped 5 more comps -> F=987436
+  uv_bake: 1 components (0 tiny, 0 faces -> strip S=0), 0 duplicate faces dropped
+  uv_bake: 13263 merge clusters
+  uv_bake: 646 uncharted faces kept with point-collapsed UVs
+  uv_bake: atlas 4096x4096 (xatlas 1330x1330), Vo=818652 Fo=987436
+      textured GLB (atlas 4096, +/mnt/hdd1/pixal3d/out/official/3_img/3_img_base.png)
+done in 177.7s -> /mnt/hdd1/pixal3d/out/official/3_img/3_img.glb (+ /mnt/hdd1/pixal3d/out/official/3_img/3_img.ply)
+[estimated] wrote /mnt/hdd1/pixal3d/out/official/3_img/3_img.glb
+sv rc=0 wall=190s

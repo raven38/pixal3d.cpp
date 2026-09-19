@@ -1,0 +1,40 @@
+[estimated] preprocessed 1024x1024 -> 1022x1022 RGBA
+[estimated] preprocessed 1010x1010 -> 1010x1010 RGBA
+[estimated] preprocessed 908x1024 -> 1052x1052 RGBA
+[estimated] preprocessed 1024x961 -> 1050x1050 RGBA
+[estimated] preprocessed 737x1024 -> 1118x1118 RGBA
+[estimated] preprocessed 409x409 -> 428x428 RGBA
+[estimated] preprocessed 810x798 -> 808x808 RGBA
+[estimated] preprocessed 1024x1024 -> 1024x1024 RGBA
+[estimated] preprocessed 1024x1024 -> 1066x1066 RGBA
+[estimated] preprocessed 894x894 -> 894x894 RGBA
+[estimated] preprocessed 1024x989 -> 1046x1046 RGBA
+[estimated] preprocessed 949x1024 -> 1048x1048 RGBA
+[estimated] preprocessed 704x704 -> 704x704 RGBA
+[estimated] preprocessed 1024x1024 -> 1022x1022 RGBA
+[estimated] preprocessed 1024x1024 -> 1022x1022 RGBA
+[estimated] preprocessed 1024x1024 -> 1022x1022 RGBA
+[estimated] preprocessed 1024x1024 -> 1022x1022 RGBA
+[estimated] preprocessed 1024x1024 -> 1022x1022 RGBA
+[estimated] preprocessed 670x670 -> 668x668 RGBA
+[estimated] preprocessed 1024x1024 -> 926x926 RGBA
+0_img	29.5	0.9730	0.996
+10_img	30.6	0.9711	0.996
+11_img	43.6	0.9156	0.987
+12_img	31.0	0.9579	0.983
+17_img	37.1	0.9647	1.000
+1_img	34.6	0.9573	1.000
+21_img	34.8	0.9047	0.987
+3_img	34.1	0.8643	1.000
+4_img	29.3	0.9777	0.996
+5_img	19.9	0.9735	0.991
+6_img	52.1	0.9473	0.991
+7_img	41.9	0.9054	0.996
+9_img	18.7	0.9477	0.987
+s_13_img	40.2	0.8686	0.991
+s_14_img	60.8	0.9140	0.945
+s_15_img	38.7	0.9673	0.987
+s_16_img	30.6	0.9586	0.987
+s_18_img	44.9	0.6798	0.992
+s_20_img	31.0	0.9316	0.992
+mv_example_view00	27.4	0.9774	0.983
