@@ -5,6 +5,7 @@ import { renderSettings } from "./settings";
 import { all, clear as clearStore, del as removeRecord, get as getRecord, isEphemeral, newId, put } from "./store";
 import { isTauri, listen, saveBytes, saveToOutputDir } from "./tauri";
 import { Viewer } from "./viewer";
+import type { MvResultDetail } from "./mv_calibration";
 import { DEFAULT_PARAMS, type GenParams, type GenRecord } from "./types";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -34,6 +35,7 @@ const viewer = new Viewer($("viewer-mount"));
 let inputImage: Blob | null = null;
 let inputName = "input.png";
 let currentGlb: Blob | null = null;
+let currentGlbName = "model.glb"; // default filename offered by "Save GLB…"
 let activeId: string | null = null;
 let serverOnline = false;
 let generating = false;
@@ -131,6 +133,78 @@ function updateGenerateEnabled(): void {
   generateBtn.disabled = !(serverOnline && inputImage && !generating);
 }
 
+/** Stem shared by the auto-saved and the "Save GLB…" filenames: the source image
+ *  name for single-image runs, a self-describing tag for multiview runs. */
+function glbStem(rec: GenRecord): string {
+  if (rec.kind === "mv") {
+    return `multiview_${rec.params.resolution}_seed${rec.params.seed}_scale${rec.mv?.meshScale.toFixed(3)}`;
+  }
+  return rec.name.replace(/\.[^.]+$/, "") || "model";
+}
+
+/** Filename used when auto-saving a finished generation to the output folder. */
+function outputFileName(rec: GenRecord): string {
+  if (rec.kind === "mv") return `${glbStem(rec)}_${rec.id}.glb`;
+  return `${glbStem(rec)}_${rec.params.resolution}_seed${rec.params.seed}_${rec.id}.glb`;
+}
+
+/** " · mesh_scale 0.250" for multiview records, "" otherwise. */
+function mvCaption(rec: GenRecord): string {
+  return rec.kind === "mv" ? ` · mesh_scale ${rec.mv?.meshScale.toFixed(3)}` : "";
+}
+
+/** Shared completion path for every generation kind: save → gallery → preview. */
+async function completeGeneration(rec: GenRecord): Promise<void> {
+  const { glb, params } = rec;
+  currentGlb = glb;
+  currentGlbName = `${glbStem(rec)}.glb`;
+
+  // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
+  // deliverable and must survive any later failure — a dead gallery DB (some
+  // WebKitGTK builds can't open IndexedDB) or a WebGL/model-viewer crash must
+  // never cost the user a successful generation.
+  let savedPath: string | null = null;
+  if (isTauri()) {
+    try {
+      const bytes = new Uint8Array(await glb.arrayBuffer());
+      savedPath = await saveToOutputDir(outputFileName(rec), bytes);
+    } catch (e) {
+      toast(`Auto-save to output folder failed: ${(e as Error).message}`, "err");
+    }
+  }
+  toast(savedPath ? `Saved to ${savedPath}` : "Generation complete", "ok");
+
+  // 2) Add it to the gallery. The store falls back to in-memory if IndexedDB
+  // is unavailable, so this never throws and never blocks the save above.
+  await put(rec);
+  if (isEphemeral() && !warnedEphemeral) {
+    warnedEphemeral = true;
+    toast(
+      "Gallery won't persist across restarts (IndexedDB unavailable on this system) — " +
+        "but every generation is still saved to your output folder.",
+      "err",
+    );
+  }
+  activeId = rec.id;
+  setViewerTools(true);
+  viewerCaption.textContent =
+    `${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB` + mvCaption(rec);
+  await refreshGallery();
+
+  // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
+  try {
+    await viewer.load(glb);
+    const thumb = await viewer.thumbnail();
+    if (thumb) {
+      rec.thumb = thumb;
+      await put(rec);
+      await refreshGallery();
+    }
+  } catch (e) {
+    toast(`3D preview couldn't render (your result is still saved): ${(e as Error).message}`, "err");
+  }
+}
+
 async function doGenerate(): Promise<void> {
   if (!inputImage || generating) return;
   const params = readParams();
@@ -146,8 +220,6 @@ async function doGenerate(): Promise<void> {
   abort = new AbortController();
   try {
     const { glb } = await generate(inputImage, params, abort.signal);
-    currentGlb = glb;
-
     const rec: GenRecord = {
       id: newId(),
       ts: Date.now(),
@@ -157,52 +229,7 @@ async function doGenerate(): Promise<void> {
       glb,
       thumb: null,
     };
-
-    // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
-    // deliverable and must survive any later failure — a dead gallery DB (some
-    // WebKitGTK builds can't open IndexedDB) or a WebGL/model-viewer crash must
-    // never cost the user a successful generation.
-    let savedPath: string | null = null;
-    if (isTauri()) {
-      try {
-        const bytes = new Uint8Array(await glb.arrayBuffer());
-        const base = inputName.replace(/\.[^.]+$/, "") || "model";
-        const fname = `${base}_${params.resolution}_seed${params.seed}_${rec.id}.glb`;
-        savedPath = await saveToOutputDir(fname, bytes);
-      } catch (e) {
-        toast(`Auto-save to output folder failed: ${(e as Error).message}`, "err");
-      }
-    }
-    toast(savedPath ? `Saved to ${savedPath}` : "Generation complete", "ok");
-
-    // 2) Add it to the gallery. The store falls back to in-memory if IndexedDB
-    // is unavailable, so this never throws and never blocks the save above.
-    await put(rec);
-    if (isEphemeral() && !warnedEphemeral) {
-      warnedEphemeral = true;
-      toast(
-        "Gallery won't persist across restarts (IndexedDB unavailable on this system) — " +
-          "but every generation is still saved to your output folder.",
-        "err",
-      );
-    }
-    activeId = rec.id;
-    setViewerTools(true);
-    viewerCaption.textContent = `${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB`;
-    await refreshGallery();
-
-    // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
-    try {
-      await viewer.load(glb);
-      const thumb = await viewer.thumbnail();
-      if (thumb) {
-        rec.thumb = thumb;
-        await put(rec);
-        await refreshGallery();
-      }
-    } catch (e) {
-      toast(`3D preview couldn't render (your result is still saved): ${(e as Error).message}`, "err");
-    }
+    await completeGeneration(rec);
   } catch (e) {
     if (abort?.signal.aborted) toast("Generation cancelled");
     else toast((e as Error).message || "generation failed", "err");
@@ -217,6 +244,25 @@ async function doGenerate(): Promise<void> {
 generateBtn.addEventListener("click", doGenerate);
 cancelBtn.addEventListener("click", () => abort?.abort());
 
+// ---- Pixal3D multiview result (dispatched by mv_calibration.ts) ----
+// Same completion path as /generate: output folder → gallery → viewer. The
+// first view stands in for `input` so the gallery thumbnail fallback works.
+window.addEventListener("pixal3d-mv-result", (event) => {
+  const d = (event as CustomEvent<MvResultDetail>).detail;
+  const rec: GenRecord = {
+    id: newId(),
+    ts: Date.now(),
+    name: d.name,
+    params: { resolution: d.resolution, seed: d.seed, bgRemoval: "auto", uv: "xatlas" },
+    input: d.views[0],
+    glb: d.glb,
+    thumb: null,
+    kind: "mv",
+    mv: { meshScale: d.meshScale, numViews: d.views.length },
+  };
+  completeGeneration(rec).catch((e) => toast((e as Error).message || "multiview completion failed", "err"));
+});
+
 // ---- viewer tools ----
 function setViewerTools(on: boolean): void {
   resetViewBtn.disabled = !on;
@@ -226,8 +272,7 @@ resetViewBtn.addEventListener("click", () => viewer.resetView());
 saveGlbBtn.addEventListener("click", async () => {
   if (!currentGlb) return;
   const bytes = new Uint8Array(await currentGlb.arrayBuffer());
-  const base = inputName.replace(/\.[^.]+$/, "") || "model";
-  const ok = await saveBytes(`${base}.glb`, bytes);
+  const ok = await saveBytes(currentGlbName, bytes);
   if (ok) toast("Saved", "ok");
 });
 
@@ -241,16 +286,21 @@ async function loadRecord(id: string): Promise<void> {
     toast((e as Error).message, "err");
     return;
   }
-  inputImage = rec.input;
-  inputName = rec.name;
-  inputPreview.src = URL.createObjectURL(rec.input);
-  inputPreview.classList.remove("hidden");
-  dropHint.classList.add("hidden");
-  applyParams(rec.params);
+  if (rec.kind !== "mv") {
+    // A multiview record has no single source image: leave the dropzone and
+    // the single-image controls as they are.
+    inputImage = rec.input;
+    inputName = rec.name;
+    inputPreview.src = URL.createObjectURL(rec.input);
+    inputPreview.classList.remove("hidden");
+    dropHint.classList.add("hidden");
+    applyParams(rec.params);
+  }
   currentGlb = rec.glb;
+  currentGlbName = `${glbStem(rec)}.glb`;
   activeId = rec.id;
   setViewerTools(true);
-  viewerCaption.textContent = `${rec.name} · ${rec.params.resolution} · seed ${rec.params.seed}`;
+  viewerCaption.textContent = `${rec.name} · ${rec.params.resolution} · seed ${rec.params.seed}` + mvCaption(rec);
   updateGenerateEnabled();
   await refreshGallery();
 }
@@ -278,7 +328,7 @@ async function refreshGallery(): Promise<void> {
 
     const meta = document.createElement("div");
     meta.className = "gmeta";
-    meta.textContent = `${r.params.resolution}`;
+    meta.textContent = `${r.params.resolution}${r.kind === "mv" ? " · MV" : ""}`;
     item.appendChild(meta);
 
     const delBtn = document.createElement("button");
