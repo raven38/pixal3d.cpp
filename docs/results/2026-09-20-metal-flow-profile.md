@@ -78,25 +78,70 @@ before/after（`trellis-test-dit-bench`、GGUF を読みランダム座標・入
 新 RoPE 後の Shape-1024 node pass（22.5 s）: FA 11.7（52%）/ MUL_MAT 6.9（31%）/ CONT 1.7 / ADD 0.5 / MUL 0.35。
 RoPE 由来の op は 1 s 未満に落ち、残りは attention と GEMM のみ。
 
-## 4. サーマルドリフト（この Mac の計測で最大の交絡）
+## 4. この Mac の計測ノイズ（最大の交絡。**対になっていない比較は信用できない**）
 
-同じバイナリ・同じ入力で、連続負荷中に forward 時間が単調に伸びる:
+同じバイナリ・同じ入力・同じ N=17612 で、時刻によって 2.6× 振れる:
 
-- Shape-1024 legacy: 24.3 s（01:19）→ 27.1（01:25）→ 37.2（01:27）
-- Shape-1024 new: 19.8 → 19.6 → 24.1 → 29.7 s（4 分間、concurrency on/off を交互に。on/off の差は無い）
-- E2E 内の Shape-512 も #1 4.5 s → #4 以降 6.3〜8.2 s（baseline ログでは 4.5〜4.8 s で平坦）
-- 1 分ほど休ませると 18.3 s に戻る。`pmset -g therm` には記録なし（GPU 側の throttling は載らない）
+| 時刻 | 条件 | legacy | new |
+|---|---|---:|---:|
+| 01:40–01:48 | 各計測前に 90 s 冷却、ABAB | 23.60 / 23.92 s | 14.45 / 14.75 s |
+| 01:24–01:30 | 連続負荷、ABAB | 27.08 / 37.15 s | 24.55 / 29.07 s |
+| 02:24–02:30 | E2E 直後（hot）、背中合わせ | 55.01 s | 29.10 s |
+| 02:35 | 300 s 放置後 | — | 37.16 s |
 
-したがって E2E の HR 31〜40 s/fwd や「Strix Halo iGPU より 3.5× 遅い」は **throttled 状態の持続性能**であり、
-瞬間性能（fresh 18〜23 s/fwd）とは別物。Mac の E2E を比較するときは、冷却状態と実行順を揃えるか、
-本ドキュメントのようにマイクロベンチを ABAB で取る。
+300 s 放置後の方が E2E 直後より**遅い**（37.16 vs 29.10）ので、単純なサーマルリカバリでは説明できない。
+実際 `mds` / `mds_stores`（Spotlight）、Time Machine の `backupd-helper`、`CoreSuggestions`（90% CPU）、JAMF が
+常時動いており、load average は 4〜17 の範囲で動いていた。**この機械では単発の絶対値に意味はない。**
 
-## 5. まだやっていないこと
+一方、**短時間に交互に取った対の比は安定している**:
 
-- 新 RoPE での **E2E 完走と GLB 比較**（V/F・bbox・複数視点レンダ）。RoPE は q·k 不変の書き換えなので理論上
-  同じ形状が出るはずだが、fp32 の加算順が変わるので bit 一致は期待しない。次の E2E 1 本で確認する。
-- `--no-fa` のフル E2E（予定していたが取りやめ）。FA 本体は HR で ~14 TFLOPS 相当なので優先度は低い。
-  SS（N=4096）で FA が NOFA より遅かった観測（`PIXAL3D_E2E_STATUS.md:489`）は小 N の padding/tile 起因の可能性。
-- decimate_qem（118 s）と texture cond（NAF@1024、~95 s）の内訳。
-- WebGPU / CUDA / Vulkan での新 RoPE の速度確認（CONCAT は全 backend にある。CUDA の concat は ne3 ごとの
-  launch なので `[half, 2, nh*L]`（ne3=1）で 1 launch にしてある）。
+| 比較 | legacy | new | 比 |
+|---|---:|---:|---:|
+| Shape-512、ABAB ×2 | 4.99 / 4.85 s | 2.54 / 2.47 s | 1.97 / 1.96× |
+| Shape-1024、冷却 ABAB ×2 | 23.60 / 23.92 s | 14.45 / 14.75 s | 1.63 / 1.62× |
+| Shape-1024、hot 背中合わせ | 55.01 s | 29.10 s | 1.89× |
+
+したがって **RoPE 修正の効果は Shape-1024 で 1.6〜1.9×、Shape-512 で約 2.0×** と読む。
+E2E の段別比較（§5）は日をまたいだ**対になっていない**比較なので、段ごとの比はこのノイズを含む。
+
+## 5. 新 RoPE の E2E 1 本（2026-09-20 01:59–02:24、`--profile` なし、rc 0、1515.9 s）
+
+同じ入力・seed 1・同じ重み。**legacy 参照は本セッションの `fa.log` / `fa.glb`**（01:18 完了、`--profile` 付き 1882.4 s）
+と 2026-09-15 の `json_run.log`（1669.8 s）。
+
+| 段 | json_run.log (09-15) | 今回 new | 参考: fa.log（legacy, `--profile` 込み） |
+|---|---:|---:|---:|
+| SS flow | 89.7 s | **37.7 s** | 104.8 |
+| Shape-512 flow | 94.7 s | **41.3 s** | 150.4 |
+| Shape-1024 flow | 627.5 s | 630.8 s | 772.3 |
+| Texture flow | 478.0 s | 373.3 s | 484.3 |
+| postprocess | ~177 s | 230.6 s | 176.7 |
+| 合計 | 1669.8 s | **1515.9 s** | 1882.4 |
+
+Shape-1024 だけ改善が見えないが、これは §4 のノイズによる。今回の E2E の HR は 31.5 s/fwd で、
+E2E 直後に測った hot の new（29.1 s/fwd）と一致する一方、比較対象の 09-15 baseline は別日の別状態。
+**同じ瞬間に測った対**（hot: legacy 55.0 vs new 29.1）では 1.89× 出ている。
+
+### GLB の同値性（`tools/compare_glb_pair.py`、4 視点レンダは `tools/render_glb_fast.py`）
+
+| 指標 | legacy (fa.glb) | new (rope.glb) |
+|---|---|---|
+| V / F | 639 713 / 950 170 | 660 440 / 962 544（+1.3%） |
+| bbox extents | 0.75647 / 0.84536 / 0.98464 | 0.75649 / 0.84535 / 0.98440（相対差 1.0e-5〜2.4e-4） |
+| 重心 | (−0.00113, −0.05163, −0.00313) | (0.00074, −0.04567, −0.00300) |
+| 連結成分（uv_bake） | 2（+ 3 成分を後段で除去） | **1**（floater 除去も 26 vs 68 と少ない） |
+| 頂点の最近傍距離（両方向 2 万点） | — | mean 0.00165（bbox 対角の **0.11%**）、p95 0.0028、max 0.0106 |
+| 非有限頂点 | 0 | 0 |
+| 4 視点レンダ | `2026-09-20-rope/render_legacy_rope.png` | `2026-09-20-rope/render_new_rope.png`（単眼・鼻輪・牙・耳・台座すべて一致。斑点は面サブサンプリングのアーティファクト） |
+
+中間量も一致: active voxels @res32 = 4438（完全一致）、HR token 17 614（legacy 17 612、+0.01%）、
+remesh 18 539 476 面（legacy 18 539 204、+0.001%）。差は fp32 の加算順が SS decode と HR 量子化の
+離散判定に伝播したもので、bit 一致は設計上期待していない。**品質劣化の兆候は無く、成分数はむしろ改善。**
+
+## 6. まだやっていないこと
+
+- decimate_qem（118〜142 s）と texture cond（NAF@1024、~95 s）の内訳。
+- FA の K/V を f16 にする A/B（既存 `TRELLIS_FA_FAST`）、f16 重みの GEMM 比較。
+- WebGPU / CUDA / Vulkan での新 RoPE の速度確認（CONCAT は全 backend にある。`[half, 2, nh*L]` は ne3=1 なので
+  CUDA の per-ne3 launch でも 1 回）。
+- 機械ノイズを排した E2E 比較（同日・同条件で legacy / new を交互に回す。1 本 25 分 × 2）。
