@@ -56,6 +56,12 @@ BACKEND=""; GPU=0; PORT=8080; MODELS_DIR=""; SKIP_MODELS=0; SKIP_APP=0; ASSUME_Y
 MODEL_MANIFEST=""     # path, URL, or "release" (an asset of the resolved release)
 MODEL_BASE_URL=""     # where the model files themselves live
 VERIFY_ONLY=0         # verify an existing models dir and exit
+# 0.10.0: the single-view (SV) model set is a second, independent directory.
+# Five of its nine file names are shared with the MV set but hold different
+# bytes, so the two sets can never be merged into one directory.
+MODELS_DIR_SV=""      # default <dest>/models-sv
+MODEL_MANIFEST_SV=""  # path, URL, or "release" (asset pixal3d-models-sv.json)
+MODEL_BASE_URL_SV=""
 
 usage() {
   cat <<EOF
@@ -75,6 +81,8 @@ Trellis Studio installer (Linux)
   --gpu N                      GPU index (default 0; <0 = CPU)
   --port P                     server port (default 8080)
   --dest DIR                   install location (default $DEST)
+  --config-dir DIR             where config.json / release.json are written
+                               (default $CONFIG_DIR; the app reads that one)
   --models-dir DIR             where to put weights (default <dest>/models)
   --quant q8|q4                download quantized weights instead of f16:
                                  q8 ~9.5 GB (near-lossless), q4 ~6 GB (smaller,
@@ -87,8 +95,20 @@ Trellis Studio installer (Linux)
   --model-base-url URL         where the model files listed in the manifest live
                                (required with --model-manifest unless every file
                                is already present and only needs verifying)
-  --verify-models              verify the existing models dir against its
-                               manifest and exit; no downloads, no config writes
+  --models-dir-sv DIR          where to put the single-view (SV) model set
+                               (default <dest>/models-sv). Never the MV dir:
+                               five file names collide with different bytes.
+  --model-manifest-sv PATH|URL|release
+                               also install the Pixal3D single-view model set
+                               (family sv, e.g. pixal3d-sv-q8_0 v1) into
+                               --models-dir-sv, verified the same way. "release"
+                               takes pixal3d-models-sv.json from the release.
+  --model-base-url-sv URL      where the SV model files live
+  --verify-models              verify the existing models dir(s) against their
+                               manifest(s) and exit; no downloads, no config
+                               writes. Checks the MV dir and, when it holds a
+                               manifest or --model-manifest-sv is given, the SV
+                               dir too; both must pass.
   --skip-models                don't download the weights
   --skip-app                   don't download the desktop app
   -y, --yes                    don't prompt for confirmation
@@ -104,10 +124,14 @@ while [ $# -gt 0 ]; do
     --gpu) GPU="$2"; shift 2;;
     --port) PORT="$2"; shift 2;;
     --dest) DEST="$2"; shift 2;;
+    --config-dir) CONFIG_DIR="$2"; shift 2;;
     --models-dir) MODELS_DIR="$2"; shift 2;;
     --quant) QUANT="$2"; shift 2;;
     --model-manifest) MODEL_MANIFEST="$2"; shift 2;;
     --model-base-url) MODEL_BASE_URL="$2"; shift 2;;
+    --models-dir-sv) MODELS_DIR_SV="$2"; shift 2;;
+    --model-manifest-sv) MODEL_MANIFEST_SV="$2"; shift 2;;
+    --model-base-url-sv) MODEL_BASE_URL_SV="$2"; shift 2;;
     --verify-models) VERIFY_ONLY=1; shift;;
     --skip-models) SKIP_MODELS=1; shift;;
     --skip-app) SKIP_APP=1; shift;;
@@ -117,6 +141,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 MODELS_DIR="${MODELS_DIR:-$DEST/models}"
+MODELS_DIR_SV="${MODELS_DIR_SV:-$DEST/models-sv}"
 RUNTIME_DIR="$DEST/runtime"
 # Quantized weights live in q8/ and q4/ subpaths of the HF repo, same filenames.
 case "$QUANT" in
@@ -180,6 +205,7 @@ case "$BACKEND" in cuda|cuda12|rocm|vulkan|metal) ;; *) die "invalid backend: $B
 echo
 info "install dir : $DEST"
 info "models dir  : $MODELS_DIR $([ "$SKIP_MODELS" = 1 ] && echo '(skipped)')"
+[ -z "$MODEL_MANIFEST_SV" ] || info "SV models   : $MODELS_DIR_SV"
 info "weights     : $WEIGHTS_LABEL"
 info "backend/gpu : $BACKEND / $GPU     port: $PORT"
 echo
@@ -387,26 +413,111 @@ sha256_of() {
 }
 
 # Manifest entries are read as one line per file so a malformed manifest cannot
-# silently produce fewer files than it lists.
+# silently produce fewer files than it lists. Columns: name, size, sha256, role,
+# required ("true" unless the entry says otherwise).
 manifest_entries() {
   tr -d '\n' <"$1" | tr '{' '\n' | grep -F '"sha256"' | while IFS= read -r obj; do
-    local name size digest
+    local name size digest role req
     name="$(json_str "$obj" name)"; size="$(json_num "$obj" size_bytes)"; digest="$(json_str "$obj" sha256)"
+    role="$(json_str "$obj" role)"
+    req="true"; grep -q '"required"[[:space:]]*:[[:space:]]*false' <<<"$obj" && req="false"
     [ -n "$name" ] && [ -n "$size" ] && [ -n "$digest" ] || continue
-    printf '%s\t%s\t%s\n' "$name" "$size" "$digest"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$size" "$digest" "$role" "$req"
   done
 }
 
+# name <-> role contract of a model family (mirror of web/app/model_family.js and
+# src/model_manifest.cpp; the conformance vectors in web/app/manifest_conformance.json
+# are run against this script by install/test_installer_manifest.sh).
+MODEL_ROLES="image_encoder naf ss_flow ss_decoder shape_flow_512 shape_decoder shape_flow_1024 texture_flow_1024 texture_decoder"
+FLOW_ROLES="ss_flow shape_flow_512 shape_flow_1024 texture_flow_1024"
+expected_name_for_role() {  # role family
+  case "$1" in
+    image_encoder)     echo dinov3.gguf;;
+    naf)               echo pixal3d_naf.gguf;;
+    ss_flow)           echo "pixal3d_ss_flow_$2.gguf";;
+    ss_decoder)        echo ss_dec.gguf;;
+    shape_flow_512)    echo "pixal3d_shape_flow_512_$2.gguf";;
+    shape_decoder)     echo shape_dec.gguf;;
+    shape_flow_1024)   echo "pixal3d_shape_flow_1024_$2.gguf";;
+    texture_flow_1024) echo "pixal3d_tex_flow_1024_$2.gguf";;
+    texture_decoder)   echo tex_dec.gguf;;
+    *) echo "";;
+  esac
+}
+expected_role_for_name() {  # name family
+  local r
+  for r in $MODEL_ROLES; do
+    [ "$(expected_name_for_role "$r" "$2")" = "$1" ] && { echo "$r"; return; }
+  done
+  echo ""
+}
+# Family inferred from the four flow-role file names: mv / sv / "" (mixed or none).
+infer_family() {  # manifest
+  local names="" n fam
+  # (awk rather than a case statement: bash 3.2 cannot parse `case` inside `$( )`.)
+  names="$(manifest_entries "$1" | awk -F'\t' -v fr=" $FLOW_ROLES " 'index(fr, " " $4 " ") { print $1 }')"
+  [ -n "$names" ] || { echo ""; return; }
+  for fam in mv sv; do
+    local all=1
+    while IFS= read -r n; do case "$n" in *"_${fam}.gguf") ;; *) all=0;; esac; done <<<"$names"
+    [ "$all" = 1 ] && { echo "$fam"; return; }
+  done
+  echo ""
+}
+
+# Validates a manifest and pins its family. Sets MODEL_SET_NAME / MODEL_SET_VERSION /
+# MODEL_FILE_COUNT / MODEL_FAMILY. Every rejection here happens before any file is
+# touched or downloaded.
 check_manifest() {
-  local mf="$1" sv ms mv count
+  local mf="$1" expected_family="$2" sv ms mv count explicit inferred family
   sv="$(json_num "$(cat "$mf")" schema_version)"
   [ "$sv" = "1" ] || die "unsupported model manifest schema_version: ${sv:-missing}"
   ms="$(json_str "$(cat "$mf")" model_set)"; mv="$(json_str "$(cat "$mf")" version)"
   [ -n "$ms" ] && [ -n "$mv" ] || die "model manifest is missing model_set/version"
   count="$(manifest_entries "$mf" | grep -c . || true)"
   [ "${count:-0}" -gt 0 ] || die "model manifest lists no files"
-  MODEL_SET_NAME="$ms"; MODEL_SET_VERSION="$mv"; MODEL_FILE_COUNT="$count"
-  info "model set: ${ms} ${mv} (${count} files, manifest sha256 $(sha256_of "$mf"))"
+
+  explicit="$(json_str "$(cat "$mf")" model_family)"
+  case "$explicit" in ""|mv|sv) ;; *) die "model_family must be one of: mv, sv (got '$explicit')";; esac
+  inferred="$(infer_family "$mf")"
+  if [ -n "$explicit" ] && [ -n "$inferred" ] && [ "$explicit" != "$inferred" ]; then
+    die "model_family $explicit does not match the flow file names ($inferred)"
+  fi
+  family="${explicit:-${inferred:-mv}}"
+  [ "$family" = "$expected_family" ] || die "manifest $ms $mv is a $family model set; this option expects the $expected_family set
+       (use --model-manifest for the multi-view set and --model-manifest-sv for the single-view set)"
+
+  # Known names carry a fixed role and are required; a known role must carry its
+  # known name; no duplicate names or roles; the family's nine files must all be listed.
+  local seen_names="" seen_roles="" present="" r
+  while IFS="$(printf '\t')" read -r name size digest role req; do
+    case " $seen_names " in *" $name "*) die "duplicate file name: $name";; esac
+    seen_names="$seen_names $name"
+    if [ -n "$role" ]; then
+      case " $seen_roles " in *" $role "*) die "duplicate role: $role";; esac
+      seen_roles="$seen_roles $role"
+    fi
+    local want_role want_name
+    want_role="$(expected_role_for_name "$name" "$family")"
+    if [ -n "$want_role" ]; then
+      [ "$role" = "$want_role" ] || die "$name must have role $want_role, not '${role:-missing}'"
+      [ "$req" = "true" ] || die "$name must be required"
+      present="$present $name"
+    else
+      want_name="$(expected_name_for_role "$role" "$family")"
+      [ -z "$want_name" ] || die "role $role must be $want_name, not $name"
+    fi
+  done < <(manifest_entries "$mf")
+  local missing=""
+  for r in $MODEL_ROLES; do
+    local n; n="$(expected_name_for_role "$r" "$family")"
+    case " $present " in *" $n "*) ;; *) missing="$missing $n";; esac
+  done
+  [ -z "$missing" ] || die "manifest $ms $mv is missing required $family files:$missing"
+
+  MODEL_SET_NAME="$ms"; MODEL_SET_VERSION="$mv"; MODEL_FILE_COUNT="$count"; MODEL_FAMILY="$family"
+  info "model set: ${ms} ${mv} (family ${family}, ${count} files, manifest sha256 $(sha256_of "$mf"))"
 }
 
 # Verifies one file against the manifest. Returns 0 = matches, 1 = differs.
@@ -418,65 +529,94 @@ verify_one() {
   [ "$(sha256_of "$path")" = "$digest" ] || return 1
 }
 
+free_bytes_in() {  # dir (must exist)
+  df -Pk "$1" | awk 'NR==2{print $4 * 1024}'
+}
+
+# Installs (or, with --verify-models, only verifies) one model set.
+#   install_model_set MANIFEST DIR BASE_URL EXPECTED_FAMILY
+# Results: MODEL_SET_NAME / MODEL_SET_VERSION / MODEL_FAMILY / MODEL_MANIFEST_SHA.
+# Order: validate the manifest, verify what is on disk, check free space for what
+# is missing, then download. Nothing is written before all of those pass, and a
+# failing SV install therefore leaves an already verified MV directory untouched.
 install_model_set() {
-  local mf="$1" ok=0 fetched=0 failed=""
-  check_manifest "$mf"
-  mkdir -p "$MODELS_DIR"
-  while IFS="$(printf '\t')" read -r name size digest; do
+  local mf="$1" dir="$2" base_url="$3" expected_family="$4"
+  local ok=0 fetched=0 failed="" need_bytes=0 missing_list=""
+  check_manifest "$mf" "$expected_family"
+  mkdir -p "$dir"
+  while IFS="$(printf '\t')" read -r name size digest role req; do
     # A manifest comes from the network, so its names must never escape the
     # models directory.
     case "$name" in ""|.|..|*/*|*\\*) die "unsafe file name in model manifest: '$name'";; esac
-    local dest="$MODELS_DIR/$name"
-    if verify_one "$dest" "$size" "$digest"; then
+    if verify_one "$dir/$name" "$size" "$digest"; then
       info "ok $name (already present, verified)"
       ok=$((ok+1)); continue
     fi
-    if [ "$VERIFY_ONLY" = 1 ]; then failed="${failed} $name"; continue; fi
-    [ -n "$MODEL_BASE_URL" ] || die "$name is missing or does not match the manifest, and --model-base-url was not given"
-    rm -f "$dest.part"
-    info "↓ $name ($size bytes)"
-    curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$dest.part" "${MODEL_BASE_URL%/}/$name" \
-      || { rm -f "$dest.part"; die "download failed: ${MODEL_BASE_URL%/}/$name"; }
-    mv -f "$dest.part" "$dest"
-    if verify_one "$dest" "$size" "$digest"; then
-      ok=$((ok+1)); fetched=$((fetched+1))
-    else
-      # Keep the bad file out of the models dir: a wrong-but-plausible model
-      # file is worse than a missing one.
-      local got_size got_sha
-      got_size="$(wc -c <"$dest" | tr -d ' ')"; got_sha="$(sha256_of "$dest")"
-      rm -f "$dest"
-      die "model file does not match the manifest: $name
+    failed="${failed} $name"
+    missing_list="${missing_list}${name}"$'\t'"${size}"$'\t'"${digest}"$'\n'
+    need_bytes=$((need_bytes + size))
+  done < <(manifest_entries "$mf")
+
+  if [ "$VERIFY_ONLY" = 1 ] && [ -n "$failed" ]; then
+    die "model set ${MODEL_SET_NAME} ${MODEL_SET_VERSION} does not verify:${failed}
+       ($ok of $MODEL_FILE_COUNT files match the manifest)"
+  fi
+  if [ -n "$failed" ]; then
+    [ -n "$base_url" ] || die "these files are missing or do not match the manifest, and no base URL was given:${failed}"
+    # Free-space precheck (design D7): bytes still to download + 10 %, checked
+    # before the first byte is fetched.
+    local free need_with_margin
+    free="$(free_bytes_in "$dir")"
+    need_with_margin=$((need_bytes + need_bytes / 10))
+    if [ -n "$free" ] && [ "$free" -lt "$need_with_margin" ]; then
+      die "not enough free space in $dir for ${MODEL_SET_NAME} ${MODEL_SET_VERSION}:
+       need $((need_with_margin / 1048576)) MiB ($((need_bytes / 1048576)) MiB + 10 %), have $((free / 1048576)) MiB"
+    fi
+    while IFS="$(printf '\t')" read -r name size digest; do
+      [ -n "$name" ] || continue
+      local dest="$dir/$name"
+      rm -f "$dest.part"
+      info "↓ $name ($size bytes)"
+      curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$dest.part" "${base_url%/}/$name" \
+        || { rm -f "$dest.part"; die "download failed: ${base_url%/}/$name"; }
+      mv -f "$dest.part" "$dest"
+      if verify_one "$dest" "$size" "$digest"; then
+        ok=$((ok+1)); fetched=$((fetched+1))
+      else
+        # Keep the bad file out of the models dir: a wrong-but-plausible model
+        # file is worse than a missing one.
+        local got_size got_sha
+        got_size="$(wc -c <"$dest" | tr -d ' ')"; got_sha="$(sha256_of "$dest")"
+        rm -f "$dest"
+        die "model file does not match the manifest: $name
        expected size $size sha256 $digest
        got      size $got_size sha256 $got_sha
        the downloaded file was removed."
-    fi
-  done < <(manifest_entries "$mf")
-
-  if [ -n "$failed" ]; then
-    die "model set ${MODEL_SET_NAME} ${MODEL_SET_VERSION} does not verify:${failed}
-       ($ok of $MODEL_FILE_COUNT files match the manifest)"
+      fi
+    done <<<"$missing_list"
   fi
   [ "$ok" = "$MODEL_FILE_COUNT" ] || die "only $ok of $MODEL_FILE_COUNT model files verified"
 
   # The manifest lands in the models dir only after every file verified, so its
   # presence means "this directory is a complete, verified model set" — which is
-  # what the Studio model cache and the Web store both read it as.
+  # what the Studio model cache, trellis-server /capabilities and the Web store
+  # all read it as.
   if [ "$VERIFY_ONLY" != 1 ]; then
-    cp "$mf" "$MODELS_DIR/pixal3d-models.json"
+    cp "$mf" "$dir/pixal3d-models.json"
   fi
-  MODEL_MANIFEST_SHA="$(sha256_of "$MODELS_DIR/pixal3d-models.json" 2>/dev/null || sha256_of "$mf")"
-  log "model set verified: ${c_b}${MODEL_SET_NAME} ${MODEL_SET_VERSION}${c_0} ($ok files, $fetched newly downloaded)"
+  MODEL_MANIFEST_SHA="$(sha256_of "$dir/pixal3d-models.json" 2>/dev/null || sha256_of "$mf")"
+  log "model set verified: ${c_b}${MODEL_SET_NAME} ${MODEL_SET_VERSION}${c_0} (family ${MODEL_FAMILY}, $ok files, $fetched newly downloaded) in $dir"
 }
 
-# Resolves --model-manifest to a local file.
+# Resolves --model-manifest / --model-manifest-sv to a local file.
+#   fetch_manifest SRC OUT [RELEASE_ASSET]
 fetch_manifest() {
-  local src="$1" out="$2"
+  local src="$1" out="$2" asset="${3:-pixal3d-models.json}"
   case "$src" in
     release)
-      resolve_release
-      require_assets pixal3d-models.json
-      download_asset pixal3d-models.json "$out"
+      [ -n "$RESOLVED_TAG" ] || resolve_release
+      require_assets "$asset"
+      download_asset "$asset" "$out"
       ;;
     http://*|https://*) download "$src" "$out";;
     *) [ -f "$src" ] || die "model manifest not found: $src"; cp "$src" "$out";;
@@ -488,14 +628,24 @@ fetch_manifest() {
 # no config writes — this is the gate a clean-install E2E (#18) can run before
 # and after an install to prove the model set on disk is the released one.
 if [ "$VERIFY_ONLY" = 1 ]; then
-  MF="${MODEL_MANIFEST:-$MODELS_DIR/pixal3d-models.json}"
-  case "$MF" in
-    release|http://*|https://*)
-      MF_TMP="$(mktemp)"; fetch_manifest "$MF" "$MF_TMP"; MF="$MF_TMP";;
-    *) [ -f "$MF" ] || die "no manifest to verify against: $MF";;
-  esac
-  install_model_set "$MF"
-  log "${c_g}model set OK${c_0} — ${MODEL_SET_NAME} ${MODEL_SET_VERSION} in $MODELS_DIR"
+  # The MV dir is always checked. The SV dir is checked when it already holds a
+  # manifest or one is named explicitly — and then both must pass.
+  verify_dir() {  # manifest_arg dir family release_asset
+    local mf="$1"
+    case "$mf" in
+      release|http://*|https://*)
+        MF_TMP="$(mktemp)"; fetch_manifest "$mf" "$MF_TMP" "$4"; mf="$MF_TMP";;
+      *) [ -f "$mf" ] || die "no manifest to verify against: $mf";;
+    esac
+    install_model_set "$mf" "$2" "" "$3"
+    log "${c_g}model set OK${c_0} — ${MODEL_SET_NAME} ${MODEL_SET_VERSION} (${MODEL_FAMILY}) in $2"
+  }
+  verify_dir "${MODEL_MANIFEST:-$MODELS_DIR/pixal3d-models.json}" "$MODELS_DIR" mv pixal3d-models.json
+  if [ -n "$MODEL_MANIFEST_SV" ] || [ -f "$MODELS_DIR_SV/pixal3d-models.json" ]; then
+    verify_dir "${MODEL_MANIFEST_SV:-$MODELS_DIR_SV/pixal3d-models.json}" "$MODELS_DIR_SV" sv pixal3d-models-sv.json
+  else
+    info "no single-view model set at $MODELS_DIR_SV (nothing to verify)"
+  fi
   exit 0
 fi
 
@@ -523,12 +673,14 @@ if [ "$BACKEND" = "rocm" ] && [ "$PLATFORM" = linux ]; then
 fi
 
 # ---- 2. weights ------------------------------------------------------------
+MV_SET_NAME=""; MV_SET_VERSION=""; MV_MANIFEST_SHA=""
 if [ -n "$MODEL_MANIFEST" ]; then
-  log "installing the Pixal3D model set from the manifest -> $MODELS_DIR"
+  log "installing the Pixal3D multi-view model set from the manifest -> $MODELS_DIR"
   MF_TMP="$(mktemp)"
-  fetch_manifest "$MODEL_MANIFEST" "$MF_TMP"
-  install_model_set "$MF_TMP"
+  fetch_manifest "$MODEL_MANIFEST" "$MF_TMP" pixal3d-models.json
+  install_model_set "$MF_TMP" "$MODELS_DIR" "$MODEL_BASE_URL" mv
   rm -f "$MF_TMP"
+  MV_SET_NAME="$MODEL_SET_NAME"; MV_SET_VERSION="$MODEL_SET_VERSION"; MV_MANIFEST_SHA="$MODEL_MANIFEST_SHA"
 elif [ "$SKIP_MODELS" = 1 ]; then
   warn "skipping model download (--skip-models); set them in the app's Settings."
 else
@@ -538,16 +690,38 @@ else
   for m in "${MODELS[@]}"; do download "${HF_BASE}/${QUANT:+$QUANT/}${m}" "$MODELS_DIR/${m}"; done
 fi
 
+# 0.10.0: optional single-view set, always in its own directory. It is installed
+# after the MV set so a failure here cannot leave the MV directory half-written
+# (the script dies before the config is written, and MV files are never touched).
+SV_SET_NAME=""; SV_SET_VERSION=""; SV_MANIFEST_SHA=""
+if [ -n "$MODEL_MANIFEST_SV" ]; then
+  case "$MODELS_DIR_SV" in "$MODELS_DIR") die "--models-dir-sv must differ from the MV models dir ($MODELS_DIR): five file names collide with different contents";; esac
+  log "installing the Pixal3D single-view model set from the manifest -> $MODELS_DIR_SV"
+  MF_TMP="$(mktemp)"
+  fetch_manifest "$MODEL_MANIFEST_SV" "$MF_TMP" pixal3d-models-sv.json
+  install_model_set "$MF_TMP" "$MODELS_DIR_SV" "$MODEL_BASE_URL_SV" sv
+  rm -f "$MF_TMP"
+  SV_SET_NAME="$MODEL_SET_NAME"; SV_SET_VERSION="$MODEL_SET_VERSION"; SV_MANIFEST_SHA="$MODEL_MANIFEST_SHA"
+fi
+# The config only names an SV directory that holds a verified set (installed now
+# or by an earlier run); otherwise it stays empty and trellis-server gets no
+# --models-sv, which Studio reports as "single-view model set is not installed".
+CONFIG_MODELS_DIR_SV=""
+if [ -n "$SV_SET_NAME" ] || [ -f "$MODELS_DIR_SV/pixal3d-models.json" ]; then CONFIG_MODELS_DIR_SV="$MODELS_DIR_SV"; fi
+
 # The manifest (#34) is the model-set identity. "verified" is only true when this
 # run actually checked every file's size and SHA256 against it.
-MODEL_SET_JSON="null"
-if [ -n "${MODEL_SET_NAME:-}" ]; then
-  MODEL_SET_JSON="{\"model_set\": \"$MODEL_SET_NAME\", \"version\": \"$MODEL_SET_VERSION\", \"manifest_sha256\": \"${MODEL_MANIFEST_SHA:-}\", \"verified\": true}"
-elif [ -f "$MODELS_DIR/pixal3d-models.json" ]; then
-  MS_NAME="$(json_str "$(cat "$MODELS_DIR/pixal3d-models.json")" model_set)"
-  MS_VER="$(json_str "$(cat "$MODELS_DIR/pixal3d-models.json")" version)"
-  MODEL_SET_JSON="{\"model_set\": \"$MS_NAME\", \"version\": \"$MS_VER\", \"manifest_sha256\": \"$(sha256_of "$MODELS_DIR/pixal3d-models.json")\", \"verified\": false}"
-fi
+model_set_json() {  # name version sha dir
+  if [ -n "$1" ]; then
+    echo "{\"model_set\": \"$1\", \"version\": \"$2\", \"manifest_sha256\": \"$3\", \"verified\": true}"
+  elif [ -f "$4/pixal3d-models.json" ]; then
+    echo "{\"model_set\": \"$(json_str "$(cat "$4/pixal3d-models.json")" model_set)\", \"version\": \"$(json_str "$(cat "$4/pixal3d-models.json")" version)\", \"manifest_sha256\": \"$(sha256_of "$4/pixal3d-models.json")\", \"verified\": false}"
+  else
+    echo null
+  fi
+}
+MODEL_SET_JSON="$(model_set_json "$MV_SET_NAME" "$MV_SET_VERSION" "$MV_MANIFEST_SHA" "$MODELS_DIR")"
+MODEL_SET_SV_JSON="$(model_set_json "$SV_SET_NAME" "$SV_SET_VERSION" "$SV_MANIFEST_SHA" "$MODELS_DIR_SV")"
 
 # ---- 3. desktop app --------------------------------------------------------
 if [ "$SKIP_APP" = 1 ]; then
@@ -589,6 +763,7 @@ cat > "$CONFIG_DIR/config.json" <<JSON
 {
   "serverBin": "$SERVER_BIN",
   "modelsDir": "$MODELS_DIR",
+  "modelsDirSv": "$CONFIG_MODELS_DIR_SV",
   "backend": "$BACKEND",
   "gpu": $GPU,
   "host": "127.0.0.1",
@@ -612,6 +787,8 @@ cat > "$CONFIG_DIR/release.json" <<JSON
   "backend": "$BACKEND",
   "models_dir": "$MODELS_DIR",
   "model_set": ${MODEL_SET_JSON:-null},
+  "models_dir_sv": "$CONFIG_MODELS_DIR_SV",
+  "model_set_sv": ${MODEL_SET_SV_JSON:-null},
   "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON

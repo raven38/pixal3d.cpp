@@ -36,6 +36,15 @@ param(
   # A path, a URL, or "release" (an asset of the resolved release).
   [string]$ModelManifest = "",
   [string]$ModelBaseUrl = "",
+  # 0.10.0: the single-view (SV) model set is a second, independent directory
+  # (default <Dest>\models-sv). Five of its nine file names are shared with the
+  # MV set but hold different bytes, so the two can never share a directory.
+  [string]$ModelsDirSv = "",
+  [string]$ModelManifestSv = "",
+  [string]$ModelBaseUrlSv = "",
+  # Where config.json / release.json are written (default %APPDATA%\trellis-studio,
+  # which is what the app reads). Tests point this elsewhere.
+  [string]$ConfigDir = "",
   [switch]$VerifyModels,
   [switch]$SkipModels,
   [switch]$SkipApp,
@@ -52,6 +61,7 @@ $Models = @("birefnet.gguf", "dinov3.gguf", "ss_flow.gguf", "ss_dec.gguf",
   "tex_flow_512.gguf", "tex_flow_1024.gguf", "tex_dec.gguf")
 
 if (-not $ModelsDir) { $ModelsDir = Join-Path $Dest "models" }
+if (-not $ModelsDirSv) { $ModelsDirSv = Join-Path $Dest "models-sv" }
 $RuntimeDir = Join-Path $Dest "runtime"
 
 # Quantized weights live in q8/ and q4/ subpaths of the HF repo, same filenames.
@@ -62,7 +72,7 @@ switch ($Quant) {
   default { Die "invalid -Quant: $Quant (use q8 or q4)" }
 }
 $QuantPath = if ($Quant) { "$Quant/" } else { "" }
-$ConfigDir = Join-Path $env:APPDATA "trellis-studio"
+if (-not $ConfigDir) { $ConfigDir = Join-Path $env:APPDATA "trellis-studio" }
 
 function Log($m)  { Write-Host "==> $m" -ForegroundColor Green }
 function Info($m) { Write-Host " -  $m" -ForegroundColor Cyan }
@@ -111,6 +121,7 @@ if (-not $Backend) {
 Write-Host ""
 Info "install dir : $Dest"
 Info ("models dir  : {0}{1}" -f $ModelsDir, $(if ($SkipModels) { " (skipped)" } else { "" }))
+if ($ModelManifestSv) { Info "SV models   : $ModelsDirSv" }
 Info "weights     : $WeightsLabel"
 Info "backend/gpu : $Backend / $Gpu     port: $Port"
 Write-Host ""
@@ -259,12 +270,88 @@ function Download-Asset($name, $dest) {
 # each required role. Nothing here trusts a filename or a length alone.
 $script:ModelSet = $null
 
-function Read-Manifest($path) {
+# name <-> role contract of a model family (mirror of web/app/model_family.js,
+# src/model_manifest.cpp and install/install.sh; the conformance vectors in
+# web/app/manifest_conformance.json are run against this script in CI).
+$ModelRoles = @("image_encoder", "naf", "ss_flow", "ss_decoder", "shape_flow_512",
+                "shape_decoder", "shape_flow_1024", "texture_flow_1024", "texture_decoder")
+$FlowRoles = @("ss_flow", "shape_flow_512", "shape_flow_1024", "texture_flow_1024")
+function Expected-NameForRole($role, $family) {
+  switch ($role) {
+    "image_encoder"     { return "dinov3.gguf" }
+    "naf"               { return "pixal3d_naf.gguf" }
+    "ss_flow"           { return "pixal3d_ss_flow_$family.gguf" }
+    "ss_decoder"        { return "ss_dec.gguf" }
+    "shape_flow_512"    { return "pixal3d_shape_flow_512_$family.gguf" }
+    "shape_decoder"     { return "shape_dec.gguf" }
+    "shape_flow_1024"   { return "pixal3d_shape_flow_1024_$family.gguf" }
+    "texture_flow_1024" { return "pixal3d_tex_flow_1024_$family.gguf" }
+    "texture_decoder"   { return "tex_dec.gguf" }
+    default             { return "" }
+  }
+}
+function Expected-RoleForName($name, $family) {
+  foreach ($r in $ModelRoles) { if ((Expected-NameForRole $r $family) -eq $name) { return $r } }
+  return ""
+}
+# Family inferred from the four flow-role file names: mv / sv / "" (mixed or none).
+function Infer-Family($files) {
+  $names = @($files | Where-Object { $_.role -in $FlowRoles -and $_.name } | ForEach-Object { [string]$_.name })
+  if ($names.Count -eq 0) { return "" }
+  foreach ($fam in @("mv", "sv")) {
+    $all = $true
+    foreach ($n in $names) { if (-not $n.EndsWith("_$fam.gguf", [System.StringComparison]::Ordinal)) { $all = $false } }
+    if ($all) { return $fam }
+  }
+  return ""
+}
+
+# Validates a manifest and pins its family. Every rejection here happens before
+# any file is touched or downloaded.
+function Read-Manifest($path, $expectedFamily) {
   $m = Get-Content -Raw $path | ConvertFrom-Json
   if ($m.schema_version -ne 1) { Die "unsupported model manifest schema_version: $($m.schema_version)" }
   if (-not $m.model_set -or -not $m.version) { Die "model manifest is missing model_set/version" }
   if (-not $m.files -or @($m.files).Count -eq 0) { Die "model manifest lists no files" }
-  Info "model set: $($m.model_set) $($m.version) ($(@($m.files).Count) files, manifest sha256 $((Get-FileHash $path -Algorithm SHA256).Hash.ToLower()))"
+
+  $explicit = if ($null -ne $m.PSObject.Properties["model_family"] -and $null -ne $m.model_family) { [string]$m.model_family } else { "" }
+  if ($explicit -and $explicit -notin @("mv", "sv")) { Die "model_family must be one of: mv, sv (got '$explicit')" }
+  $inferred = Infer-Family @($m.files)
+  if ($explicit -and $inferred -and $explicit -ne $inferred) {
+    Die "model_family $explicit does not match the flow file names ($inferred)"
+  }
+  $family = if ($explicit) { $explicit } elseif ($inferred) { $inferred } else { "mv" }
+  if ($family -ne $expectedFamily) {
+    Die "manifest $($m.model_set) $($m.version) is a $family model set; this option expects the $expectedFamily set`n       (use -ModelManifest for the multi-view set and -ModelManifestSv for the single-view set)"
+  }
+
+  # Known names carry a fixed role and are required; a known role must carry its
+  # known name; no duplicate names or roles; the family's nine files must all be listed.
+  $seenNames = @{}; $seenRoles = @{}; $present = @{}
+  foreach ($f in $m.files) {
+    $name = [string]$f.name; $role = [string]$f.role
+    if ($seenNames.ContainsKey($name)) { Die "duplicate file name: $name" }
+    $seenNames[$name] = $true
+    if ($role) {
+      if ($seenRoles.ContainsKey($role)) { Die "duplicate role: $role" }
+      $seenRoles[$role] = $true
+    }
+    $wantRole = Expected-RoleForName $name $family
+    if ($wantRole) {
+      if ($role -ne $wantRole) { Die "$name must have role $wantRole, not '$(if ($role) { $role } else { 'missing' })'" }
+      $req = if ($null -ne $f.PSObject.Properties["required"]) { [bool]$f.required } else { $true }
+      if (-not $req) { Die "$name must be required" }
+      $present[$name] = $true
+    } else {
+      $wantName = Expected-NameForRole $role $family
+      if ($wantName) { Die "role $role must be $wantName, not $name" }
+    }
+  }
+  $missing = @($ModelRoles | ForEach-Object { Expected-NameForRole $_ $family } | Where-Object { -not $present.ContainsKey($_) })
+  if ($missing.Count -gt 0) { Die "manifest $($m.model_set) $($m.version) is missing required $family files: $($missing -join ' ')" }
+
+  $m | Add-Member -NotePropertyName family -NotePropertyValue $family -Force
+  Info "model set: $($m.model_set) $($m.version) (family $family, $(@($m.files).Count) files, manifest sha256 $((Get-FileHash $path -Algorithm SHA256).Hash.ToLower()))"
   return $m
 }
 
@@ -275,59 +362,84 @@ function Verify-One($path, $size, $digest) {
                           [System.StringComparison]::Ordinal)
 }
 
-function Install-ModelSet($manifestPath) {
-  $m = Read-Manifest $manifestPath
-  New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
-  $ok = 0; $fetched = 0; $failed = @()
+function Free-BytesIn($dir) {
+  try {
+    $full = [System.IO.Path]::GetFullPath($dir)
+    return (New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($full))).AvailableFreeSpace
+  } catch { return $null }
+}
+
+# Installs (or, with -VerifyModels, only verifies) one model set into $dir.
+# Order: validate the manifest, verify what is on disk, check free space for what
+# is missing, then download. Nothing is written before all of those pass, and a
+# failing SV install therefore leaves an already verified MV directory untouched.
+function Install-ModelSet($manifestPath, $dir, $baseUrl, $expectedFamily) {
+  $m = Read-Manifest $manifestPath $expectedFamily
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  $ok = 0; $fetched = 0; $failed = @(); $missing = @(); $needBytes = [long]0
   foreach ($f in $m.files) {
     # A manifest comes from the network, so its names must never escape the
     # models directory.
     if (-not $f.name -or $f.name -match '[\\/]' -or $f.name -eq "." -or $f.name -eq "..") {
       Die "unsafe file name in model manifest: '$($f.name)'"
     }
-    $dest = Join-Path $ModelsDir $f.name
+    $dest = Join-Path $dir $f.name
     if (Verify-One $dest $f.size_bytes $f.sha256) { Info "ok $($f.name) (already present, verified)"; $ok++; continue }
-    if ($VerifyModels) { $failed += $f.name; continue }
-    if (-not $ModelBaseUrl) { Die "$($f.name) is missing or does not match the manifest, and -ModelBaseUrl was not given" }
-    $part = "$dest.part"
-    Remove-Item $part -Force -ErrorAction SilentlyContinue
-    Info "down $($f.name) ($($f.size_bytes) bytes)"
-    Download "$($ModelBaseUrl.TrimEnd('/'))/$($f.name)" $part
-    Move-Item $part $dest -Force
-    if (Verify-One $dest $f.size_bytes $f.sha256) { $ok++; $fetched++ }
-    else {
-      # Keep the bad file out of the models dir: a wrong-but-plausible model file
-      # is worse than a missing one.
-      $gotSize = (Get-Item $dest).Length
-      $gotSha = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
-      Remove-Item $dest -Force
-      Die @"
+    $failed += $f.name; $missing += $f; $needBytes += [long]$f.size_bytes
+  }
+  if ($VerifyModels -and $failed.Count -gt 0) {
+    Die "model set $($m.model_set) $($m.version) does not verify: $($failed -join ' ')`n       ($ok of $(@($m.files).Count) files match the manifest)"
+  }
+  if ($failed.Count -gt 0) {
+    if (-not $baseUrl) { Die "these files are missing or do not match the manifest, and no base URL was given: $($failed -join ' ')" }
+    # Free-space precheck (design D7): bytes still to download + 10 %, checked
+    # before the first byte is fetched.
+    $free = Free-BytesIn $dir
+    $needWithMargin = $needBytes + [long]($needBytes / 10)
+    if ($null -ne $free -and $free -lt $needWithMargin) {
+      Die "not enough free space in $dir for $($m.model_set) $($m.version):`n       need $([long]($needWithMargin / 1MB)) MiB ($([long]($needBytes / 1MB)) MiB + 10 %), have $([long]($free / 1MB)) MiB"
+    }
+    foreach ($f in $missing) {
+      $dest = Join-Path $dir $f.name
+      $part = "$dest.part"
+      Remove-Item $part -Force -ErrorAction SilentlyContinue
+      Info "down $($f.name) ($($f.size_bytes) bytes)"
+      try { Download "$($baseUrl.TrimEnd('/'))/$($f.name)" $part }
+      catch { Remove-Item $part -Force -ErrorAction SilentlyContinue; Die "download failed: $($baseUrl.TrimEnd('/'))/$($f.name)" }
+      Move-Item $part $dest -Force
+      if (Verify-One $dest $f.size_bytes $f.sha256) { $ok++; $fetched++ }
+      else {
+        # Keep the bad file out of the models dir: a wrong-but-plausible model file
+        # is worse than a missing one.
+        $gotSize = (Get-Item $dest).Length
+        $gotSha = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
+        Remove-Item $dest -Force
+        Die @"
 model file does not match the manifest: $($f.name)
        expected size $($f.size_bytes) sha256 $($f.sha256)
        got      size $gotSize sha256 $gotSha
        the downloaded file was removed.
 "@
+      }
     }
   }
-  if ($failed.Count -gt 0) {
-    Die "model set $($m.model_set) $($m.version) does not verify: $($failed -join ' ')`n       ($ok of $(@($m.files).Count) files match the manifest)"
-  }
+  if ($ok -ne @($m.files).Count) { Die "only $ok of $(@($m.files).Count) model files verified" }
   # The manifest lands in the models dir only after every file verified, so its
   # presence means "complete, verified model set" — which is how the Studio model
-  # cache and the Web store read it.
-  if (-not $VerifyModels) { Copy-Item $manifestPath (Join-Path $ModelsDir "pixal3d-models.json") -Force }
+  # cache, trellis-server /capabilities and the Web store read it.
+  if (-not $VerifyModels) { Copy-Item $manifestPath (Join-Path $dir "pixal3d-models.json") -Force }
   $script:ModelSet = [ordered]@{
     model_set       = $m.model_set
     version         = $m.version
     manifest_sha256 = (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLower()
     verified        = $true
   }
-  Log "model set verified: $($m.model_set) $($m.version) ($ok files, $fetched newly downloaded)"
+  Log "model set verified: $($m.model_set) $($m.version) (family $($m.family), $ok files, $fetched newly downloaded) in $dir"
 }
 
-function Fetch-Manifest($src, $out) {
+function Fetch-Manifest($src, $out, $releaseAsset = "pixal3d-models.json") {
   switch -Regex ($src) {
-    '^release$' { Resolve-Release; Require-Assets @("pixal3d-models.json"); Download-Asset "pixal3d-models.json" $out }
+    '^release$' { if (-not $script:Release) { Resolve-Release }; Require-Assets @($releaseAsset); Download-Asset $releaseAsset $out }
     '^https?://' { Download $src $out }
     default { if (-not (Test-Path $src)) { Die "model manifest not found: $src" }; Copy-Item $src $out -Force }
   }
@@ -338,14 +450,23 @@ function Fetch-Manifest($src, $out) {
 # config writes. This is the gate a clean-install E2E (#18) can run before and
 # after an install to prove the model set on disk is the released one.
 if ($VerifyModels) {
-  $mf = if ($ModelManifest) { $ModelManifest } else { Join-Path $ModelsDir "pixal3d-models.json" }
-  if ($mf -eq "release" -or $mf -match '^https?://') {
-    $tmp = Join-Path $env:TEMP "pixal3d-models.json"
-    Fetch-Manifest $mf $tmp
-    $mf = $tmp
-  } elseif (-not (Test-Path $mf)) { Die "no manifest to verify against: $mf" }
-  Install-ModelSet $mf
-  Log "model set OK - $($script:ModelSet.model_set) $($script:ModelSet.version) in $ModelsDir"
+  # The MV dir is always checked. The SV dir is checked when it already holds a
+  # manifest or one is named explicitly - and then both must pass.
+  function Verify-Dir($mf, $dir, $family, $releaseAsset) {
+    if ($mf -eq "release" -or $mf -match '^https?://') {
+      $tmp = Join-Path $env:TEMP $releaseAsset
+      Fetch-Manifest $mf $tmp $releaseAsset
+      $mf = $tmp
+    } elseif (-not (Test-Path $mf)) { Die "no manifest to verify against: $mf" }
+    Install-ModelSet $mf $dir "" $family
+    Log "model set OK - $($script:ModelSet.model_set) $($script:ModelSet.version) ($family) in $dir"
+  }
+  Verify-Dir $(if ($ModelManifest) { $ModelManifest } else { Join-Path $ModelsDir "pixal3d-models.json" }) $ModelsDir "mv" "pixal3d-models.json"
+  if ($ModelManifestSv -or (Test-Path (Join-Path $ModelsDirSv "pixal3d-models.json"))) {
+    Verify-Dir $(if ($ModelManifestSv) { $ModelManifestSv } else { Join-Path $ModelsDirSv "pixal3d-models.json" }) $ModelsDirSv "sv" "pixal3d-models-sv.json"
+  } else {
+    Info "no single-view model set at $ModelsDirSv (nothing to verify)"
+  }
   exit 0
 }
 
@@ -372,11 +493,13 @@ if ($Backend -eq "rocm") {
 }
 
 # ---- 2. weights ------------------------------------------------------------
+$mvSet = $null
 if ($ModelManifest) {
-  Log "installing the Pixal3D model set from the manifest -> $ModelsDir"
+  Log "installing the Pixal3D multi-view model set from the manifest -> $ModelsDir"
   $mfTmp = Join-Path $env:TEMP "pixal3d-models.json"
-  Fetch-Manifest $ModelManifest $mfTmp
-  Install-ModelSet $mfTmp
+  Fetch-Manifest $ModelManifest $mfTmp "pixal3d-models.json"
+  Install-ModelSet $mfTmp $ModelsDir $ModelBaseUrl "mv"
+  $mvSet = $script:ModelSet
 } elseif ($SkipModels) {
   Warn "skipping model download (-SkipModels); set the models dir in the app's Settings."
 } else {
@@ -401,23 +524,45 @@ if ($SkipApp) {
   if ($proc.ExitCode -ne 0) { Die "Trellis Studio installer failed with exit code $($proc.ExitCode)" }
 }
 
+# 0.10.0: optional single-view set, always in its own directory. It is installed
+# after the MV set so a failure here cannot leave the MV directory half-written
+# (the script dies before the config is written, and MV files are never touched).
+$svSet = $null
+if ($ModelManifestSv) {
+  if ([System.IO.Path]::GetFullPath($ModelsDirSv).TrimEnd('\') -ieq [System.IO.Path]::GetFullPath($ModelsDir).TrimEnd('\')) {
+    Die "-ModelsDirSv must differ from the MV models dir ($ModelsDir): five file names collide with different contents"
+  }
+  Log "installing the Pixal3D single-view model set from the manifest -> $ModelsDirSv"
+  $mfTmp = Join-Path $env:TEMP "pixal3d-models-sv.json"
+  Fetch-Manifest $ModelManifestSv $mfTmp "pixal3d-models-sv.json"
+  Install-ModelSet $mfTmp $ModelsDirSv $ModelBaseUrlSv "sv"
+  $svSet = $script:ModelSet
+}
+# The config only names an SV directory that holds a verified set (installed now
+# or by an earlier run); otherwise it stays empty and trellis-server gets no
+# --models-sv, which Studio reports as "single-view model set is not installed".
+$configModelsDirSv = if ($svSet -or (Test-Path (Join-Path $ModelsDirSv "pixal3d-models.json"))) { $ModelsDirSv } else { "" }
+
 # The manifest (#34) is the model-set identity; record it in the receipt when the
 # models directory already carries one.
 # "verified" is only true when this run actually checked every file's size and
 # SHA256 against the manifest.
-$modelSet = $script:ModelSet
-$manifestPath = Join-Path $ModelsDir "pixal3d-models.json"
-if (-not $modelSet -and (Test-Path $manifestPath)) {
+function Model-SetReceipt($set, $dir) {
+  if ($set) { return $set }
+  $manifestPath = Join-Path $dir "pixal3d-models.json"
+  if (-not (Test-Path $manifestPath)) { return $null }
   try {
     $m = Get-Content -Raw $manifestPath | ConvertFrom-Json
-    $modelSet = [ordered]@{
+    return [ordered]@{
       model_set       = $m.model_set
       version         = $m.version
       manifest_sha256 = (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLower()
       verified        = $false
     }
-  } catch { Warn "could not read $manifestPath : $($_.Exception.Message)" }
+  } catch { Warn "could not read $manifestPath : $($_.Exception.Message)"; return $null }
 }
+$modelSet = Model-SetReceipt $mvSet $ModelsDir
+$modelSetSv = Model-SetReceipt $svSet $ModelsDirSv
 
 # ---- 4. config -------------------------------------------------------------
 Log "writing config"
@@ -425,6 +570,7 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 $cfg = [ordered]@{
   serverBin = $ServerBin
   modelsDir = $ModelsDir
+  modelsDirSv = $configModelsDirSv
   backend   = $Backend
   gpu       = $Gpu
   host      = "127.0.0.1"
@@ -444,6 +590,8 @@ $receipt = [ordered]@{
   backend        = $Backend
   models_dir     = $ModelsDir
   model_set      = $modelSet
+  models_dir_sv  = $configModelsDirSv
+  model_set_sv   = $modelSetSv
   installed_at   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 }
 [System.IO.File]::WriteAllText((Join-Path $ConfigDir "release.json"),
