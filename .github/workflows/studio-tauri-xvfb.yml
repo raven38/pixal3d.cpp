@@ -109,8 +109,7 @@ jobs:
           assert got==want, f'dummy server args mismatch: got={got} want={want}'
           print('DUMMY_SERVER_ARGS_OK', got)
           PY
-          cap="$(curl -fsS "http://127.0.0.1:$SMOKE_PORT/capabilities")"
-          echo "$cap" | grep -Fq '"configured": true' || { echo "capabilities did not report the SV directory: $cap"; exit 1; }
+          curl -fsS "http://127.0.0.1:$SMOKE_PORT/capabilities" | python3 -c 'import json,sys; c=json.load(sys.stdin); assert c["sv"]["configured"] is True, c; print("CAPABILITIES_SV_CONFIGURED_OK")'
           mapped=0
           for i in $(seq 1 40); do xwininfo -root -tree | grep -Fq 'Trellis Studio' && { mapped=1; break; }; sleep .25; done
           [ "$mapped" = 1 ] || { xwininfo -root -tree || true; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }
