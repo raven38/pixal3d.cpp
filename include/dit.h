@@ -7,6 +7,7 @@
 
 struct ggml_context;
 struct ggml_tensor;
+struct ggml_backend;
 
 namespace trellis {
 struct Model;
@@ -64,5 +65,23 @@ void dit_rope_index(int head_dim, std::vector<int32_t>& out);
 // data[token*half + pair]). Returns [head_dim, n_heads, L] in the DE-INTERLEAVED layout
 // out[p*half + i] = (p == 0 ? x[2i]*cos_i - x[2i+1]*sin_i : x[2i+1]*cos_i + x[2i]*sin_i).
 ggml_tensor* dit_rope(ggml_context* gctx, ggml_tensor* x, ggml_tensor* cos, ggml_tensor* sin);
+
+// FlashAttention の K/V ストレージ型（--fa-kv）。AUTO は build_dit_dense が backend ごとに解決する。
+// 現時点の既定は全 backend で BF16（従来どおり）。Metal の bf16 カーネルは出力を half で累積し
+// set_prec を読まないので f16 の方が数値的に有利な可能性があり、docs/design/2026-09-20-metal-fa-f16-kv.md
+// のゲートを通ったら Metal の AUTO だけ F16 に切り替える予定。
+// テストバイナリ（args を解析しない）向けの環境フォールバック: TRELLIS_FA_KV=bf16|f16|f32、
+// TRELLIS_FA_FAST=1（f16 の旧名）。
+enum FaKv { FA_KV_AUTO = 0, FA_KV_BF16 = 1, FA_KV_F16 = 2, FA_KV_F32 = 3 };
+
+// One attention as the DiT builds it (sdpa + its zero-padded key mask), exposed for
+// trellis-test-fa-oracle: q, k, v are [head_dim, n_heads, L] f32; returns [d_model, L] f32. Uses the
+// current g_no_fa / g_fa_kv (resolved for `backend`) exactly like build_dit_dense does.
+ggml_tensor* dit_sdpa(ggml_context* gctx, struct ggml_backend* backend,
+                      ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, int d_model);
+extern int g_fa_kv;                                  // --fa-kv; set by trellis_run (default AUTO)
+int  dit_fa_kv_parse(const char* s);                 // "auto"/"bf16"/"f16"/"f32" -> FaKv, -1 if unknown
+int  dit_fa_kv_effective(struct ggml_backend* backend);  // resolves AUTO for this backend
+const char* dit_fa_kv_name(int kv);
 
 } // namespace trellis

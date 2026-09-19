@@ -74,5 +74,6 @@ int main(int argc, char** argv) {
     if (cnt) printf("bench: N=%d  mean whole forward (excluding #0%s) = %.2fs over %d\n", N,
                     trellis::g_profile ? " and the profiled #1" : "", sum / cnt, cnt);
     delete run;
+    m.free();   // ggml-metal asserts at exit ([rsets->data count] == 0) if the weight buffer is still resident
     return 0;
 }

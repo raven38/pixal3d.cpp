@@ -118,12 +118,17 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
         gproj_ = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.d_proj, N_); ggml_set_input(gproj_);
     }
     dbg_nan_ = std::getenv("TRELLIS_DBG_NAN") != nullptr;
+    dbg_fa_range_ = std::getenv("TRELLIS_DBG_FA_RANGE") != nullptr;   // operand subset: see dit.cpp
+    const bool want_inter = dbg_nan_ || dbg_fa_range_;
     gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_,
-                            dbg_nan_ ? &inter_ : nullptr, gproj_, nullptr);
+                            want_inter ? &inter_ : nullptr, gproj_, nullptr);
     g_ = ggml_new_graph_custom(ctx_, 262144, false);
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);
-    if (dbg_nan_) for (auto& [nm, t] : inter_) { ggml_build_forward_expand(g_, t); ggml_set_output(t); }
+    if (want_inter) for (auto& [nm, t] : inter_) { ggml_build_forward_expand(g_, t); ggml_set_output(t); }
+    if (!g_no_fa) printf("      dit graph: FlashAttention K/V=%s (--fa-kv %s)%s\n",
+                         dit_fa_kv_name(dit_fa_kv_effective(m_.backend)), dit_fa_kv_name(g_fa_kv),
+                         dbg_fa_range_ ? "  [TRELLIS_DBG_FA_RANGE: pre-cast FA operand probes kept as outputs]" : "");
     const std::string tag = "dit_N" + std::to_string(N_) + "_dcond" + std::to_string(Lc_) + "_proj" + std::to_string((int)p_.proj_attn);
     trellis_graph_dump(tag.c_str(), g_);
     check_graph_supported(m_.backend, g_, tag.c_str());
@@ -166,6 +171,7 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
         if (fwd_count_ == 1) profile_forward();
     }
     ++fwd_count_;
+    if (dbg_fa_range_) print_fa_range(t_scaled);
     size_t out_bad = 0; for (float x : outv) if (!std::isfinite(x)) out_bad++;
     // Dump the per-layer breakdown for the FIRST forward whose OUTPUT goes NaN (the failing low-t
     // step), not just the very first forward (which is clean) — that's where to look for the cause.
@@ -187,6 +193,56 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
         }
     }
     return outv;
+}
+
+// TRELLIS_DBG_FA_RANGE: one line per forward with the largest |x| that FlashAttention casts to its
+// K/V type, split by role (self / cross) and operand (Q / K / V*V_SCALE), plus the block where the
+// maximum sits, the share of NONZERO values below F16's smallest normal (sub, 6.1e-5: precision loss
+// when cast to f16) and below its smallest subnormal (tiny, 6e-8: flushed to zero), and the nonfinite
+// count. Exact zeros -- including the zero-padded key tiles -- are excluded from those shares. The probes are dit.cpp::sdpa's F32 tensors right before
+// ggml_cast, so this is exactly what an f16 K/V cast would see. F16 headroom = 65504 / max.
+void DitRunner::print_fa_range(float t_scaled) {
+    struct Acc { double mx = 0; std::string where; size_t n = 0, nz = 0, small = 0, tiny = 0, bad = 0; };
+    Acc acc[2][3];   // [self, cross] x [q, k, v]
+    for (auto& [nm, t] : inter_) {
+        const size_t dot = nm.rfind(".fa_");
+        if (dot == std::string::npos) continue;
+        const char what = nm[dot + 4];
+        const int op = what == 'q' ? 0 : what == 'k' ? 1 : what == 'v' ? 2 : -1;
+        if (op < 0) continue;
+        const int role = nm.find("cross_attn") != std::string::npos ? 1 : 0;
+        std::vector<float> v = tensor_to_f32(t);
+        Acc& a = acc[role][op];
+        for (float x : v) {
+            if (!std::isfinite(x)) { a.bad++; continue; }
+            const float ax = std::fabs(x);
+            if (ax > a.mx) { a.mx = ax; a.where = nm; }
+            if (ax != 0.0f) {                      // exact zeros (incl. the KV padding) are exact in f16 too
+                a.nz++;
+                if (ax < 6.1035e-5f) a.small++;    // below f16's smallest normal: precision loss
+                if (ax < 5.9605e-8f) a.tiny++;     // below f16's smallest subnormal: flushed to 0
+            }
+        }
+        a.n += v.size();
+    }
+    const char* role_nm[2] = { "self", "cross" };
+    const char* op_nm[3] = { "Q", "K", "V/256" };
+    for (int r = 0; r < 2; ++r) {
+        std::string line = "      [fa-range] fwd #" + std::to_string(fwd_count_ - 1) + " t=" +
+                           std::to_string((int)t_scaled) + " " + role_nm[r] + ":";
+        char buf[256];
+        for (int o = 0; o < 3; ++o) {
+            const Acc& a = acc[r][o];
+            if (!a.n) continue;
+            snprintf(buf, sizeof buf, "  %s max=%.3g (headroom %.0fx, %s) sub=%.1e tiny=%.1e bad=%zu",
+                     op_nm[o], a.mx, a.mx > 0 ? 65504.0 / a.mx : 0.0,
+                     a.where.substr(0, a.where.rfind(".fa_")).c_str(),
+                     a.nz ? (double)a.small / a.nz : 0.0, a.nz ? (double)a.tiny / a.nz : 0.0, a.bad);
+            line += buf;
+        }
+        if (acc[r][0].n) printf("%s\n", line.c_str());
+    }
+    fflush(stdout);
 }
 
 // --profile: hierarchical timing of one forward on the already-built, already-allocated graph.

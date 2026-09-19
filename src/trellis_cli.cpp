@@ -18,6 +18,9 @@
 #include "proj_grid.h"   // mat4_inverse_d: 入力段で transform_matrix の可逆性を確認する
 #include "transforms_json.h"
 #include "image_preprocess.h"
+#include "npy.h"   // TRELLIS_DUMP_SLAT: HR flow inputs as the slat-sample test's fixture layout
+#include "dit.h"   // dit_fa_kv_name
+#include <ctime>
 #include <filesystem>
 // Declarations only (no *_IMPLEMENTATION define here) -- stbi_load/stbir_resize_uint8 are
 // implemented once in preprocess.cpp, part of trellis_core, which this binary links against.
@@ -48,6 +51,72 @@ static void slat_stats(const char* tag, const vector<float>& v) {
     size_t n = v.size() - bad; double mean = n ? s / n : 0, var = n ? s2 / n - mean * mean : 0;
     printf("      [stats] %s n=%zu mean=%.4f std=%.4f min=%.3f max=%.3f nan/inf=%zu\n",
            tag, v.size(), mean, var > 0 ? std::sqrt(var) : 0.0, mn, mx, bad);
+}
+
+// TRELLIS_DUMP_SLAT=<dir>: write each flow's final latent (and its voxel coords) as
+// <dir>/<name>.bin = i32 N, i32 C, i32 has_coords, i32 coords[N*3] (if has_coords), f32 feats[N*C]
+// (feats channel-major: feats[c + C*n]). Debug-only, for A/B of the flow stages between two runs
+// (tools/compare_slat_dumps.py); same "debug env -> file" convention as TRELLIS_DUMP_POST.
+static void dump_slat_env(const char* name, int N, int C, const vector<std::array<int,3>>* coords,
+                          const vector<float>& feats) {
+    const char* dir = std::getenv("TRELLIS_DUMP_SLAT");
+    if (!dir) return;
+    const std::string path = std::string(dir) + "/" + name + ".bin", part = path + ".part";
+    FILE* f = fopen(part.c_str(), "wb");   // write .part, rename when complete (no half files)
+    if (!f) { fprintf(stderr, "      [dump] cannot open %s\n", part.c_str()); return; }
+    const int has_coords = coords ? 1 : 0;
+    fwrite(&N, 4, 1, f); fwrite(&C, 4, 1, f); fwrite(&has_coords, 4, 1, f);
+    if (coords) for (auto& c : *coords) { int xyz[3] = {c[0], c[1], c[2]}; fwrite(xyz, 4, 3, f); }
+    const bool ok = fwrite(feats.data(), 4, feats.size(), f) == feats.size();
+    fclose(f);
+    if (!ok || std::rename(part.c_str(), path.c_str()) != 0) { fprintf(stderr, "      [dump] write failed: %s\n", path.c_str()); return; }
+    printf("      [dump] %s: N=%d C=%d coords=%d feats=%zu\n", path.c_str(), N, C, has_coords, feats.size());
+}
+
+// Run identity next to the dumps (the run log carries backend / effective FA K/V type / timings).
+static void dump_manifest_env(const trellis::TrellisParams& cfg, uint32_t seed) {
+    const char* dir = std::getenv("TRELLIS_DUMP_SLAT");
+    if (!dir) return;
+    std::error_code ec; std::filesystem::create_directories(dir, ec);
+    FILE* f = fopen((std::string(dir) + "/manifest.json").c_str(), "wb");
+    if (!f) return;
+    const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    char ts[64]; strftime(ts, sizeof ts, "%Y-%m-%dT%H:%M:%S%z", localtime(&t));
+    fprintf(f, "{\n  \"time\": \"%s\",\n  \"seed\": %u,\n  \"views\": \"%s\",\n  \"models\": \"%s\",\n"
+               "  \"res\": %d,\n  \"no_fa\": %s,\n  \"fa_kv_requested\": \"%s\",\n  \"f32\": %s,\n  \"gss\": %g,\n  \"gsh\": %g\n}\n",
+            ts, seed, cfg.views.c_str(), cfg.models.c_str(), cfg.hr_res, cfg.no_fa ? "true" : "false",
+            trellis::dit_fa_kv_name(cfg.fa_kv), cfg.f32 ? "true" : "false", cfg.gss, cfg.gsh);
+    fclose(f);
+}
+
+// TRELLIS_DUMP_SLAT=<dir> also writes the HR flow INPUTS as the fixture trellis-test-pixal3d-slat-sample
+// consumes (--stage shape_hr / tex; see that file's header for the layout: hr_coords [N,4] i32 (b,x,y,z),
+// *_cond_global [1,Lc,1024], *_cond_proj [N,2048], *_noise [N,32], *_norm_mean/std [32],
+// *_sampler_params [6]). With these, the same real conditioning can be re-sampled natively with
+// other seeds (--noise) or other attention settings without re-running DINOv3 / NAF / the cascade.
+static void dump_fixture_env(const char* stage, const vector<std::array<int,3>>& coords,
+                             const float* cond_global, int lc, const float* proj, int d_proj,
+                             const vector<float>& noise, const float* norm_mean, const float* norm_std,
+                             const float sampler6[6], const vector<float>* tex_concat) {
+    const char* dir = std::getenv("TRELLIS_DUMP_SLAT");
+    if (!dir) return;
+    const std::string d = std::string(dir) + "/", st = stage;
+    const int64_t N = (int64_t)coords.size();
+    try {
+        vector<int32_t> c4((size_t)N * 4);
+        for (int64_t i = 0; i < N; ++i) { c4[i*4] = 0; c4[i*4+1] = coords[i][0]; c4[i*4+2] = coords[i][1]; c4[i*4+3] = coords[i][2]; }
+        npy::save_i32(d + "hr_coords.npy", c4.data(), { N, 4 });
+        npy::save(d + st + "_cond_global.npy", cond_global, { 1, lc, 1024 });
+        npy::save(d + st + "_cond_proj.npy", proj, { N, d_proj });
+        npy::save(d + st + "_noise.npy", noise.data(), { N, 32 });
+        npy::save(d + st + "_norm_mean.npy", norm_mean, { 32 });
+        npy::save(d + st + "_norm_std.npy", norm_std, { 32 });
+        npy::save(d + st + "_sampler_params.npy", sampler6, { 6 });
+        if (tex_concat) npy::save(d + "f32_tex_concat_cond.npy", tex_concat->data(), { N, 32 });
+        printf("      [dump] %s fixture (%s stage): N=%lld Lc=%d d_proj=%d\n", dir, stage, (long long)N, lc, d_proj);
+    } catch (const std::exception& e) {
+        fprintf(stderr, "      [dump] fixture write failed: %s\n", e.what());
+    }
 }
 
 static const float SHAPE_MEAN[32]={0.781296f,0.018091f,-0.495192f,-0.558457f,1.060530f,0.093252f,1.518149f,-0.933218f,-0.732996f,2.604095f,-0.118341f,-2.143904f,0.495076f,-2.179512f,-2.130751f,-0.996944f,0.261421f,-2.217463f,1.260067f,-0.150213f,3.790713f,1.481266f,-1.046058f,-1.523667f,-0.059621f,2.220780f,1.621212f,0.877230f,0.567247f,-3.175944f,-3.186688f,1.578665f};
@@ -312,10 +381,12 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     }
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;
     trellis::g_no_fa = cfg.no_fa;
+    trellis::g_fa_kv = cfg.fa_kv;
     trellis::g_profile = cfg.profile;
     trellis::g_require_gpu = cfg.require_gpu;
     trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;
+    dump_manifest_env(cfg, run_seed);
     const std::string& outglb = cfg.output;
     const std::string& M = cfg.models;
     const int gpu = cfg.gpu;
@@ -365,6 +436,9 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         trellis::Model d = trellis::Model::load(M + "/ss_dec.gguf", gpu);
         vector<float> logits = trellis::ss_decode(d, zdec); d.free();
         coords = trellis::ss_coords(logits, 64, 32);
+        dump_slat_env("ss_latent", 4096, 8, nullptr, z);
+        dump_slat_env("ss_logits", (int)logits.size(), 1, nullptr, logits);
+        { vector<float> none; dump_slat_env("ss_coords", (int)coords.size(), 0, &coords, none); }
     }
     if (cfg.voxply) { FILE*f=fopen("out/myvox.ply","wb"); fprintf(f,"ply\nformat binary_little_endian 1.0\nelement vertex %zu\nproperty float x\nproperty float y\nproperty float z\nelement face 0\nproperty list uchar int vertex_indices\nend_header\n",coords.size()); for(auto&c:coords){float pp[3]={(c[0]+0.5f)/32-0.5f,(c[1]+0.5f)/32-0.5f,(c[2]+0.5f)/32-0.5f}; fwrite(pp,4,3,f);} fclose(f); }
     printf("      active voxels @res32 = %d  (%.1fs)\n", (int)coords.size(), now() - t_stage);
@@ -392,6 +466,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     for (size_t n = 0; n < coords.size(); ++n) for (int c = 0; c < 32; ++c)
         lr_dn[(size_t)c + 32*n] = lr_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
     slat_stats("LR slat (res32, MV)", lr_dn);
+    dump_slat_env("lr_slat", (int)coords.size(), 32, &coords, lr_dn);
     printf("      LR shape SLAT (%.1fs)\n", now() - t_stage); t_stage = now();
 
     vector<std::array<int,3>> hr_coords;
@@ -440,6 +515,8 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         c.proj.clear(); c.proj.shrink_to_fit();
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * shc.size());
+        { const float sp6[6] = { 12, cfg.gsh, 0.5f, 0.6f, 1.0f, 3.0f };   // = mv_shape_flow's SamplerParams
+          dump_fixture_env("shape", shc, c.global.data(), c.n_global, proj_sp.data(), c.d_proj, nz, SHAPE_MEAN, SHAPE_STD, sp6, nullptr); }
         slat_norm = mv_shape_flow(W.shape1024, cfg, F32, gpu, shc,
                                   c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
         if (slat_norm.empty()) return 1;
@@ -449,6 +526,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     for (int n = 0; n < N; ++n) for (int c = 0; c < 32; ++c)
         slat_dn[(size_t)c + 32*n] = slat_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
     slat_stats("HR slat (MV)", slat_dn);
+    dump_slat_env("hr_slat", N, 32, &shc, slat_dn);
     if (cfg.dump_slat) {
         FILE* f = fopen("/tmp/hr_slat.bin", "wb");
         if (f) { int n = N, res = RES; fwrite(&n,4,1,f); fwrite(&res,4,1,f);
@@ -503,9 +581,14 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
                 return run->forward(x64, ts, cn, pj);
             };
             trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6f; sp.gi1=0.9f; sp.rescale_t=3.0f;
-            texlat = trellis::sample_flow(fwdp, noise((size_t)32*N), c.global.data(), neg_g.data(), proj_sp.data(), neg_p.data(), sp);
+            vector<float> tex_nz = noise((size_t)32*N);
+            { const float sp6[6] = { 12, 1.0f, 0.0f, 0.6f, 0.9f, 3.0f };
+              dump_fixture_env("tex", shc, c.global.data(), c.n_global, proj_sp.data(), c.d_proj, tex_nz, TEX_MEAN, TEX_STD, sp6, &slat_norm); }
+            texlat = trellis::sample_flow(fwdp, tex_nz, c.global.data(), neg_g.data(), proj_sp.data(), neg_p.data(), sp);
             delete run; m.free();
             for (int n = 0; n < N; ++n) for (int cc = 0; cc < 32; ++cc) texlat[(size_t)cc + 32*n] = texlat[(size_t)cc + 32*n]*TEX_STD[cc] + TEX_MEAN[cc];
+            slat_stats("tex slat (MV)", texlat);
+            dump_slat_env("tex_slat", N, 32, &shc, texlat);
         }
         {
             trellis::Model m = trellis::Model::load(M + "/tex_dec.gguf", gpu);
@@ -693,6 +776,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
     // Publish the cross-module flags this run wants (modules read them with an env fallback).
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;  // f16 default (rope bug was the real issue)
     trellis::g_no_fa = cfg.no_fa;
+    trellis::g_fa_kv = cfg.fa_kv;
     trellis::g_profile = cfg.profile;
     trellis::g_require_gpu = cfg.require_gpu;
     trellis::g_gpu_auto = !cfg.gpu_set;

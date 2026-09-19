@@ -1,4 +1,5 @@
 #include "trellis_args.h"
+#include "dit.h"   // dit_fa_kv_parse
 
 #include <cstdio>
 #include <cstdlib>
@@ -102,6 +103,8 @@ void print_usage(const char* argv0, bool server) {
         "      --bg-only           background removal only: write the cutout and skip the rest\n"
         "      --f32               f32 sparse-conv compute\n"
         "      --no-fa             disable FlashAttention\n"
+        "      --fa-kv T           FlashAttention K/V storage: auto|bf16|f16|f32 (default auto =\n"
+        "                          bf16 on every backend; f16 is the old TRELLIS_FA_FAST path)\n"
         "      --profile           time one forward of every flow DiT node by node and print\n"
         "                          the per-role / per-op / per-block breakdown\n"
         "      --require-gpu       refuse CPU fallback\n"
@@ -181,6 +184,10 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--bg-only")              { p.bg_only = true; p.dump_bg = true; }
         else if (a == "--f32")                  { p.f32 = true; }
         else if (a == "--no-fa")                { p.no_fa = true; }
+        else if (a == "--fa-kv")                { const char* v = need(a.c_str()); if (!v) return false;
+                                                  const int kv = trellis::dit_fa_kv_parse(v);
+                                                  if (kv < 0) { fprintf(stderr, "--fa-kv: expected auto|bf16|f16|f32, got '%s'\n", v); return false; }
+                                                  p.fa_kv = kv; }
         else if (a == "--profile")              { p.profile = true; }
         else if (a == "--require-gpu")          { p.require_gpu = true; }
         else if (a == "--threads")              { const char* v = need(a.c_str()); if (!v) return false; p.threads = atoi(v); }
