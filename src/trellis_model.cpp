@@ -34,6 +34,7 @@ int trellis_fseek64(FILE* f, int64_t offset, int origin) {
 namespace trellis {
 
 bool g_require_gpu = false;   // --require-gpu; set by trellis_run
+bool g_gpu_auto = false;      // CLI/server set true only when --gpu was omitted
 int  g_cpu_threads = 0;       // --threads; 0 = all cores. Set by trellis_run.
 
 // ggml_backend_cpu_init() leaves the backend on ggml's built-in default thread
@@ -71,40 +72,50 @@ static ggml_backend* make_backend(int gpu) {
         fprintf(stderr, "[trellis] CUDA init failed on device %d\n", gpu);
     }
 #endif
-    // Generic GPU path (e.g. Vulkan when built without CUDA). Enumerate GPU/IGPU
-    // devices in backend order; `--gpu N` selects the N-th (matching the CUDA
-    // path's index semantics — fixes #16, where --gpu was ignored on Vulkan). The
-    // default `--gpu 0` keeps the "largest VRAM" heuristic: enumeration order can
-    // put a small iGPU first, and the cascade is VRAM-hungry, so device 0 alone is
-    // a poor default. An explicit index >0 is honored verbatim.
+    // Generic GPU path (e.g. Vulkan when built without CUDA). Keep automatic
+    // selection separate from an explicit --gpu N. In auto mode prefer a discrete
+    // GPU over every IGPU/UMA device, then use memory_total only as a tie-breaker
+    // within the same class. UMA adapters can report system RAM as memory_total
+    // (e.g. 104 GB on a Ryzen APU), which must not outrank an RTX 4090.
     {
         std::vector<ggml_backend_dev_t> gpus;
         for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
             ggml_backend_dev_t d = ggml_backend_dev_get(i);
             enum ggml_backend_dev_type t = ggml_backend_dev_type(d);
-            // IGPU: integrated GPUs (e.g. Vulkan on a UMA APU) report a distinct type.
             if (t == GGML_BACKEND_DEVICE_TYPE_GPU || t == GGML_BACKEND_DEVICE_TYPE_IGPU)
                 gpus.push_back(d);
         }
         ggml_backend_dev_t chosen = nullptr;
         size_t chosen_mem = 0;
-        if (gpu > 0 && (size_t) gpu < gpus.size()) {
-            chosen = gpus[(size_t) gpu];
-            ggml_backend_dev_props pr; ggml_backend_dev_get_props(chosen, &pr);
-            chosen_mem = pr.memory_total;
-        } else if (!gpus.empty()) {
-            if (gpu > 0)
-                fprintf(stderr, "[trellis] --gpu %d out of range (%zu GPU device(s) found); using the largest\n",
+        if (!g_gpu_auto) {
+            if (gpu >= 0 && (size_t) gpu < gpus.size()) {
+                chosen = gpus[(size_t) gpu];
+                ggml_backend_dev_props pr; ggml_backend_dev_get_props(chosen, &pr);
+                chosen_mem = pr.memory_total;
+            } else if (gpu >= 0) {
+                fprintf(stderr, "[trellis] --gpu %d out of range (%zu GPU device(s) found)\n",
                         gpu, gpus.size());
-            for (ggml_backend_dev_t d : gpus) {
-                ggml_backend_dev_props pr; ggml_backend_dev_get_props(d, &pr);
-                if (pr.memory_total > chosen_mem) { chosen_mem = pr.memory_total; chosen = d; }
+            }
+        } else if (!gpus.empty()) {
+            // Pass 1: discrete GPUs only. Pass 2: IGPU only if no discrete GPU exists.
+            for (int pass = 0; pass < 2 && !chosen; ++pass) {
+                for (ggml_backend_dev_t d : gpus) {
+                    const enum ggml_backend_dev_type t = ggml_backend_dev_type(d);
+                    const bool wanted = pass == 0 ? (t == GGML_BACKEND_DEVICE_TYPE_GPU)
+                                                  : (t == GGML_BACKEND_DEVICE_TYPE_IGPU);
+                    if (!wanted) continue;
+                    ggml_backend_dev_props pr; ggml_backend_dev_get_props(d, &pr);
+                    if (!chosen || pr.memory_total > chosen_mem) {
+                        chosen = d; chosen_mem = pr.memory_total;
+                    }
+                }
             }
         }
         if (chosen) {
             ggml_backend* b = ggml_backend_dev_init(chosen, nullptr);
             if (b) {
-                fprintf(stderr, "[trellis] using %s (%zu MB)\n", ggml_backend_name(b), chosen_mem / (1024 * 1024));
+                fprintf(stderr, "[trellis] using %s (%zu MB)%s\n", ggml_backend_name(b),
+                        chosen_mem / (1024 * 1024), g_gpu_auto ? " [auto]" : "");
                 return b;
             }
         }
