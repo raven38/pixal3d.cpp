@@ -312,6 +312,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;
     trellis::g_no_fa = cfg.no_fa;
     trellis::g_require_gpu = cfg.require_gpu;
+    trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;
     const std::string& outglb = cfg.output;
     const std::string& M = cfg.models;
@@ -631,6 +632,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;  // f16 default (rope bug was the real issue)
     trellis::g_no_fa = cfg.no_fa;
     trellis::g_require_gpu = cfg.require_gpu;
+    trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;
     const std::string& img = cfg.image;
     const std::string& outglb = cfg.output;

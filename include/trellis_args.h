@@ -10,6 +10,7 @@ namespace trellis {
 extern bool g_sparse_cast_f32;  // defined in sparse.cpp        (TRELLIS_F32)
 extern bool g_no_fa;            // defined in dit.cpp           (TRELLIS_NOFA)
 extern bool g_require_gpu;      // defined in trellis_model.cpp (TRELLIS_REQUIRE_GPU)
+extern bool g_gpu_auto;         // defined in trellis_model.cpp; true when --gpu was not specified
 extern int  g_cpu_threads;      // defined in trellis_model.cpp (TRELLIS_THREADS)
 
 // Every knob for one TRELLIS.2 image->3D run. Resolved as default -> environment
@@ -40,6 +41,7 @@ struct TrellisParams {
     std::string host   = "127.0.0.1";                           // trellis-server only
     int      port = 8080;                                       // trellis-server only
     int      gpu  = 0;                                          // >=0 GPU index, <0 CPU
+    bool     gpu_set = false;                                    // --gpu was explicitly specified
     uint32_t seed = 0;
 
     bool cascade    = true;     // 1024 cascade (default); --res 512 selects the light path
