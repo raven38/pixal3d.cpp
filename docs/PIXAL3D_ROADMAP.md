@@ -117,7 +117,7 @@
 - [x] MV preflight (#19 / PR #27)
 - [x] CUDA graph-support hardware validation (#11)
 - [x] generate final manifest from exact release model directory (#34: `models/pixal3d-f16-v1/`, `models/pixal3d-q8_0-v1/`)
-- [x] clean-install Linux, headless (Vulkan + CUDA on L4, 2026-09-12); [ ] Windows and the Linux GUI (#18)
+- [x] clean-install Linux, headless (Vulkan + CUDA on L4, 2026-09-12); [x] Windows (RTX 4090, CUDA + Vulkan, Studio MV, 2026-09-19); [ ] Linux GUI and the Windows viewer gap (#18)
 - [x] synchronize package/Tauri version with `v0.9.0-desktop-alpha` (#35)
 - [x] verify installer asset lookup for prerelease/tag-specific release (#36)
 - [x] tag `v0.9.0-desktop-alpha`
@@ -129,8 +129,8 @@
 - [x] Studio: three modes, SV panel, canonical 4-view rig, gate + Stop waiting, SV models dir / managed cache; headless smoke; Xvfb `--models-sv` assertion
 - [x] installer: `--model-manifest-sv` / `--models-dir-sv`, family contract, free-space precheck, `modelsDirSv`; bash + PowerShell contract tests
 - [x] version 0.10.0 in the five metadata files; checklist/README/roadmap updated
-- [ ] real-machine E2E A10–A12 (macOS/M4 Max, needs the SV flows on disk — see checklist)
-- [ ] tag `v0.10.0-desktop-alpha` (only after A10–A12)
+- [x] real-machine E2E A10–A12 (macOS/M4 Max/Metal, 2026-09-19: SV via Studio and CLI IoU 0.9089, canonical 4-view via Studio IoU 0.9802 — see checklist)
+- [ ] tag `v0.10.0-desktop-alpha` (after the PR is merged; the private→public decision is separate and GO-gated)
 
 ### Web alpha
 
