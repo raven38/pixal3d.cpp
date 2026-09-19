@@ -49,7 +49,7 @@ void print_usage(const char* argv0, bool server) {
         "  -o, --output PATH       output .glb                  (default model.glb)\n"
         "      --copyright TEXT    glTF asset.copyright metadata\n"
         "  -m, --models DIR        GGUF model directory\n"
-        "      --gpu N             GPU index, <0 = CPU          (default 0)\n"
+        "      --gpu N             explicit GPU index, <0 = CPU (default: auto)\n"
         "  -s, --seed N            RNG seed                     (default 42)\n"
         "      --res 512|1024|1536 geometry resolution\n"
         "      --max-tokens N      HR token budget              (default 49152)\n"
@@ -120,7 +120,11 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "-o" || a == "--output")  { const char* v = need(a.c_str()); if (!v) return false; p.output = v; }
         else if (a == "--copyright")            { const char* v = need(a.c_str()); if (!v) return false; p.copyright = v; }
         else if (a == "-m" || a == "--models")  { const char* v = need(a.c_str()); if (!v) return false; p.models = v; }
-        else if (a == "--gpu")                  { const char* v = need(a.c_str()); if (!v) return false; p.gpu = atoi(v); }
+        else if (a == "--gpu")                  { const char* v = need(a.c_str()); if (!v) return false;
+                                                  if (!parse_int_strict(v, p.gpu)) {
+                                                      fprintf(stderr, "[trellis] --gpu expects an integer, got '%s'\n", v); return false;
+                                                  }
+                                                  p.gpu_set = true; }
         else if (a == "-s" || a == "--seed")    { const char* v = need(a.c_str()); if (!v) return false; p.seed = (uint32_t)atoi(v); }
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
