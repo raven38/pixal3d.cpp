@@ -42,4 +42,8 @@ export interface GenRecord {
   input: Blob; // source image
   glb: Blob; // resulting model/gltf-binary
   thumb: Blob | null; // model-viewer snapshot for the gallery
+  /** undefined = single image (POST /generate), "mv" = Pixal3D multiview (POST /generate-mv). */
+  kind?: "mv";
+  /** Multiview only: `input` is then the first view. */
+  mv?: { meshScale: number; numViews: number };
 }
