@@ -87,6 +87,28 @@ fn model_cache_info() -> Result<model_cache::ModelCacheInfo, String> {
 }
 
 #[tauri::command]
+fn model_cache_info_sv() -> Result<model_cache::ModelCacheInfo, String> {
+    let root = model_cache::managed_root_sv()?;
+    let active = config::load().map(|c| c.models_dir_sv).unwrap_or_default();
+    model_cache::inspect(&root, &active)
+}
+
+#[tauri::command]
+fn delete_managed_model_cache_sv(state: tauri::State<ServerState>) -> Result<u64, String> {
+    let root = model_cache::managed_root_sv()?;
+    match config::load() {
+        Some(cfg) => {
+            let info = model_cache::inspect(&root, &cfg.models_dir_sv)?;
+            if info.active_is_managed {
+                server::stop(state.inner());
+            }
+        }
+        None => server::stop(state.inner()),
+    }
+    model_cache::delete_all(&root)
+}
+
+#[tauri::command]
 fn delete_managed_model_cache(state: tauri::State<ServerState>) -> Result<u64, String> {
     let root = model_cache::managed_root()?;
     match config::load() {
@@ -132,7 +154,9 @@ fn main() {
             restart_server,
             server_running,
             model_cache_info,
-            delete_managed_model_cache
+            delete_managed_model_cache,
+            model_cache_info_sv,
+            delete_managed_model_cache_sv
         ])
         .setup(|app| {
             if let Some(cfg) = config::load() {

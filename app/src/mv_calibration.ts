@@ -1,8 +1,10 @@
-import { generateMultiview, type MultiviewFile } from "./api";
+import { CANONICAL_RIG_VIEWS, generateMultiview, type MultiviewFile } from "./api";
+import { blockedReason, canGenerate, setLocalGenerating, stopWaiting, subscribeGate } from "./gate";
 import { listen } from "./tauri";
 import {
   hasErrors,
   imageAlphaStatus,
+  validateCanonicalRig,
   validateMetadata,
   type AlphaCheckResult,
   type PreflightItem,
@@ -25,13 +27,21 @@ type ViewEntry = { file: File; frame: TransformFrame; url: string };
 /** `pixal3d-mv-result` CustomEvent detail; consumed by main.ts. */
 export interface MvResultDetail {
   glb: Blob;
+  /** The first view, used as the gallery thumbnail source. */
+  input: Blob;
   name: string;
   meshScale: number;
   resolution: 1024 | 1536;
   seed: number;
-  /** The RGBA views in the order they were sent, first view first. */
-  views: Blob[];
+  /** true when no transforms.json was given (server-side canonical turntable rig). */
+  canonical: boolean;
+  /** Number of views sent to the server. */
+  numViews: number;
 }
+
+// transforms.json 無しのときにカードへ表示する姿勢名。姿勢そのもの（行列・FOV・距離）は
+// 共有 C++（transforms_json.cpp）だけが持ち、ここには持たない。
+const CANONICAL_NAMES = ["front", "right", "back", "left"] as const;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const basename = (p: string) => p.replace(/\\/g, "/").split("/").pop() || p;
@@ -96,12 +106,13 @@ export function mountMvCalibration(root: HTMLElement): void {
   injectStyle();
   root.innerHTML = `
     <div class="mvcal">
-      <div class="mvcal-head"><div><div class="mvcal-title">Pixal3D multiview</div><div class="mvcal-sub">Drop views + transforms.json, reorder them, set mesh scale, then generate.</div></div></div>
-      <div id="mvcal-drop" class="mvcal-drop" tabindex="0">Drop RGBA views + transforms.json here<br><span class="muted">or click to choose files</span><div id="mvcal-files-summary" class="mvcal-files"></div></div>
+      <div class="mvcal-head"><div><div class="mvcal-title">Pixal3D multiview</div><div class="mvcal-sub">Drop views + transforms.json, reorder them, set mesh scale, then generate. Without transforms.json, exactly four turntable views (front, right, back, left) are accepted.</div></div></div>
+      <div id="mvcal-drop" class="mvcal-drop" tabindex="0">Drop RGBA views (+ transforms.json) here<br><span class="muted">or click to choose files</span><div id="mvcal-files-summary" class="mvcal-files"></div></div>
       <input id="mvcal-files" type="file" multiple accept="image/*,.json,application/json" hidden>
       <div id="mvcal-body" hidden>
         <div id="mvcal-grid" class="mvcal-grid"></div>
-        <div class="mvcal-hint">Drag view cards to reorder. The patched transforms.json will use this frame order.</div>
+        <div id="mvcal-order-hint" class="mvcal-hint">Drag view cards to reorder. The patched transforms.json will use this frame order.</div>
+        <label id="mvcal-order-confirm" class="mvcal-hint" hidden><input id="mvcal-order-ok" type="checkbox"> I confirm the cards are ordered <b>front, right, back, left</b> (turntable, elevation 0, FOV 20°). Nothing is assumed otherwise.</label>
         <label>Mesh scale</label>
         <div class="mvcal-row"><input id="mvcal-range" type="range" min="0.02" max="2" step="0.001"><input id="mvcal-num" type="number" min="0.001" max="4" step="0.001" placeholder="required"></div>
         <div id="mvcal-status" class="mvcal-status"></div>
@@ -111,7 +122,9 @@ export function mountMvCalibration(root: HTMLElement): void {
         </div>
         <div id="mvcal-preflight" class="mvcal-preflight"></div>
         <div class="mvcal-hint">A missing mesh_scale is never guessed. Type a positive value explicitly; the slider is enabled only after that manual value exists.</div>
-        <div class="mvcal-actions"><button id="mvcal-download" class="tool-btn">Save calibrated transforms.json</button><button id="mvcal-generate" class="primary" disabled>Generate MV 3D</button><button id="mvcal-cancel" class="link-btn" disabled>Cancel</button></div>
+        <div role="note" aria-label="Multiview resource usage warning" class="mvcal-hint" style="margin-top:10px;padding:9px;border:1px solid #5a4930;border-radius:8px;background:#1a1711;color:#c9bda6"><strong style="color:#f0c978">⚠ Long-running generation</strong><div style="margin-top:4px">Multiview 1024 can take roughly <strong>10–30+ minutes</strong> on tested high-end hardware; 1536 may take substantially longer. High CPU/GPU and RAM/VRAM use are expected. Keep Trellis Studio open until the GLB is saved.</div></div>
+        <div id="mvcal-blocked" class="mvcal-status mvcal-warn" hidden></div>
+        <div class="mvcal-actions"><button id="mvcal-download" class="tool-btn">Save calibrated transforms.json</button><button id="mvcal-generate" class="primary" disabled>Generate MV 3D</button><button id="mvcal-cancel" class="link-btn" disabled>Stop waiting</button></div>
         <div id="mvcal-progress" class="mvcal-progress" hidden><div id="mvcal-stage" class="mvcal-stage">starting…</div><div id="mvcal-elapsed" class="mvcal-elapsed">0:00</div></div>
       </div>
     </div>`;
@@ -132,8 +145,16 @@ export function mountMvCalibration(root: HTMLElement): void {
   const progress = root.querySelector<HTMLElement>("#mvcal-progress")!;
   const stage = root.querySelector<HTMLElement>("#mvcal-stage")!;
   const elapsed = root.querySelector<HTMLElement>("#mvcal-elapsed")!;
+  const orderHint = root.querySelector<HTMLElement>("#mvcal-order-hint")!;
+  const orderConfirm = root.querySelector<HTMLElement>("#mvcal-order-confirm")!;
+  const orderOk = root.querySelector<HTMLInputElement>("#mvcal-order-ok")!;
+  const download = root.querySelector<HTMLButtonElement>("#mvcal-download")!;
+  const blocked = root.querySelector<HTMLElement>("#mvcal-blocked")!;
 
   let meta: TransformMeta | null = null;
+  // transforms.json が無く、ちょうど 4 枚のとき true。姿勢はサーバの canonical rig が
+  // ファイル名の自然順で割り当てるので、カード順をアップロード名（view0..3）に写す。
+  let canonical = false;
   let views: ViewEntry[] = [];
   let imageFiles: File[] = [];
   let guideReferenceScale: number | null = null;
@@ -164,6 +185,7 @@ export function mountMvCalibration(root: HTMLElement): void {
 
   const orderedMeta = () => {
     const meshScale = currentScale();
+    if (canonical) throw new Error("the canonical rig has no transforms.json to patch");
     if (!meta || meshScale == null) throw new Error("mesh_scale is required");
     return { ...meta, mesh_scale: meshScale, frames: views.map((v) => v.frame) };
   };
@@ -200,19 +222,35 @@ export function mountMvCalibration(root: HTMLElement): void {
       ul.appendChild(li);
     }
     preflight.appendChild(ul);
-    gen.disabled = generating || errors > 0;
+    applyGate();
   };
+
+  // Generate の可否 = プリフライトに error 無し && 共有ゲート（サーバ online・他の生成が
+  // 走っていない・Stop waiting 後の完了確認済み）。
+  const applyGate = () => {
+    const errors = lastPreflight.some((i) => i.level === "error");
+    const why = blockedReason();
+    gen.disabled = generating || errors || !canGenerate();
+    blocked.hidden = generating || !why || !views.length;
+    blocked.textContent = why ? `Generate is paused: ${why}.` : "";
+  };
+  subscribeGate(applyGate);
 
   const runPreflight = async () => {
     const meshScale = currentScale();
-    const metaForValidation = meta
-      ? ({ ...meta, mesh_scale: meshScale ?? undefined } as TransformMeta)
-      : null;
-    const items = validateMetadata(
-      metaForValidation,
-      views.map((v) => v.frame.file_path),
-      Number(res.value),
-    );
+    let items: PreflightItem[];
+    if (canonical) {
+      items = validateCanonicalRig(imageFiles.length, meshScale, Number(res.value), orderOk.checked);
+    } else {
+      const metaForValidation = meta
+        ? ({ ...meta, mesh_scale: meshScale ?? undefined } as TransformMeta)
+        : null;
+      items = validateMetadata(
+        metaForValidation,
+        views.map((v) => v.frame.file_path),
+        Number(res.value),
+      );
+    }
     const alphaResults = await Promise.all(
       views.map(async (v) => ({ view: v, result: await alphaStatus(v.file) })),
     );
@@ -260,9 +298,11 @@ export function mountMvCalibration(root: HTMLElement): void {
     const cover = bounds.filter(Boolean).map((b) => Math.max(b!.w, b!.h));
     const spread = cover.length ? Math.max(...cover) - Math.min(...cover) : 0;
     status.className = `mvcal-status ${spread > 0.35 ? "mvcal-warn" : "mvcal-good"}`;
-    const source = validScale(meta?.mesh_scale) && Math.abs(meta.mesh_scale - scale) < 1e-9
-      ? "from transforms.json"
-      : "manual value (not estimated)";
+    const source = canonical
+      ? "manual value for the canonical rig (not estimated)"
+      : validScale(meta?.mesh_scale) && Math.abs(meta.mesh_scale - scale) < 1e-9
+        ? "from transforms.json"
+        : "manual value (not estimated)";
     status.textContent = `scale ${scale.toFixed(3)} · ${source} · ${views.length} views${spread > 0.35 ? " · view framing differs strongly; check cameras/FOV" : ""}`;
   };
 
@@ -274,7 +314,9 @@ export function mountMvCalibration(root: HTMLElement): void {
       card.draggable = true;
       card.dataset.index = String(i);
       card.innerHTML = `<img src="${v.url}" alt="view ${i}"><div class="mvcal-guide"></div><div class="mvcal-name"></div><div class="mvcal-order">${i + 1}</div>`;
-      (card.querySelector(".mvcal-name") as HTMLElement).textContent = v.frame.file_path;
+      (card.querySelector(".mvcal-name") as HTMLElement).textContent = canonical
+        ? `${CANONICAL_NAMES[i] ?? "?"} · ${v.file.name}`
+        : v.frame.file_path;
       card.addEventListener("dragstart", () => { dragging = i; card.classList.add("dragging"); });
       card.addEventListener("dragend", () => { dragging = -1; card.classList.remove("dragging"); });
       card.addEventListener("dragover", (e) => e.preventDefault());
@@ -295,9 +337,43 @@ export function mountMvCalibration(root: HTMLElement): void {
 
   const reconcile = async () => {
     cleanupViews();
+    canonical = false;
+    orderConfirm.hidden = true;
+    orderHint.hidden = false;
+    download.hidden = false;
     if (!meta) {
-      body.hidden = true;
-      summary.textContent = `${imageFiles.length} image(s), transforms.json missing`;
+      // transforms.json 無し: ちょうど 4 枚なら canonical rig（サーバ側で合成）。
+      // それ以外の枚数は受け付けない（4 視点でないと multiview モデルが破綻する）。
+      if (imageFiles.length !== CANONICAL_RIG_VIEWS) {
+        body.hidden = true;
+        summary.textContent = imageFiles.length
+          ? `${imageFiles.length} image(s) without transforms.json — exactly ${CANONICAL_RIG_VIEWS} turntable views (front, right, back, left) are required; add transforms.json for any other camera setup`
+          : "no images";
+        return;
+      }
+      canonical = true;
+      orderConfirm.hidden = false;
+      orderHint.hidden = true;
+      download.hidden = true;   // 姿勢は C++ にしか無いので JSON は作れない
+      orderOk.checked = false;
+      const sorted = [...imageFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      sorted.forEach((f, i) => {
+        views.push({
+          file: f,
+          frame: { file_path: f.name, transform_matrix: [] },
+          url: URL.createObjectURL(f),
+        });
+        void i;
+      });
+      summary.textContent = `${views.length} views · canonical turntable rig (no transforms.json)`;
+      guideReferenceScale = null;
+      num.value = "";
+      range.value = "0.2";
+      range.disabled = true;
+      body.hidden = false;
+      renderCards();
+      await renderGuide();
+      await runPreflight();
       return;
     }
     const byName = new Map<string, File>();
@@ -337,6 +413,7 @@ export function mountMvCalibration(root: HTMLElement): void {
 
   const ingest = async (list: File[]) => {
     const tf = list.find((f) => f.name === "transforms.json" || f.name.toLowerCase().endsWith(".json"));
+    if (!tf) meta = null;   // 新しいドロップに JSON が無ければ、前回の transforms は引き継がない
     if (tf) {
       try {
         meta = JSON.parse(await tf.text()) as TransformMeta;
@@ -373,9 +450,10 @@ export function mountMvCalibration(root: HTMLElement): void {
     void runPreflight();
   });
   res.addEventListener("change", () => void runPreflight());
+  orderOk.addEventListener("change", () => void runPreflight());
 
-  root.querySelector("#mvcal-download")!.addEventListener("click", async () => {
-    if (!meta) return;
+  download.addEventListener("click", async () => {
+    if (!meta || canonical) return;
     const items = await runPreflight();
     if (hasErrors(items)) {
       alert("Fix preflight errors before saving calibrated transforms.json");
@@ -388,15 +466,19 @@ export function mountMvCalibration(root: HTMLElement): void {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
 
-  cancel.addEventListener("click", () => activeAbort?.abort());
+  cancel.addEventListener("click", () => {
+    activeAbort?.abort();
+    stopWaiting();
+  });
   gen.addEventListener("click", async () => {
-    if (!meta || !views.length || generating) return;
+    if ((!meta && !canonical) || !views.length || generating || !canGenerate()) return;
     const items = await runPreflight();
     if (hasErrors(items)) return;
 
     const meshScale = currentScale();
     if (meshScale == null) return;
     generating = true;
+    setLocalGenerating(true);
     activeAbort = new AbortController();
     gen.disabled = true;
     cancel.disabled = false;
@@ -410,19 +492,20 @@ export function mountMvCalibration(root: HTMLElement): void {
       const resolution = Number(res.value) === 1536 ? 1536 : 1024;
       const seedValue = Math.max(0, Number(seed.value) || 42);
       const { glb } = await generateMultiview(
-        patchBlob(),
+        canonical ? null : patchBlob(),
         mv,
-        { seed: seedValue, resolution, uv: "xatlas", numViews: views.length, autoMeshScale: false },
+        { seed: seedValue, resolution, uv: "xatlas", numViews: views.length, autoMeshScale: false, meshScale },
         activeAbort.signal,
       );
       stage.textContent = "complete";
       const detail: MvResultDetail = {
-        glb, name: "multiview", meshScale, resolution, seed: seedValue, views: views.map((v) => v.file),
+        glb, input: views[0].file, name: canonical ? "canonical4" : "multiview",
+        meshScale, resolution, seed: seedValue, canonical, numViews: views.length,
       };
       window.dispatchEvent(new CustomEvent<MvResultDetail>("pixal3d-mv-result", { detail }));
     } catch (e) {
       if (activeAbort.signal.aborted) {
-        stage.textContent = "cancelled";
+        stage.textContent = "stopped waiting — the server keeps computing this generation";
       } else {
         stage.textContent = "failed";
         window.dispatchEvent(new CustomEvent("pixal3d-mv-error", {
@@ -431,11 +514,12 @@ export function mountMvCalibration(root: HTMLElement): void {
       }
     } finally {
       generating = false;
+      setLocalGenerating(false);
       activeAbort = null;
       if (timer != null) window.clearInterval(timer);
       timer = null;
       cancel.disabled = true;
-      gen.disabled = hasErrors(lastPreflight);
+      applyGate();
     }
   });
 }

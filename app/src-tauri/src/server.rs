@@ -179,8 +179,10 @@ pub fn start(
         app,
         &sink,
         &format!(
-            "config: bin={} models={} gpu={} backend={} host={} port={}",
-            cfg.server_bin, cfg.models_dir, cfg.gpu, cfg.backend, cfg.host, cfg.port
+            "config: bin={} models={} models_sv={} gpu={} backend={} host={} port={}",
+            cfg.server_bin, cfg.models_dir,
+            if cfg.models_dir_sv.trim().is_empty() { "(none)" } else { cfg.models_dir_sv.as_str() },
+            cfg.gpu.map_or("auto".to_string(), |g| g.to_string()), cfg.backend, cfg.host, cfg.port
         ),
     );
 
@@ -216,10 +218,17 @@ pub fn start(
 
     let mut cmd = Command::new(&cfg.server_bin);
     cmd.arg("--models")
-        .arg(&cfg.models_dir)
-        .arg("--gpu")
-        .arg(cfg.gpu.to_string())
-        .arg("--host")
+        .arg(&cfg.models_dir);
+    // SV セットは任意。空なら渡さない（サーバは sv.configured=false を申告する）。
+    if !cfg.models_dir_sv.trim().is_empty() {
+        cmd.arg("--models-sv").arg(&cfg.models_dir_sv);
+    }
+    // Only an explicit index is forwarded; without --gpu the server auto-selects
+    // (discrete GPU preferred, #23).
+    if let Some(gpu) = cfg.gpu {
+        cmd.arg("--gpu").arg(gpu.to_string());
+    }
+    cmd.arg("--host")
         .arg(&cfg.host)
         .arg("--port")
         .arg(cfg.port.to_string())

@@ -23,8 +23,16 @@ export const DEFAULT_PARAMS: GenParams = {
 export interface AppConfig {
   serverBin: string;
   modelsDir: string;
+  /**
+   * Optional second model directory holding the single-view (SV) set. Empty means SV is
+   * not installed; the server then reports `sv.configured=false` and SV mode stays disabled.
+   * MV (f16) and SV (q8_0) share five file names with different contents, so they never
+   * live in one directory.
+   */
+  modelsDirSv: string;
   backend: string;
-  gpu: number;
+  /** GPU index for trellis-server `--gpu`; null = let the server auto-select (discrete GPU preferred). */
+  gpu: number | null;
   host: string;
   port: number;
   /** where generated GLBs are auto-saved (Tauri only). */
@@ -33,17 +41,47 @@ export interface AppConfig {
   configured: boolean;
 }
 
+/** Which pipeline produced a generation. Absent on records written before 0.10.0 = trellis2. */
+export type GenMode = "trellis2" | "pixal3d-sv" | "pixal3d-mv";
+
 /** One persisted generation (IndexedDB record). */
 export interface GenRecord {
   id: string;
   ts: number;
   name: string;
   params: GenParams;
+  /** Optional so records from 0.9.0 stay readable without a DB migration. */
+  mode?: GenMode;
   input: Blob; // source image
   glb: Blob; // resulting model/gltf-binary
   thumb: Blob | null; // model-viewer snapshot for the gallery
-  /** undefined = single image (POST /generate), "mv" = Pixal3D multiview (POST /generate-mv). */
-  kind?: "mv";
-  /** Multiview only: `input` is then the first view. */
+  /** pixal3d-mv only: `input` is then the first view. */
   mv?: { meshScale: number; numViews: number };
+}
+
+/** One model set as reported by trellis-server GET /capabilities. */
+export interface ModelSetCapability {
+  /** A directory is configured for this family. */
+  configured: boolean;
+  /**
+   * The manifest passes the family/name/role contract, all nine files exist with the
+   * manifest's sizes, and the family matches the endpoint. SHA256 is the installer's job.
+   */
+  available: boolean;
+  model_set?: string;
+  version?: string;
+  model_family?: string;
+  reason?: string;
+}
+
+/**
+ * GET /capabilities. `busy` is true while the server runs any generation; `completed`
+ * counts finished generations (success or failure). Studio uses both to decide when it
+ * may re-enable Generate after "Stop waiting" (the server keeps computing).
+ */
+export interface Capabilities {
+  busy: boolean;
+  completed: number;
+  mv: ModelSetCapability;
+  sv: ModelSetCapability;
 }

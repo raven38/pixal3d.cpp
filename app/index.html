@@ -27,6 +27,14 @@
 
     <main class="workspace">
       <section class="panel panel-left">
+        <!-- 3 つの明示モード。既存の TRELLIS.2 単一画像 UI は既定のまま残す（0.9.0 互換）。 -->
+        <div class="mode-bar" role="radiogroup" aria-label="Generation mode">
+          <label class="mode-opt"><input type="radio" name="gen-mode" id="mode-trellis2" value="trellis2" checked /><span>TRELLIS.2 · single image</span></label>
+          <label class="mode-opt"><input type="radio" name="gen-mode" id="mode-pixal3d-sv" value="pixal3d-sv" /><span>Pixal3D SV · single image</span></label>
+          <label class="mode-opt"><input type="radio" name="gen-mode" id="mode-pixal3d-mv" value="pixal3d-mv" /><span>Pixal3D MV · multiview</span></label>
+        </div>
+
+        <div id="trellis2-panel" class="mode-panel">
         <div id="dropzone" class="dropzone" tabindex="0">
           <img id="input-preview" class="input-preview hidden" alt="input" />
           <div id="dropzone-hint" class="dropzone-hint">
@@ -36,8 +44,6 @@
           </div>
           <input id="file-input" type="file" accept="image/*" hidden />
         </div>
-
-        <div id="mv-calibration-mount"></div>
 
         <div class="controls">
           <label class="ctl">
@@ -80,8 +86,13 @@
           <div class="bar"><div class="bar-fill"></div></div>
           <div id="progress-stage" class="progress-stage muted">starting…</div>
           <div id="progress-elapsed" class="progress-elapsed muted">0:00</div>
-          <button id="cancel-btn" class="link-btn">Cancel</button>
+          <!-- 応答待ちの中止。サーバ側の生成は止まらない（gate.ts が再有効化を判定する）。 -->
+          <button id="cancel-btn" class="link-btn">Stop waiting</button>
         </div>
+        </div>
+
+        <div id="sv-mount" class="mode-panel" hidden></div>
+        <div id="mv-calibration-mount" class="mode-panel" hidden></div>
       </section>
 
       <section class="panel viewer-panel">
@@ -115,6 +126,5 @@
     <div id="toasts" class="toasts"></div>
 
     <script type="module" src="./src/main.ts"></script>
-    <script type="module" src="./src/mv_entry.ts"></script>
   </body>
 </html>

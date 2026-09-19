@@ -5,12 +5,18 @@ on:
     paths:
       - 'install/install.sh'
       - 'install/install.ps1'
+      - 'install/test_installer_manifest.sh'
+      - 'install/test_installer_manifest.ps1'
+      - 'web/app/manifest_conformance.json'
       - '.github/workflows/installer-manifest-smoke.yml'
   push:
     branches: [main]
     paths:
       - 'install/install.sh'
       - 'install/install.ps1'
+      - 'install/test_installer_manifest.sh'
+      - 'install/test_installer_manifest.ps1'
+      - 'web/app/manifest_conformance.json'
       - '.github/workflows/installer-manifest-smoke.yml'
   workflow_dispatch:
 
@@ -30,58 +36,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Create tiny nine-file model set
-        shell: python
-        run: |
-          import hashlib, json, os
-          from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP']) / 'pixal3d-models'
-          root.mkdir(parents=True, exist_ok=True)
-          roles = [
-              ('dinov3.gguf', 'image_encoder'),
-              ('pixal3d_naf.gguf', 'naf'),
-              ('pixal3d_ss_flow_mv.gguf', 'ss_flow'),
-              ('ss_dec.gguf', 'ss_decoder'),
-              ('pixal3d_shape_flow_512_mv.gguf', 'shape_flow_512'),
-              ('shape_dec.gguf', 'shape_decoder'),
-              ('pixal3d_shape_flow_1024_mv.gguf', 'shape_flow_1024'),
-              ('pixal3d_tex_flow_1024_mv.gguf', 'texture_flow_1024'),
-              ('tex_dec.gguf', 'texture_decoder'),
-          ]
-          files = []
-          for i, (name, role) in enumerate(roles):
-              data = f'installer-smoke-{i}-{role}'.encode()
-              (root / name).write_bytes(data)
-              files.append({'name': name, 'role': role, 'required': True,
-                            'size_bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
-          manifest = {'schema_version': 1, 'model_set': 'pixal3d-installer-smoke', 'version': 'v1', 'files': files}
-          (root / 'pixal3d-models.json').write_text(json.dumps(manifest, indent=2) + '\n')
-      - name: Linux verify-only accepts intact set and rejects corruption
+      # 0.10.0: MV + SV の 2 ディレクトリ契約。無傷の受理、破損・欠損・サイズ不一致・
+      # トラバーサル・family 取り違え・混在 manifest の拒否、conformance vector 18 件、
+      # そして Linux では --asset-base-url 経由の実インストール経路（modelsDirSv の書き出し、
+      # SV 失敗時に MV が無傷・config 未書き込み・.part 無し、空き容量の事前拒否）。
+      - name: Linux installer contract (bash 5)
         if: runner.os == 'Linux'
         shell: bash
-        run: |
-          set -euo pipefail
-          ROOT="$RUNNER_TEMP/pixal3d-models"
-          bash install/install.sh --verify-models --models-dir "$ROOT" --model-manifest "$ROOT/pixal3d-models.json"
-          printf 'corrupt' >> "$ROOT/tex_dec.gguf"
-          if bash install/install.sh --verify-models --models-dir "$ROOT" --model-manifest "$ROOT/pixal3d-models.json"; then
-            echo 'corrupt model set was incorrectly accepted'
-            exit 1
-          fi
-          echo INSTALLER_MANIFEST_LINUX_OK
-      - name: Windows PowerShell 7 verify-only accepts intact set and rejects corruption
+        run: bash install/test_installer_manifest.sh
+      - name: Windows PowerShell 7 installer contract
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $root = Join-Path $env:RUNNER_TEMP 'pixal3d-models'
-          & pwsh -NoProfile -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
-          if ($LASTEXITCODE -ne 0) { throw "intact model set failed verification: rc=$LASTEXITCODE" }
-          [System.IO.File]::AppendAllText((Join-Path $root 'tex_dec.gguf'), 'corrupt')
-          & pwsh -NoProfile -File install/install.ps1 -VerifyModels -ModelsDir $root -ModelManifest (Join-Path $root 'pixal3d-models.json')
-          if ($LASTEXITCODE -eq 0) { throw 'corrupt model set was incorrectly accepted' }
-          Write-Host 'INSTALLER_MANIFEST_WINDOWS_PWSH_OK'
-          exit 0
+          & pwsh -NoProfile -File install/test_installer_manifest.ps1
+          if ($LASTEXITCODE -ne 0) { throw "installer contract failed: rc=$LASTEXITCODE" }
       - name: Diagnose Windows PowerShell 5.1 UTF-8 file parsing
         if: runner.os == 'Windows'
         shell: pwsh

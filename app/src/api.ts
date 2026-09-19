@@ -6,7 +6,7 @@
 //                        seed/resolution/uv fields -> model/gltf-binary.
 
 import { apiBase, loadConfig } from "./config";
-import type { GenParams } from "./types";
+import type { Capabilities, GenParams } from "./types";
 
 async function base(): Promise<string> {
   return apiBase(await loadConfig());
@@ -20,6 +20,32 @@ export async function health(timeoutMs = 2000): Promise<boolean> {
     return res.ok && (await res.text()).trim() === "ok";
   } catch {
     return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * GET /capabilities. Returns null when the server is unreachable or predates 0.10.0
+ * (404): callers treat null as "no SV, no busy information" and fall back to the
+ * 0.9.0 behaviour.
+ */
+export async function capabilities(timeoutMs = 2000): Promise<Capabilities | null> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${await base()}/capabilities`, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const j = (await res.json()) as Partial<Capabilities>;
+    if (!j || typeof j !== "object" || typeof j.busy !== "boolean" || !j.mv || !j.sv) return null;
+    return {
+      busy: j.busy,
+      completed: typeof j.completed === "number" ? j.completed : 0,
+      mv: j.mv,
+      sv: j.sv,
+    };
+  } catch {
+    return null;
   } finally {
     clearTimeout(t);
   }
@@ -69,6 +95,37 @@ export async function generate(
   return parseGenerateResponse(res);
 }
 
+export interface SingleViewParams {
+  /** Horizontal FOV of the front gauge camera, radians, 0 < fov < pi. Default 20 degrees. */
+  fov: number;
+  seed: number;
+  uv: GenParams["uv"];
+}
+
+/**
+ * Pixal3D single-view generation (POST /generate-sv). The image must be a pre-matted RGBA
+ * PNG; the server crops it like the reference preprocess and synthesizes the front gauge
+ * camera (mesh_scale fixed at 1.0). Resolution is 1024 only in this release, so it is not a
+ * parameter. Every other field is rejected by the server's whitelist.
+ */
+export async function generateSingleView(
+  image: Blob,
+  params: SingleViewParams,
+  signal?: AbortSignal,
+): Promise<GenerateResult> {
+  if (!(params.fov > 0 && params.fov < Math.PI)) {
+    throw new Error("single-view camera FOV must satisfy 0 < fov < pi radians");
+  }
+  const fd = new FormData();
+  fd.append("image", image, "input.png");
+  fd.append("fov", String(params.fov));
+  fd.append("seed", String(params.seed));
+  fd.append("resolution", "1024");
+  fd.append("uv", params.uv);
+  const res = await fetch(`${await base()}/generate-sv`, { method: "POST", body: fd, signal });
+  return parseGenerateResponse(res);
+}
+
 /** One pre-matted RGBA view used by Pixal3D multiview generation. */
 export interface MultiviewFile {
   /** Must match a frame.file_path in transforms.json (relative paths are allowed). */
@@ -84,6 +141,11 @@ export interface MultiviewParams {
   /** Optional limit: use only the first N frames from transforms.json. */
   numViews?: number;
   /**
+   * Required when `transforms` is null (canonical rig). Ignored otherwise — the value inside
+   * transforms.json wins there, and the client validates it before sending.
+   */
+  meshScale?: number;
+  /**
    * Safety marker used by the desktop MV preflight UI. Only false is accepted here:
    * this client requires an explicit positive mesh_scale before sending the request and
    * does not opt into the experimental auto-estimator.
@@ -91,15 +153,35 @@ export interface MultiviewParams {
   autoMeshScale?: false;
 }
 
+/** The canonical rig (no transforms.json) needs exactly four turntable views. */
+export const CANONICAL_RIG_VIEWS = 4;
+
 function toMultiviewForm(
-  transforms: Blob,
+  transforms: Blob | null,
   views: MultiviewFile[],
   p: MultiviewParams,
 ): FormData {
   if (views.length === 0) throw new Error("at least one multiview image is required");
   const fd = new FormData();
-  fd.append("transforms", transforms, "transforms.json");
-  views.forEach((view, i) => fd.append(`view${i}`, view.blob, view.name));
+  if (transforms) {
+    fd.append("transforms", transforms, "transforms.json");
+    views.forEach((view, i) => fd.append(`view${i}`, view.blob, view.name));
+  } else {
+    // Canonical rig: the server assigns front/right/back/left by the natural order of the
+    // staged file names, so the upload names encode the card order. The poses themselves
+    // live only in the shared C++ (transforms_json.cpp) — not copied here.
+    if (views.length !== CANONICAL_RIG_VIEWS) {
+      throw new Error(`without transforms.json exactly ${CANONICAL_RIG_VIEWS} views are required (front, right, back, left)`);
+    }
+    if (!(typeof p.meshScale === "number" && Number.isFinite(p.meshScale) && p.meshScale > 0)) {
+      throw new Error("without transforms.json an explicit positive mesh_scale is required; nothing is assumed");
+    }
+    views.forEach((view, i) => {
+      const ext = (view.name.match(/\.(png|jpe?g|webp)$/i)?.[0] ?? ".png").toLowerCase();
+      fd.append(`view${i}`, view.blob, `view${i}${ext}`);
+    });
+    fd.append("mesh_scale", String(p.meshScale));
+  }
   fd.append("seed", String(p.seed));
   fd.append("resolution", String(p.resolution));
   fd.append("uv", p.uv);
@@ -127,17 +209,18 @@ async function validateMultiviewTransforms(transforms: Blob): Promise<void> {
 
 /**
  * Pixal3D multiview generation. `transforms` is transforms.json and each view name must
- * match the corresponding `frames[].file_path` entry. Views must already contain a real
+ * match the corresponding `frames[].file_path` entry; pass null for the canonical
+ * four-view turntable rig, which then needs `params.meshScale`. Views must already contain a real
  * alpha matte, matching `trellis-cli --views DIR` semantics. `mesh_scale` is required and
  * validated client-side before the request; the C++ parser enforces the same invariant.
  */
 export async function generateMultiview(
-  transforms: Blob,
+  transforms: Blob | null,
   views: MultiviewFile[],
   params: MultiviewParams,
   signal?: AbortSignal,
 ): Promise<GenerateResult> {
-  await validateMultiviewTransforms(transforms);
+  if (transforms) await validateMultiviewTransforms(transforms);
   const res = await fetch(`${await base()}/generate-mv`, {
     method: "POST",
     body: toMultiviewForm(transforms, views, params),

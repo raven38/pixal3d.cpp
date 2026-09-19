@@ -329,6 +329,96 @@ bool synthesize_canonical_rig(const std::vector<std::string>& image_files, float
     return true;
 }
 
+// transforms.json の書き出し。読み戻したときに float へ完全復元できるよう %.9g で出す
+// （float の往復に必要な桁数は 9 桁）。
+bool write_transforms_json(const std::string& path, const TransformsFile& tf, std::string& error) {
+    if (tf.frames.empty()) { error = "refusing to write transforms.json with no frames"; return false; }
+    if (!(tf.mesh_scale > 0.0f) || !std::isfinite(tf.mesh_scale)) {
+        error = "refusing to write transforms.json without a finite positive mesh_scale";
+        return false;
+    }
+    std::ostringstream os;
+    os << "{\n";
+    if (tf.has_camera_angle_x) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.9g", (double)tf.camera_angle_x);
+        os << "  \"camera_angle_x\": " << buf << ",\n";
+    }
+    {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.9g", (double)tf.mesh_scale);
+        os << "  \"mesh_scale\": " << buf << ",\n";
+    }
+    os << "  \"frames\": [\n";
+    for (size_t i = 0; i < tf.frames.size(); ++i) {
+        const TransformsFrame& fr = tf.frames[i];
+        os << "    {\n      \"file_path\": \"" << fr.file_path << "\",\n";
+        if (fr.has_camera_angle_x) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%.9g", (double)fr.camera_angle_x);
+            os << "      \"camera_angle_x\": " << buf << ",\n";
+        }
+        os << "      \"transform_matrix\": [\n";
+        for (int r = 0; r < 4; ++r) {
+            os << "        [";
+            for (int col = 0; col < 4; ++col) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%.9g", (double)fr.transform_matrix[r * 4 + col]);
+                os << buf << (col < 3 ? ", " : "");
+            }
+            os << "]" << (r < 3 ? "," : "") << "\n";
+        }
+        os << "      ]\n    }" << (i + 1 < tf.frames.size() ? "," : "") << "\n";
+    }
+    os << "  ]\n}\n";
+
+    std::ofstream f(path, std::ios::binary);
+    if (!f) { error = "cannot open " + path + " for writing"; return false; }
+    const std::string text = os.str();
+    f.write(text.data(), (std::streamsize)text.size());
+    if (!f) { error = "failed to write " + path; return false; }
+    return true;
+}
+
+// ---- 単一視点（SV gauge）------------------------------------------------------------------
+// web/app/single_view.js の makeSingleViewTransforms と同一。mesh_scale は 1.0 固定で、
+// distance = 1/(2*mesh_scale*tan(fov/2))。姿勢は canonical rig の front と同じ向き。
+bool synthesize_single_view_gauge(const std::string& image_file, float fov_rad,
+                                  TransformsFile& out, std::string& error) {
+    if (image_file.empty()) {
+        error = "single-view input needs a file name";
+        return false;
+    }
+    if (!std::isfinite(fov_rad) || !(fov_rad > 0.0f) || !(fov_rad < 3.14159265358979323846f)) {
+        error = "single-view camera FOV must satisfy 0 < fov < pi radians; got " +
+                std::to_string(fov_rad);
+        return false;
+    }
+    // tan(fov/2) は上の範囲で正の有限値。距離は double で作ってから float へ落とす
+    // （JS 側が double で計算しているため、丸めの入り方を揃える）。
+    const double dist = 1.0 / (2.0 * (double)SINGLE_VIEW_MESH_SCALE *
+                               std::tan((double)fov_rad / 2.0));
+    if (!std::isfinite(dist) || dist <= 0.0) {
+        error = "single-view camera distance is not finite for the requested FOV";
+        return false;
+    }
+
+    out = TransformsFile{};
+    out.camera_angle_x = fov_rad;
+    out.has_camera_angle_x = true;
+    out.mesh_scale = SINGLE_VIEW_MESH_SCALE;
+    TransformsFrame tf{};
+    tf.file_path = image_file;
+    const float d = (float)dist;
+    const float pose[16] = { 1, 0,  0, 0,
+                             0, 0, -1, -d,
+                             0, 1,  0, 0,
+                             0, 0,  0, 1 };
+    for (int k = 0; k < 16; ++k) tf.transform_matrix[k] = pose[k];
+    out.frames.push_back(std::move(tf));
+    return true;
+}
+
 bool load_views_metadata(const std::string& dir, float mesh_scale, bool mesh_scale_set,
                          TransformsFile& out, std::string& error) {
     const std::string json_path = dir + "/transforms.json";

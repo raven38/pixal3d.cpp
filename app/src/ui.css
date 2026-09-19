@@ -200,3 +200,10 @@ body {
 }
 .toast.err { border-left-color: var(--err); }
 .toast.ok { border-left-color: var(--ok); }
+
+/* ---- generation mode selector (0.10.0: TRELLIS.2 / Pixal3D SV / Pixal3D MV) ---- */
+.mode-bar { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.mode-opt { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #30343b; border-radius: 999px; font-size: 12px; cursor: pointer; background: #111419; }
+.mode-opt:has(input:checked) { border-color: var(--accent); background: #122029; }
+.mode-opt input { margin: 0; }
+.mode-panel[hidden] { display: none; }
