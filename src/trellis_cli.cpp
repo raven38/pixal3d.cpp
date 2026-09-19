@@ -297,6 +297,39 @@ static void mv_warn_view_count(const std::string& variant, int V) {
                         "single-view weights on 85 subjects).\n", V);
 }
 
+static std::string ply_path(const std::string& outglb) { return outglb.substr(0, outglb.find_last_of('.')) + ".ply"; }
+
+// Final file writes. The textured GLB (two WebP encodes), the debug base-color
+// PNG and the raw-mesh PLY are independent, so they go to disk on three threads.
+static void write_outputs(const trellis::TrellisParams& cfg, const std::string& outglb,
+                          const trellis::BakedMesh& bm, bool textured, bool double_sided,
+                          const trellis::Mesh& mesh, const std::vector<float>& colors, uint32_t run_seed) {
+    const std::string tex = outglb.substr(0, outglb.find_last_of('.')) + "_base.png";
+    const std::string ply = ply_path(outglb);
+    trellis::parallel_for(3, [&](int64_t b, int64_t e) {
+        for (int64_t job = b; job < e; ++job) {
+            if (job == 0) {
+                if (textured)
+                    trellis::write_glb_textured(outglb.c_str(), bm.verts.data(), (int64_t)bm.verts.size()/3, bm.uv.data(),
+                                                bm.faces.data(), (int64_t)bm.faces.size()/3, bm.base.data(), bm.mr.data(), bm.T,
+                                                double_sided, run_seed,
+                                                cfg.copyright.empty() ? nullptr : cfg.copyright.c_str(),
+                                                /*use_webp=*/cfg.webp != 0);
+                else
+                    trellis::write_glb(outglb.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(),
+                                       colors.empty() ? nullptr : colors.data(), run_seed,
+                                       cfg.copyright.empty() ? nullptr : cfg.copyright.c_str());
+            } else if (job == 1) {
+                if (textured) stbi_write_png(tex.c_str(), bm.T, bm.T, 4, bm.base.data(), bm.T*4);
+            } else {
+                trellis::write_ply(ply.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(),
+                                   colors.empty() ? nullptr : colors.data());
+            }
+        }
+    });
+    if (textured) printf("      textured GLB (atlas %d, +%s)\n", bm.T, tex.c_str());
+}
+
 int trellis_run_mv(const trellis::TrellisParams& cfg) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     uint32_t run_seed = cfg.seed;
@@ -553,6 +586,8 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
 
     printf("[6/6] write %s\n", outglb.c_str());
     bool textured = false;
+    trellis::BakedMesh baked;
+    bool double_sided = false;   // untextured fallback material when the remesh was empty
     if (!pbr6.empty()) {
         const bool boxuv = !cfg.xatlas;
         // MV mode defaults (unless overridden by --atlas/--tex, --decim): atlas 4096 and a
@@ -591,25 +626,14 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         if (!boxuv && !bm.ok()) bm = trellis::uv_chart_project(dv, dV, df, dF, no_vp, T, &vox);
         if (bm.ok()) {
             mv_apply_reference_frame(bm.verts);   // baking (UVs/atlas) is done -- safe to rotate now
-            trellis::write_glb_textured(outglb.c_str(), bm.verts.data(), (int64_t)bm.verts.size()/3, bm.uv.data(),
-                                        bm.faces.data(), (int64_t)bm.faces.size()/3, bm.base.data(), bm.mr.data(), bm.T,
-                                        /*double_sided=*/rm.F() == 0, run_seed,
-                                        cfg.copyright.empty() ? nullptr : cfg.copyright.c_str(),
-                                        /*use_webp=*/cfg.webp != 0);
-            std::string tex = outglb.substr(0, outglb.find_last_of('.')) + "_base.png";
-            stbi_write_png(tex.c_str(), bm.T, bm.T, 4, bm.base.data(), bm.T*4);
             textured = true;
-            printf("      textured GLB (atlas %d, +%s)\n", bm.T, tex.c_str());
         } else printf("      uv_bake failed; falling back to vertex colors\n");
+        baked = std::move(bm);
+        double_sided = rm.F() == 0;
     }
     mv_apply_reference_frame(mesh.verts);   // matches inference_mv.py's post-hoc glb.apply_transform(rot)
-    if (!textured)
-        trellis::write_glb(outglb.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(),
-                           colors.empty() ? nullptr : colors.data(), run_seed,
-                           cfg.copyright.empty() ? nullptr : cfg.copyright.c_str());
-    std::string ply = outglb.substr(0, outglb.find_last_of('.')) + ".ply";
-    trellis::write_ply(ply.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(), colors.empty() ? nullptr : colors.data());
-    printf("done in %.1fs -> %s (+ %s)\n", now() - t0, outglb.c_str(), ply.c_str());
+    write_outputs(cfg, outglb, baked, textured, double_sided, mesh, colors, run_seed);
+    printf("done in %.1fs -> %s (+ %s)\n", now() - t0, outglb.c_str(), ply_path(outglb).c_str());
     return 0;
 }
 
@@ -971,6 +995,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
 
     printf("[7/7] write %s\n", outglb.c_str());
     bool textured = false;
+    trellis::BakedMesh baked;
+    bool double_sided = false;   // untextured fallback material when the remesh was empty
     if (!pbr6.empty()) {   // UV-baked textured GLB (PBR material)
         // UV method: xatlas unwrap by default — unique chart space per face, no projection
         // overlap. --box-uv selects the voxel-native 6-way box projection: O(F) and seconds vs
@@ -1048,24 +1074,12 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         trellis::BakedMesh bm = boxuv ? trellis::uv_box_project(dv, dV, df, dF, no_vp, T, &vox)
                                       : trellis::uv_bake(dv, dV, df, dF, no_vp, T, &vox);
         if (!boxuv && !bm.ok()) bm = trellis::uv_chart_project(dv, dV, df, dF, no_vp, T, &vox);
-        if (bm.ok()) {
-            trellis::write_glb_textured(outglb.c_str(), bm.verts.data(), (int64_t)bm.verts.size()/3, bm.uv.data(),
-                                        bm.faces.data(), (int64_t)bm.faces.size()/3, bm.base.data(), bm.mr.data(), bm.T,
-                                        /*double_sided=*/rm.F() == 0, run_seed,
-                                        cfg.copyright.empty() ? nullptr : cfg.copyright.c_str(),
-                                        /*use_webp=*/cfg.webp != 0);
-            std::string tex = outglb.substr(0, outglb.find_last_of('.')) + "_base.png";
-            stbi_write_png(tex.c_str(), bm.T, bm.T, 4, bm.base.data(), bm.T*4);
-            textured = true;
-            printf("      textured GLB (atlas %d, +%s)\n", bm.T, tex.c_str());
-        } else printf("      uv_bake failed; falling back to vertex colors\n");
+        if (bm.ok()) textured = true;
+        else printf("      uv_bake failed; falling back to vertex colors\n");
+        baked = std::move(bm);
+        double_sided = rm.F() == 0;
     }
-    if (!textured)
-        trellis::write_glb(outglb.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(),
-                           colors.empty() ? nullptr : colors.data(), run_seed,
-                           cfg.copyright.empty() ? nullptr : cfg.copyright.c_str());
-    std::string ply = outglb.substr(0, outglb.find_last_of('.')) + ".ply";
-    trellis::write_ply(ply.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(), colors.empty() ? nullptr : colors.data());
-    printf("done in %.1fs -> %s (+ %s)\n", now() - t0, outglb.c_str(), ply.c_str());
+    write_outputs(cfg, outglb, baked, textured, double_sided, mesh, colors, run_seed);
+    printf("done in %.1fs -> %s (+ %s)\n", now() - t0, outglb.c_str(), ply_path(outglb).c_str());
     return 0;
 }

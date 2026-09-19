@@ -3205,11 +3205,14 @@ public:
 		group.queue.push_back(task);
 		group.queueLock.unlock();
 		group.ref++;
-		// Wake up a worker to run this task.
-		for (uint32_t i = 0; i < m_workers.size(); i++) {
-			m_workers[i].wakeup = true;
-			m_workers[i].cv.notify_one();
-		}
+		// Wake up one worker (round-robin) to run this task. [pixal3d] Upstream
+		// wakes every worker per task; with tens of thousands of tiny tasks
+		// (PackCharts) on a 32-thread box that is a wake-up storm that costs
+		// seconds. A woken worker rescans every group before sleeping again and
+		// wait() drains its own group, so no task is stranded.
+		Worker &w = m_workers[m_nextWake++ % m_workers.size()];
+		w.wakeup = true;
+		w.cv.notify_one();
 	}
 
 	void wait(TaskGroupHandle *handle)
@@ -3263,6 +3266,7 @@ private:
 	Array<Worker> m_workers;
 	std::atomic<bool> m_shutdown;
 	uint32_t m_maxGroups;
+	uint32_t m_nextWake = 0;
 	static thread_local uint32_t m_threadIndex;
 
 	static void workerThread(TaskScheduler *scheduler, Worker *worker, uint32_t threadIndex)

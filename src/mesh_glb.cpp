@@ -1,4 +1,5 @@
 #include "mesh_glb.h"
+#include "remesh_dc.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -335,8 +336,13 @@ bool write_glb_textured(const char* path, const float* verts, int64_t V, const f
 #ifdef TRELLIS_HAVE_WEBP
     if (use_webp) {
         uint8_t* ob = nullptr; uint8_t* om = nullptr;
-        const size_t nb = WebPEncodeRGBA(base_rgba, T, T, T*4, 80.f, &ob);
-        const size_t nm = WebPEncodeRGBA(mr_rgba, T, T, T*4, 80.f, &om);
+        size_t nb = 0, nm = 0;
+        parallel_for(2, [&](int64_t b, int64_t e) {   // the two encodes are independent
+            for (int64_t i = b; i < e; ++i) {
+                if (i == 0) nb = WebPEncodeRGBA(base_rgba, T, T, T*4, 80.f, &ob);
+                else        nm = WebPEncodeRGBA(mr_rgba, T, T, T*4, 80.f, &om);
+            }
+        });
         if (nb && nm) {
             pngB.assign(ob, ob + nb);
             pngM.assign(om, om + nm);
@@ -418,13 +424,23 @@ bool write_ply(const char* path, const float* verts, int64_t V, const int32_t* f
     fprintf(f, "element vertex %lld\nproperty float x\nproperty float y\nproperty float z\n", (long long)V);
     if (colors) fprintf(f, "property uchar red\nproperty uchar green\nproperty uchar blue\n");
     fprintf(f, "element face %lld\nproperty list uchar int vertex_indices\nend_header\n", (long long)F);
+    // Assemble the body in memory and write it once: per-element fwrite calls
+    // (30M for a res-1024 mesh) dominate otherwise.
+    std::vector<uint8_t> body;
+    body.reserve((size_t)V * (12 + (colors ? 3 : 0)) + (size_t)F * 13);
     for (int64_t i = 0; i < V; ++i) {
-        fwrite(verts + 3*i, 4, 3, f);
-        if (colors) { unsigned char rgb[3]; for (int c=0;c<3;++c){ float v=colors[3*i+c]*255.f; rgb[c]=(unsigned char)(v<0?0:(v>255?255:v)); } fwrite(rgb, 1, 3, f); }
+        const uint8_t* p = (const uint8_t*)(verts + 3*i);
+        body.insert(body.end(), p, p + 12);
+        if (colors) { for (int c=0;c<3;++c){ float v=colors[3*i+c]*255.f; body.push_back((uint8_t)(v<0?0:(v>255?255:v))); } }
     }
-    for (int64_t i = 0; i < F; ++i) { unsigned char n = 3; fwrite(&n, 1, 1, f); fwrite(faces + 3*i, 4, 3, f); }
+    for (int64_t i = 0; i < F; ++i) {
+        body.push_back(3);
+        const uint8_t* p = (const uint8_t*)(faces + 3*i);
+        body.insert(body.end(), p, p + 12);
+    }
+    const bool ok = fwrite(body.data(), 1, body.size(), f) == body.size();
     fclose(f);
-    return true;
+    return ok;
 }
 
 } // namespace trellis
