@@ -126,6 +126,7 @@ The most useful ones:
 | `--box-uv` | voxel-native 6-way box projection instead of the default xatlas unwrap (O(faces), faster, looser packing) |
 | `--seed N` | RNG seed |
 | `--require-gpu` | fail instead of falling back to the (very slow, RAM-hungry) CPU path |
+| `--profile` | after the second forward of every flow DiT, re-submit the same graph as role×block slices and as single nodes and print the breakdown (`[prof]` lines: by role / by block / by op / top nodes, plus the slice-sum vs whole-forward ratios). Timing only — the sampler still uses the whole-graph output. Adds roughly 4 forwards per flow |
 
 The postprocess matches the reference pipeline op for op (see
 `docs/spec/27-reference-postprocess.md` / `28-divergence-matrix.md`): the raw

@@ -1,14 +1,18 @@
 #include "flow_runner.h"
 #include "trellis_model.h"
 #include "graph_dump.h"
+#include "trellis_args.h"   // g_profile / g_no_fa
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
+#include <map>
 #include <stdexcept>
 #include <string>
 #if defined(_WIN32)
@@ -145,14 +149,26 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
     ggml_backend_tensor_set(gcond_, cond,     0, (size_t)p_.d_cond * Lc_ * 4);
     ggml_backend_tensor_set(gcos_, rcos_.data(), 0, rcos_.size() * 4);   // re-upload (buffers reused across runs)
     ggml_backend_tensor_set(gsin_, rsin_.data(), 0, rsin_.size() * 4);
-    ggml_backend_tensor_set(gidx_, ridx_.data(), 0, ridx_.size() * sizeof(int32_t));
     if (gproj_) {
         if (!proj) throw std::runtime_error("DitRunner: proj_attn model requires a proj tensor");
         ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
     }
+    ggml_backend_tensor_set(gidx_, ridx_.data(), 0, ridx_.size() * sizeof(int32_t));
+    const auto tc0 = std::chrono::steady_clock::now();
     if (ggml_backend_graph_compute(m_.backend, g_) != GGML_STATUS_SUCCESS)
         throw std::runtime_error("DitRunner: compute failed");
+    const double tc = std::chrono::duration<double>(std::chrono::steady_clock::now() - tc0).count();
+    // Read the output BEFORE any profiling pass: the passes re-submit slices of the same graph
+    // into the same gallocr buffers, and the fused whole-graph result is what the sampler gets.
     std::vector<float> outv = tensor_to_f32(gout_);
+    if (g_profile) {
+        whole_s_.push_back(tc);
+        printf("      [prof] fwd #%d whole graph: %.2fs%s\n", fwd_count_, tc,
+               fwd_count_ == 0 ? "  (cold: lazy pipeline compiles)" : "");
+        fflush(stdout);
+        if (fwd_count_ == 1) profile_forward();
+    }
+    ++fwd_count_;
     size_t out_bad = 0; for (float x : outv) if (!std::isfinite(x)) out_bad++;
     // Dump the per-layer breakdown for the FIRST forward whose OUTPUT goes NaN (the failing low-t
     // step), not just the very first forward (which is clean) — that's where to look for the cause.
@@ -174,6 +190,159 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
         }
     }
     return outv;
+}
+
+// --profile: hierarchical timing of one forward on the already-built, already-allocated graph.
+// ggml exposes no per-op GPU timestamps and DitRunner submits one graph per forward, so the
+// portable way to get a breakdown is to re-submit contiguous slices of that graph and time each
+// (ggml_backend_graph_compute is synchronous). Two granularities, both after the real whole
+// forward whose output the sampler uses:
+//   1. segments = role x block (~3 per block + input/t_emb/final). A slice keeps ggml-metal's
+//      intra-slice fusion and concurrency, so segment times are close to the production cost and
+//      the role / block tables come from here.
+//   2. single nodes, for the op-kind table only. Every submission carries a fixed submit+wait
+//      cost, so light ops (VIEW/ADD/...) are overstated relative to GEMMs -- these are
+//      "isolated" numbers, not production shares. The node pass runs twice; the second is
+//      reported (the first compiles the non-fused pipeline variants).
+// Role attribution relies on the names dit.cpp sets: "blocks.<i>.res_msa" / "blocks.<i>.res_cross"
+// (residual adds) and "after_block<i>" (build_dit_dense). A node belongs to the first marker at
+// or after it in graph order, which is the section that built it (ggml_build_forward_expand
+// appends in post-order). Known smear: the t_embedder/adaLN nodes and block 0's first layernorm
+// are first needed by block 0's modulation and land in its self_attn segment (a few small ops).
+void DitRunner::profile_forward() {
+    using clock = std::chrono::steady_clock;
+    auto secs = [](clock::time_point a) { return std::chrono::duration<double>(clock::now() - a).count(); };
+    const int n = ggml_graph_n_nodes(g_);
+    enum Role { R_INPUT, R_TEMB, R_MSA, R_CROSS, R_MLP, R_FINAL, R_COUNT };
+    static const char* role_name[R_COUNT] = { "input_layer", "t_emb", "self_attn", "cross_attn+proj", "mlp", "final" };
+    struct Seg { int first, last; int block; Role role; double s; };
+    std::vector<Seg> segs;
+    auto parse_block = [](const std::string& nm, const char* pre, const char* suf, int& blk) {
+        const size_t lp = strlen(pre), ls = strlen(suf);
+        if (nm.size() <= lp + ls || nm.compare(0, lp, pre) != 0 || nm.compare(nm.size() - ls, ls, suf) != 0) return false;
+        const std::string mid = nm.substr(lp, nm.size() - lp - ls);
+        if (mid.empty() || mid.find_first_not_of("0123456789") != std::string::npos) return false;
+        blk = atoi(mid.c_str());
+        return true;
+    };
+    int first = 0;
+    for (int j = 0; j < n; ++j) {
+        const std::string nm = ggml_get_name(ggml_graph_node(g_, j));
+        int blk = -1; Role r = R_COUNT;
+        if      (nm == "after_input_layer")                     r = R_INPUT;
+        else if (nm == "t_emb_mod")                             r = R_TEMB;
+        else if (parse_block(nm, "blocks.", ".res_msa", blk))   r = R_MSA;
+        else if (parse_block(nm, "blocks.", ".res_cross", blk)) r = R_CROSS;
+        else if (parse_block(nm, "after_block", "", blk))       r = R_MLP;
+        else if (nm == "output")                                r = R_FINAL;
+        if (r == R_COUNT) continue;
+        segs.push_back({ first, j, blk, r, 0.0 });
+        first = j + 1;
+    }
+    if (first < n) segs.push_back({ first, n - 1, -1, R_FINAL, 0.0 });   // anything after "output"
+    const int n_blocks = p_.n_blocks;
+    {   // marker sanity: every block needs exactly res_msa / res_cross / after_block, in that order
+        std::vector<int> seen(std::max(n_blocks, 1), 0);
+        bool ok = true;
+        for (const Seg& sg : segs) if (sg.block >= 0 && sg.block < n_blocks) seen[sg.block] |= 1 << (sg.role - R_MSA);
+        for (int b = 0; b < n_blocks; ++b) if (seen[b] != 7) ok = false;
+        if (!ok) fprintf(stderr, "      [prof] warning: role markers incomplete -- per-block table is unreliable\n");
+    }
+
+    // Scratch graph sized for the largest slice; ggml_graph_add_node appends without the DFS that
+    // ggml_build_forward_expand would do (which would pull every ancestor back in).
+    ggml_context* pctx = ggml_init({ ggml_graph_overhead_custom((size_t)n, false) + 4096, nullptr, true });
+    ggml_cgraph* gv = ggml_new_graph_custom(pctx, (size_t)n, false);
+    auto run_slice = [&](int a, int b) {           // inclusive node range -> seconds
+        ggml_graph_clear(gv);
+        for (int j = a; j <= b; ++j) ggml_graph_add_node(gv, ggml_graph_node(g_, j));
+        const auto t = clock::now();
+        if (ggml_backend_graph_compute(m_.backend, gv) != GGML_STATUS_SUCCESS) {
+            ggml_free(pctx);
+            throw std::runtime_error("DitRunner: compute failed (profile slice " + std::to_string(a) + ".." + std::to_string(b) + ")");
+        }
+        return secs(t);
+    };
+
+    // 1. segment pass
+    const auto t_seg0 = clock::now();
+    for (Seg& sg : segs) sg.s = run_slice(sg.first, sg.last);
+    const double t_seg = secs(t_seg0);
+    // 2. node passes (first = warm-up for the non-fused pipelines, second = reported)
+    std::vector<double> dt(n, 0.0);
+    double t_node = 0.0;
+    for (int pass = 0; pass < 2; ++pass) {
+        const auto t0 = clock::now();
+        for (int j = 0; j < n; ++j) dt[j] = run_slice(j, j);
+        t_node = secs(t0);
+        if (pass == 0) printf("      [prof] node pass 1 (warm-up, includes pipeline compiles): %.2fs\n", t_node);
+    }
+    ggml_free(pctx);
+
+    // ---- aggregate ----
+    auto op_kind = [](const ggml_tensor* t) {   // MUL_MAT split by src0 type: weight GEMMs vs f32 x f32 activation GEMMs
+        std::string k = ggml_op_name(t->op);
+        if (t->op == GGML_OP_MUL_MAT && t->src[0]) k += std::string("(") + ggml_type_name(t->src[0]->type) + ")";
+        if (t->op == GGML_OP_FLASH_ATTN_EXT && t->src[1]) k += std::string("(kv ") + ggml_type_name(t->src[1]->type) + ")";
+        return k;
+    };
+    std::vector<double> role_s(R_COUNT, 0.0);
+    std::vector<int>    role_n(R_COUNT, 0);
+    std::vector<std::array<double, 3>> blk_s(std::max(n_blocks, 1), { 0.0, 0.0, 0.0 });   // msa / cross / mlp
+    std::map<std::string, std::pair<double, int>> op_s, op_role_s;
+    for (const Seg& sg : segs) {
+        role_s[sg.role] += sg.s; role_n[sg.role] += sg.last - sg.first + 1;
+        if (sg.block >= 0 && sg.block < n_blocks && sg.role >= R_MSA && sg.role <= R_MLP) blk_s[sg.block][sg.role - R_MSA] += sg.s;
+        for (int j = sg.first; j <= sg.last; ++j) {
+            const std::string k = op_kind(ggml_graph_node(g_, j));
+            auto& e = op_s[k]; e.first += dt[j]; e.second++;
+            auto& e2 = op_role_s[std::string(role_name[sg.role]) + "|" + k]; e2.first += dt[j]; e2.second++;
+        }
+    }
+
+    const double MB = 1.0 / 1048576.0;
+    const uint64_t cond_bytes = p_.proj_attn ? (uint64_t)p_.d_proj * N_ * 4 * 2 : 0;
+    printf("      [prof] N=%d tokens  Lc=%d cond  blocks=%d  nodes=%d  |  weights %.0f MB  activations %.0f MB  cond %.0f MB  |  %s\n",
+           N_, Lc_, n_blocks, n, m_.total_bytes() * MB, alloc_bytes_ * MB, cond_bytes * MB,
+           g_no_fa ? "exact SDPA (--no-fa)" : "FlashAttention");
+    printf("      [prof] whole forward %.2fs | segment pass %.2fs (%zu slices, x%.2f) | node pass %.2fs (%d slices, x%.2f, isolated)\n",
+           whole_s_.back(), t_seg, segs.size(), t_seg / whole_s_.back(), t_node, n, t_node / whole_s_.back());
+    printf("      [prof] by role (segment pass; seconds, %% of segment pass):\n");
+    for (int r = 0; r < R_COUNT; ++r)
+        if (role_n[r])
+            printf("      [prof]   %-16s %8.2fs  %5.1f%%  (%d nodes)\n", role_name[r], role_s[r], 100.0 * role_s[r] / t_seg, role_n[r]);
+    printf("      [prof] by block (segment pass; self_attn / cross_attn+proj / mlp, seconds):\n");
+    for (int b = 0; b < n_blocks; ++b)
+        printf("      [prof]   blk%02d  %6.3f  %6.3f  %6.3f\n", b, blk_s[b][0], blk_s[b][1], blk_s[b][2]);
+    std::vector<std::pair<std::string, std::pair<double, int>>> ops(op_s.begin(), op_s.end());
+    std::sort(ops.begin(), ops.end(), [](const auto& a, const auto& b) { return a.second.first > b.second.first; });
+    printf("      [prof] by op (node pass; ISOLATED single-node times, light ops overstated by the per-submit cost):\n");
+    for (const auto& [k, v] : ops)
+        if (v.first >= 0.005 * t_node)
+            printf("      [prof]   %-24s %8.2fs  %5.1f%%  (n=%d, %.2f ms/op)\n", k.c_str(), v.first, 100.0 * v.first / t_node, v.second, 1e3 * v.first / v.second);
+    std::vector<std::pair<std::string, std::pair<double, int>>> opr(op_role_s.begin(), op_role_s.end());
+    std::sort(opr.begin(), opr.end(), [](const auto& a, const auto& b) { return a.second.first > b.second.first; });
+    printf("      [prof] by role x op (node pass, top 12):\n");
+    int shown = 0;
+    for (const auto& [k, v] : opr) {
+        if (shown++ >= 12) break;
+        printf("      [prof]   %-42s %8.2fs  %5.1f%%  (n=%d)\n", k.c_str(), v.first, 100.0 * v.first / t_node, v.second);
+    }
+    std::vector<int> order(n);
+    for (int j = 0; j < n; ++j) order[j] = j;
+    std::sort(order.begin(), order.end(), [&](int a, int b) { return dt[a] > dt[b]; });
+    printf("      [prof] top 15 nodes (node pass):\n");
+    for (int q = 0; q < std::min(15, n); ++q) {
+        const int j = order[q];
+        const ggml_tensor* t = ggml_graph_node(g_, j);
+        char shp[128];
+        snprintf(shp, sizeof shp, "[%lld,%lld,%lld,%lld]", (long long)t->ne[0], (long long)t->ne[1], (long long)t->ne[2], (long long)t->ne[3]);
+        char s0[96] = "";
+        if (t->src[0]) snprintf(s0, sizeof s0, " src0 %s[%lld,%lld,%lld]", ggml_type_name(t->src[0]->type),
+                                (long long)t->src[0]->ne[0], (long long)t->src[0]->ne[1], (long long)t->src[0]->ne[2]);
+        printf("      [prof]   #%-5d %-24s %8.3fs  %s%s  %s\n", j, op_kind(t).c_str(), dt[j], shp, s0, ggml_get_name(t));
+    }
+    fflush(stdout);
 }
 
 // 3D interleaved-pair RoPE cos/sin tables: data[token*half + pair].

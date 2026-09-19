@@ -35,6 +35,7 @@ static constexpr int64_t kAttnChunkBytes = 128ll * 1024 * 1024;
 static constexpr int64_t kAttnChunkBytes = 1024ll * 1024 * 1024;
 #endif
 bool g_no_fa = false;             // --no-fa; set by trellis_run
+bool g_profile = false;           // --profile; set by trellis_run (read in flow_runner.cpp)
 
 static T* lin(ggml_context* c, const Model& m, const std::string& p, T* x) {
     T* w = m.get(p + ".weight");
@@ -372,6 +373,11 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
     hh = self_attn(c, m, b + ".self_attn", hh, cos, sin, p, self_mask, rope_idx);
     dbg("blk0_msa", hh);
     h = ggml_add(c, h, ggml_mul(c, hh, gate_msa));
+    // Role markers for --profile (flow_runner.cpp). Naming does not change the graph; the
+    // profiler attributes every node to the first marker at or after it in graph order, which
+    // is exactly the section that built it (ggml_build_forward_expand is a post-order DFS).
+    // The MLP end is already marked by build_dit_dense's keep("after_block<i>").
+    ggml_set_name(h, (b + ".res_msa").c_str());
 
     hh = layernorm(c, h, p.ln_eps, m.get(b + ".norm2.weight"), m.get(b + ".norm2.bias"));
     // Pixal3D ProjectAttention: the ordinary cross-attn weights move one level deeper
@@ -388,6 +394,7 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
     dbg("blk0_cross_out", hh);
     dbg("blk0_cross", hh);   // kept for TRELLIS_DBG_NAN's existing name lookup
     h = ggml_add(c, h, hh);
+    ggml_set_name(h, (b + ".res_cross").c_str());
 
     hh = layernorm(c, h, p.ln_eps);
     hh = modulate(c, hh, scale_mlp, shift_mlp);
