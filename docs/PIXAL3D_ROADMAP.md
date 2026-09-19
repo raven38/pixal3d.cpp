@@ -22,7 +22,7 @@
 - [x] projected conditioning + ProjectAttention
 - [x] camera-aware projection
 - [x] single-view golden tensor parity
-- [ ] productized single-view Pixal3D path (MV is release focus)
+- [x] productized single-view Pixal3D path: Web alpha SV mode (#9/#13), Desktop 0.10.0 `--sv-image` / `POST /generate-sv` / Studio SV mode (pre-matted crop + gauge camera in the shared C++)
 
 ## M3 — NAF
 
@@ -95,6 +95,7 @@
 - [x] managed model cache + safe delete (#16 / PR #25)
 - [x] real Tauri/WebKitGTK Xvfb lifecycle smoke (#17 / PR #26)
 - [x] MV preflight gate (#19 / PR #27)
+- [x] 0.10.0: Pixal3D SV mode, canonical 4-view rig without `transforms.json`, second (SV) model directory + managed cache, `/capabilities`-driven Generate gate and "Stop waiting" semantics
 - [ ] clean-install Windows/Linux E2E (#18)
 
 ### Web
@@ -115,11 +116,21 @@
 - [x] Tauri Xvfb/WebKitGTK smoke (#17 / PR #26)
 - [x] MV preflight (#19 / PR #27)
 - [x] CUDA graph-support hardware validation (#11)
-- [ ] generate final manifest from exact release model directory
-- [ ] clean-install Windows/Linux E2E (#18)
-- [ ] synchronize package/Tauri version with `v0.9.0-desktop-alpha`
-- [ ] verify installer asset lookup for prerelease/tag-specific release
-- [ ] tag `v0.9.0-desktop-alpha`
+- [x] generate final manifest from exact release model directory (#34: `models/pixal3d-f16-v1/`, `models/pixal3d-q8_0-v1/`)
+- [x] clean-install Linux, headless (Vulkan + CUDA on L4, 2026-09-12); [ ] Windows and the Linux GUI (#18)
+- [x] synchronize package/Tauri version with `v0.9.0-desktop-alpha` (#35)
+- [x] verify installer asset lookup for prerelease/tag-specific release (#36)
+- [x] tag `v0.9.0-desktop-alpha`
+
+### Desktop 0.10.0 — SV parity (`v0.10.0-desktop-alpha`)
+
+- [x] `--sv-image` / `--fov` in the shared C++ (crop + gauge camera), `trellis-test-sv-input`, JS/Python/C++ parity fixtures
+- [x] `trellis-server --models-sv`, `POST /generate-sv`, `GET /capabilities` (busy/completed), strict numeric parsing; `tests/server_contract.sh`
+- [x] Studio: three modes, SV panel, canonical 4-view rig, gate + Stop waiting, SV models dir / managed cache; headless smoke; Xvfb `--models-sv` assertion
+- [x] installer: `--model-manifest-sv` / `--models-dir-sv`, family contract, free-space precheck, `modelsDirSv`; bash + PowerShell contract tests
+- [x] version 0.10.0 in the five metadata files; checklist/README/roadmap updated
+- [ ] real-machine E2E A10–A12 (macOS/M4 Max, needs the SV flows on disk — see checklist)
+- [ ] tag `v0.10.0-desktop-alpha` (only after A10–A12)
 
 ### Web alpha
 

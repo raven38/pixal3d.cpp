@@ -63,7 +63,7 @@ Examples:
 # newest stable release, and the install stops if the release is missing an
 # expected asset. Private repos need GITHUB_TOKEN. Add --skip-app for a
 # runtime-only install: the desktop app asset is otherwise required.
-./install/install.sh --repo OWNER/NAME --tag v0.9.0-desktop-alpha
+./install/install.sh --repo OWNER/NAME --tag v0.10.0-desktop-alpha
 
 # Install the Pixal3D model set from its manifest and verify every file's exact
 # size and SHA256. The install fails (and removes the offending file) on any
@@ -71,8 +71,21 @@ Examples:
 ./install/install.sh --model-manifest models/pixal3d-q8_0-v1/pixal3d-models.json \
                      --model-base-url https://example.invalid/pixal3d-q8_0-v1
 
-# Verify an already-installed model set and exit (no downloads, no config writes)
-./install/install.sh --verify-models --models-dir /path/to/models
+# 0.10.0: also install the single-view set into a *second* directory
+# (default <dest>/models-sv). It is verified the same way; a manifest of the
+# wrong family (an MV manifest given to --model-manifest-sv, or vice versa),
+# a mixed manifest, or a missing/corrupt file fails the install before the MV
+# directory or the config is touched. The install also refuses to start when
+# the free space is below "bytes still to download + 10 %".
+./install/install.sh --model-manifest models/pixal3d-f16-v1/pixal3d-models.json \
+                     --model-base-url https://example.invalid/pixal3d-f16-v1 \
+                     --model-manifest-sv models/pixal3d-sv-q8_0-v1/pixal3d-models.json \
+                     --model-base-url-sv https://example.invalid/pixal3d-sv-q8_0-v1
+
+# Verify already-installed model sets and exit (no downloads, no config writes).
+# The MV directory is always checked; the SV directory is checked when it holds
+# a manifest (or --model-manifest-sv is given), and both must pass.
+./install/install.sh --verify-models --models-dir /path/to/models --models-dir-sv /path/to/models-sv
 ```
 
 ## Backend detection

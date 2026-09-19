@@ -4,8 +4,8 @@ Status baseline: `main` after PR #24/#25/#26/#27/#28/#29/#31/#33. This file is t
 
 ## Planned prerelease tags
 
-- Desktop: `v0.9.0-desktop-alpha`
-- Web: `v0.9.0-web-alpha`
+- Desktop: `v0.9.0-desktop-alpha` (tagged) → **`v0.10.0-desktop-alpha`** (this branch; see "Desktop 0.10.0 — SV parity" below)
+- Web: `v0.9.0-web-alpha` (tagged)
 - Model set: Desktop `pixal3d-f16` / `v1`, Web `pixal3d-q8_0` / `v1` (see "Fixed initial release model sets" below)
 
 Desktop artifact metadata carries the **numeric** version `0.9.0` (`app/package.json`,
@@ -615,6 +615,59 @@ at preflight, before the 7.54 GiB install. `test_cache_failure_modes.mjs` cases 
 device refusal and missing `shader-f16` must be rejected, and a healthy adapter must pass — the mock
 throws if the preflight stops requesting `shader-f16` or the two limits.
 
+## Desktop 0.10.0 — SV parity (2026-09-19, branch `feat/desktop-0.10.0-sv-parity`)
+
+Goal: the next Desktop prerelease has the same *API/feature* surface as the Web alpha's single-view
+mode — Pixal3D SV from one pre-matted RGBA image + FOV, and the canonical 4-view rig without
+`transforms.json` — **not** output equivalence with the Web (different model sets, GPU
+non-determinism). Design: `docs/design/2026-09-19-desktop-0.10.0-sv-parity.md` (v5), codex review
+`docs/reviews/2026-09-19_desktop-0.10.0-sv-parity_review.md`. Acceptance criteria A1–A12 were
+frozen in the design before implementation; deviations from them are listed below, not hidden.
+
+Version mapping: tag `v0.10.0-desktop-alpha` → numeric `0.10.0` in `app/package.json`,
+`app/package-lock.json`, `app/src-tauri/tauri.conf.json`, `app/src-tauri/Cargo.toml`,
+`app/src-tauri/Cargo.lock` (bumped together; `cargo update -p trellis-studio --offline`).
+
+**Model-set policy deviation (recorded on purpose):** the Desktop policy so far was "native stays
+F16" (`pixal3d-f16 v1` for MV). The 0.10.0 SV set is **`pixal3d-sv-q8_0 v1`** — the set already
+published and gated for the Web alpha (#9/#13) — because no F16 SV set is generated or gated yet,
+and shipping an ungated F16 SV set would be a larger risk than reusing the gated Q8_0 one. MV stays
+`pixal3d-f16 v1`. Both sets carry separate manifests and directories; a future `pixal3d-sv-f16 v1`
+only needs a new manifest, no code change.
+
+Behaviour changes a release note must carry:
+
+- `trellis-server` parses numeric fields strictly: `seed=abc`, `resolution=12x` etc. return **400**
+  (0.9.0 `atoi` silently produced 0). Applies to `/generate` and `/generate-mv` as well.
+- `install.sh --model-manifest` now accepts only an **mv** manifest and `--model-manifest-sv` only
+  an **sv** one (family from `model_family` or the four flow names). 0.9.0 accepted any manifest.
+- Studio "Stop waiting" (all modes) stops this window's wait only; the server finishes the
+  generation, and Generate is re-enabled when `GET /capabilities` reports `busy=false` and a larger
+  `completed`. Against a 0.9.0 server (no `/capabilities`) Generate re-enables immediately, as before.
+- SV resolution is 1024 only (API and UI); `resolution=1536` on `/generate-sv` is 400.
+
+| # | requirement (frozen) | status | evidence (macOS 26.5 / M4 Max / Metal unless noted) |
+|---|---|:---:|---|
+| A1 | `trellis-test-preprocess`, `trellis-test-pixal3d-cond-ss` build and run | ✅ | both link in `build-metal`; `trellis-test-preprocess` → `PASS: 6x6 RGBA cutout, 768 normalized values`; `cond-ss` starts and prints its usage (its PyTorch fixture lives on the pod PVC, not on this Mac — unchanged by this branch) |
+| A2 | `trellis-test-sv-input`: gauge FOV range / matrix, the 8 crop steps, transparent/opaque/empty rejections | ✅ | `SV_INPUT_TEST_OK` (33 checks + D9 5/5 fixtures `tests/fixtures/sv_gauge/`) |
+| A3 | D9 parity: C++ vs shared fixtures, JS vs same fixtures, Python vs C++ crop | ✅ | `trellis-test-sv-input tests/fixtures/sv_gauge` OK; `node web/app/test_single_view.mjs` → `WEB_SINGLE_VIEW_CONTRACT_OK`; `tools/test_crop_parity.py` → `CROP_PARITY_OK` 6/6 (oversized case: size 618, alpha IoU 0.999558, premultiplied RGB MAE 0.000678) — the parity test caught a real mismatch (Python alpha threshold `<255` vs C++/JS `<250`) which is why D2 is `<250` |
+| A4 | `cargo check` + `cargo test model_cache::tests` with two managed roots | ✅ | cargo 1.98.1: 5/5 tests, 20/20 repeated runs (the temp-root name collision under parallel tests was fixed on the way) |
+| A5 | `npm run build` (tsc + vite) | ✅ | passes |
+| A6 | `app/tests/headless-mv-ui.mjs`: 3 modes, SV panel alpha/FOV, `sv.available=false` disables Generate, canonical rig (4 cards, explicit `mesh_scale`, order confirmation, 5 cards rejected), Stop waiting → busy gate → re-enable on `completed` increase | ✅ | 6/6 sections, `HEADLESS_MV_PREFLIGHT_OK` against `vite preview` with the node stub server; CI `studio-headless.yml` |
+| A7 | server contract: `/capabilities` cases, `/generate-sv` fail-closed cases, busy/completed | ✅ **(form deviates)** | implemented as **`tests/server_contract.sh`** (bash + curl against a real `trellis-server` with a manifest + sparse files), not the C++ `trellis-test-server-contract` the frozen text names — the contract is HTTP-level and a shell harness exercises the real binary end to end. 31/31 checks ×3 runs, `SERVER_CONTRACT_OK`; busy=true observed via a 36-Mpixel PNG that keeps the crop inside the busy scope; CI `linux-build.yml` |
+| A8 | Tauri/WebKitGTK Xvfb smoke, dummy server receives `--models-sv` | ✅ (CI) | `studio-tauri-xvfb.yml`: dummy records `--models`/`--models-sv` to `dummy-server-args`, the job asserts equality with the config (`DUMMY_SERVER_ARGS_OK`) and `sv.configured === true` in `/capabilities`; the dummy script was run locally with the same flags |
+| A9 | installer SV verification fail-closed (missing, corrupt, size mismatch, traversal, family swap, mixed manifest, SV failure leaves MV intact) | ✅ | `install/test_installer_manifest.sh` 15/15 on bash 3.2.57 and 5.3.9; `install/test_installer_manifest.ps1` 11/11 on pwsh 7.6.6; both run the 18 `web/app/manifest_conformance.json` vectors; CI `installer-manifest-smoke.yml` |
+| A10 | **real machine** SV E2E from Studio (Belle_front, FOV 20°, seed 42, 1024): silhouette IoU gate + 6-view render | ⬜ | blocked on disk: the SV flows (4 files, ≈5.47 GiB) are not on this Mac and `/` has 7.2 GiB free (measured 2026-09-19); see below |
+| A11 | **real machine** CLI control run, same input/seed/FOV; Studio-vs-CLI \|ΔIoU\| ≤ 0.01, V/F within 2 % | ⬜ | same blocker |
+| A12 | **real machine** canonical 4-view E2E from Studio (no `transforms.json`, explicit `mesh_scale`) | ⬜ | same blocker (MV f16 set is not local either; the local `gguf-q8_0` MV set could stand in with the deviation recorded) |
+
+Not covered by this branch (advertise accordingly): Windows/Linux real-machine E2E for the new
+modes (macOS-only, like 0.9.0); `install.ps1` download path for the SV set (only `-VerifyModels`,
+conformance and the free-space function are executed in CI); `--model-manifest[-sv] release` (the
+release workflow publishes no manifest asset, so both manifests are URL/path arguments in this
+alpha); code signing stays ad-hoc; `trellis-server` binds loopback by default and exposing it beyond
+loopback is not recommended (no auth, `/generate-sv` accepts 64 MiB uploads).
+
 ## Non-blockers / known issues
 
 - #2 native Dawn/WebGPU intermittent corruption: not a Web/Chrome blocker and not a Desktop blocker unless native WebGPU is advertised.
@@ -629,6 +682,7 @@ Runtime tag: <git tag>
 Commit: <sha>
 Model set: <manifest.model_set> <manifest.version>
 Model manifest SHA256: <sha256 of manifest file>
+Model set (SV, optional): <manifest.model_set> <manifest.version> / SHA256 <…>   (0.10.0+)
 Validated surfaces:
   Desktop Windows: <GPU/backend/result or N/A>
   Desktop Linux:   <GPU/backend/result or N/A>

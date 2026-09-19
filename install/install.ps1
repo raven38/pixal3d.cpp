@@ -23,7 +23,7 @@ param(
   # stable release's assets.
   [string]$Repo = "",
   # A tag, or "latest" (newest stable) / "latest-prerelease" (newest release
-  # including prereleases). Prerelease tags such as v0.9.0-desktop-alpha must be
+  # including prereleases). Prerelease tags such as v0.10.0-desktop-alpha must be
   # named explicitly or reached via latest-prerelease.
   [string]$Tag = "latest",
   [int]$Gpu = 0,
@@ -196,7 +196,7 @@ function Resolve-Release {
 could not resolve a release for $Repo ($why): $($_.Exception.Message)
        If the repository is private, set GITHUB_TOKEN to a token with 'repo' access.
        If the Desktop alpha is published as a prerelease, name its tag:
-         -Repo OWNER/NAME -Tag v0.9.0-desktop-alpha
+         -Repo OWNER/NAME -Tag v0.10.0-desktop-alpha
 "@
   }
   if (-not $script:Release.tag_name) { Die "release payload for $Repo ($why) has no tag_name" }

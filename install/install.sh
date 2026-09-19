@@ -73,7 +73,7 @@ Trellis Studio installer (Linux)
   --tag TAG                    release tag to install; "latest" = newest stable,
                                "latest-prerelease" = newest release including
                                prereleases (default: latest). Prerelease tags
-                               such as v0.9.0-desktop-alpha must be named
+                               such as v0.10.0-desktop-alpha must be named
                                explicitly or via latest-prerelease.
   --backend cuda|cuda12|rocm|vulkan
                               force a runtime (default: auto-detect; cuda12 is
@@ -311,7 +311,7 @@ resolve_release() {
     die "could not resolve a release for ${REPO} (${why}).
        If the repository is private, export GITHUB_TOKEN with 'repo' access.
        If the Desktop alpha is published as a prerelease, pass its tag:
-         --repo OWNER/NAME --tag v0.9.0-desktop-alpha"
+         --repo OWNER/NAME --tag v0.10.0-desktop-alpha"
   fi
 
   RESOLVED_TAG="$(json_str "$release_json" tag_name)"
