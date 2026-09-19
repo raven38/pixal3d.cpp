@@ -117,11 +117,9 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     if (p_.proj_attn) {
         gproj_ = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.d_proj, N_); ggml_set_input(gproj_);
     }
-    gidx_ = ggml_new_tensor_1d(ctx_, GGML_TYPE_I32, p_.head_dim); ggml_set_input(gidx_);
-    dit_rope_index(p_.head_dim, ridx_);
     dbg_nan_ = std::getenv("TRELLIS_DBG_NAN") != nullptr;
     gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_,
-                            dbg_nan_ ? &inter_ : nullptr, gproj_, gidx_);
+                            dbg_nan_ ? &inter_ : nullptr, gproj_, nullptr);
     g_ = ggml_new_graph_custom(ctx_, 262144, false);
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);
@@ -153,7 +151,6 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
         if (!proj) throw std::runtime_error("DitRunner: proj_attn model requires a proj tensor");
         ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
     }
-    ggml_backend_tensor_set(gidx_, ridx_.data(), 0, ridx_.size() * sizeof(int32_t));
     const auto tc0 = std::chrono::steady_clock::now();
     if (ggml_backend_graph_compute(m_.backend, g_) != GGML_STATUS_SUCCESS)
         throw std::runtime_error("DitRunner: compute failed");

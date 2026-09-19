@@ -59,34 +59,37 @@ static T* rms_gamma(ggml_context* c, T* x, T* gamma, float eps) {
     return ggml_mul(c, x, gamma);   // gamma cast to f32 by caller
 }
 
-// x: [head_dim, n_heads, L]; cos/sin: [1, head_dim/2, 1, L]. Interleaved-pair rotation.
-// The rotated pair [x_even*cos - x_odd*sin, x_odd*cos + x_even*sin] is scattered back into the
-// output with two ggml_set_rows (single flat-grid dispatch each) rather than ggml_concat: ggml's
-// concat launches one kernel per ne[3] slice, so the old concat over the [2,half,nh,L] pair tensor
-// fired L (token-count) dispatches per call -> ~30M concat launches over a flow. q/k are F32 here
-// (mul_mat output), which ggml_set_rows requires. Even/odd row indices come from `rope_idx`
-// (host-built I32 [hd] = evens|odds, see dit_rope_index) when the caller supplies one, else
-// from ggml_arange -- identical integers either way; the input form exists because the ggml
-// WebGPU backend has no ARANGE kernel (docs/PIXAL3D_WEBGPU_OP_GAP.md C2).
+// x: [head_dim, n_heads, L]; cos/sin: [1, head_dim/2, 1, L] (host layout data[token*half + pair]).
+// Interleaved-pair rotation, computed in a DE-INTERLEAVED layout that is never re-interleaved:
+// the output is [ev(0..half-1) | od(0..half-1)] along head_dim instead of [ev0,od0,ev1,od1,...].
+// q and k both go through this, so their dot product -- the only consumer of the rotated
+// values (sdpa) -- is unchanged up to fp32 summation order; V is not rotated.
+//
+// Why the layout matters (2026-09-20, --profile on M4 Max / Metal, docs/results/
+// 2026-09-20-metal-flow-profile.md): the previous form built every elementwise op on
+// [1, half, nh, L] tensors (ne0 = 1) plus a zero-filled [1, hd, nh, L] scratch and two
+// ggml_set_rows. ggml-metal's unary/binary kernels dispatch one threadgroup per ne0-row, so
+// ne0 = 1 meant 64*12*N threadgroups of one thread per op -- 13.5M at N = 17612 -- and the
+// RoPE elementwise ops cost ~17 s of a 32 s Shape-1024 forward, more than FlashAttention
+// (8 s) and all q8_0 GEMMs (5 s) together. Here every op has rows of `half` (64) elements:
+// one cont of the pair-major permute, four MUL, one SUB, one ADD, one CONCAT (a single
+// launch on every backend: ne3 = 1). `rope_idx` is accepted for API compatibility and unused.
 static T* apply_rope(ggml_context* c, T* x, T* cos, T* sin, T* rope_idx) {
+    (void)rope_idx;
     const int64_t hd = x->ne[0], nh = x->ne[1], L = x->ne[2];
     const int64_t half = hd / 2;
-    T* x5 = ggml_reshape_4d(c, x, 2, half, nh, L);              // [2, half, nh, L]
-    T* x0 = ggml_cont(c, ggml_view_4d(c, x5, 1, half, nh, L, x5->nb[1], x5->nb[2], x5->nb[3], 0));         // even
-    T* x1 = ggml_cont(c, ggml_view_4d(c, x5, 1, half, nh, L, x5->nb[1], x5->nb[2], x5->nb[3], x5->nb[0])); // odd
-    T* ev = ggml_sub(c, ggml_mul(c, x0, cos), ggml_mul(c, x1, sin));   // [1,half,nh,L] rotated even
-    T* od = ggml_add(c, ggml_mul(c, x1, cos), ggml_mul(c, x0, sin));   // [1,half,nh,L] rotated odd
-    T *ce, *co;
-    if (rope_idx) {
-        ce = ggml_view_1d(c, rope_idx, half, 0);                                       // [0,2,..,hd-2]
-        co = ggml_view_1d(c, rope_idx, half, (size_t)half * ggml_element_size(rope_idx)); // [1,3,..,hd-1]
-    } else {
-        ce = ggml_cast(c, ggml_arange(c, 0.0f, (float)hd, 2.0f), GGML_TYPE_I32);
-        co = ggml_cast(c, ggml_arange(c, 1.0f, (float)hd, 2.0f), GGML_TYPE_I32);
-    }
-    T* out = ggml_scale(c, ggml_reshape_4d(c, x, 1, hd, nh, L), 0.0f);  // allocated [1,hd,nh,L] scratch
-    out = ggml_set_rows(c, out, ev, ce);
-    out = ggml_set_rows(c, out, od, co);
+    // [2, half, nh*L] -> permute -> [half, 2, nh*L]: row p = 0 holds the even (x[2i]) elements,
+    // p = 1 the odd (x[2i+1]) ones, each as a contiguous row of `half`.
+    T* xp = ggml_cont(c, ggml_permute(c, ggml_reshape_3d(c, x, 2, half, nh * L), 1, 0, 2, 3));
+    T* x0 = ggml_view_3d(c, xp, half, nh, L, xp->nb[2], xp->nb[2] * nh, 0);           // even  [half, nh, L]
+    T* x1 = ggml_view_3d(c, xp, half, nh, L, xp->nb[2], xp->nb[2] * nh, xp->nb[1]);   // odd   [half, nh, L]
+    T* cs = ggml_reshape_3d(c, cos, half, 1, L);                                         // broadcast over heads
+    T* sn = ggml_reshape_3d(c, sin, half, 1, L);
+    T* ev = ggml_sub(c, ggml_mul(c, x0, cs), ggml_mul(c, x1, sn));   // [half, nh, L] rotated even
+    T* od = ggml_add(c, ggml_mul(c, x1, cs), ggml_mul(c, x0, sn));   // [half, nh, L] rotated odd
+    // [half, 1, nh*L] ++ [half, 1, nh*L] along dim 1 -> [half, 2, nh*L], which is byte-identical to
+    // a contiguous [hd, nh, L] with head_dim index = p*half + i.
+    T* out = ggml_concat(c, ggml_reshape_3d(c, ev, half, 1, nh * L), ggml_reshape_3d(c, od, half, 1, nh * L), 1);
     return ggml_reshape_3d(c, out, hd, nh, L);
 }
 
@@ -410,6 +413,10 @@ bool dit_detect_proj_attn(const Model& m, DiTParams& p) {
     p.proj_attn = true;
     p.d_proj = (int)w->ne[0];
     return true;
+}
+
+ggml_tensor* dit_rope(ggml_context* gctx, ggml_tensor* x, ggml_tensor* cos, ggml_tensor* sin) {
+    return apply_rope(gctx, x, cos, sin, nullptr);
 }
 
 void dit_rope_index(int head_dim, std::vector<int32_t>& out) {

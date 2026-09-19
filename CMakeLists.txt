@@ -461,6 +461,10 @@ add_executable(trellis-test-proj-grid src/test_proj_grid.cpp)
 target_link_libraries(trellis-test-proj-grid PRIVATE trellis_core)
 set_target_properties(trellis-test-proj-grid PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+add_executable(trellis-test-rope-layout src/test_rope_layout.cpp)
+target_link_libraries(trellis-test-rope-layout PRIVATE trellis_core)
+set_target_properties(trellis-test-rope-layout PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-dit-bench src/test_dit_bench.cpp)
 target_link_libraries(trellis-test-dit-bench PRIVATE trellis_core)
 set_target_properties(trellis-test-dit-bench PROPERTIES BUILD_RPATH "${GGML_RPATH}")
