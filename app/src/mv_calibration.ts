@@ -22,6 +22,17 @@ interface TransformMeta {
 
 type ViewEntry = { file: File; frame: TransformFrame; url: string };
 
+/** `pixal3d-mv-result` CustomEvent detail; consumed by main.ts. */
+export interface MvResultDetail {
+  glb: Blob;
+  name: string;
+  meshScale: number;
+  resolution: 1024 | 1536;
+  seed: number;
+  /** The RGBA views in the order they were sent, first view first. */
+  views: Blob[];
+}
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const basename = (p: string) => p.replace(/\\/g, "/").split("/").pop() || p;
 const validScale = (v: unknown): v is number =>
@@ -405,9 +416,10 @@ export function mountMvCalibration(root: HTMLElement): void {
         activeAbort.signal,
       );
       stage.textContent = "complete";
-      window.dispatchEvent(new CustomEvent("pixal3d-mv-result", {
-        detail: { glb, name: "multiview", meshScale, resolution, seed: seedValue },
-      }));
+      const detail: MvResultDetail = {
+        glb, name: "multiview", meshScale, resolution, seed: seedValue, views: views.map((v) => v.file),
+      };
+      window.dispatchEvent(new CustomEvent<MvResultDetail>("pixal3d-mv-result", { detail }));
     } catch (e) {
       if (activeAbort.signal.aborted) {
         stage.textContent = "cancelled";
