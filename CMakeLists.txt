@@ -465,6 +465,10 @@ add_executable(trellis-test-rope-layout src/test_rope_layout.cpp)
 target_link_libraries(trellis-test-rope-layout PRIVATE trellis_core)
 set_target_properties(trellis-test-rope-layout PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+add_executable(trellis-test-fa-oracle src/test_fa_oracle.cpp)
+target_link_libraries(trellis-test-fa-oracle PRIVATE trellis_core)
+set_target_properties(trellis-test-fa-oracle PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-dit-bench src/test_dit_bench.cpp)
 target_link_libraries(trellis-test-dit-bench PRIVATE trellis_core)
 set_target_properties(trellis-test-dit-bench PROPERTIES BUILD_RPATH "${GGML_RPATH}")

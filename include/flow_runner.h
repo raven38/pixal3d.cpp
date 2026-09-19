@@ -53,6 +53,11 @@ private:
     size_t alloc_bytes_ = 0;
     std::map<std::string, ggml_tensor*> inter_;   // [dbg] named intermediates for NaN localization
     bool dbg_nan_ = false, dbg_done_ = false;
+    // TRELLIS_DBG_FA_RANGE: every attention's pre-cast Q / K / V(scaled) are kept as outputs and
+    // their max|x| is printed per forward (F16 headroom). Costs ~5 GB of un-reusable activations
+    // at N=17612, so it is a one-off measurement switch, never on by default.
+    bool dbg_fa_range_ = false;
+    void print_fa_range(float t_scaled);
     // --profile: forward counter (the profiling passes run after forward #1, once the backend's
     // lazy pipeline compiles on #0 are done) and the whole-graph time of every forward so far.
     int fwd_count_ = 0;

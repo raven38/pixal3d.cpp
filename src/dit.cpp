@@ -1,6 +1,7 @@
 #include "dit.h"
 #include "trellis_model.h"
 #include "ggml.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <cmath>
@@ -36,6 +37,57 @@ static constexpr int64_t kAttnChunkBytes = 1024ll * 1024 * 1024;
 #endif
 bool g_no_fa = false;             // --no-fa; set by trellis_run
 bool g_profile = false;           // --profile; set by trellis_run (read in flow_runner.cpp)
+int  g_fa_kv = FA_KV_AUTO;        // --fa-kv; set by trellis_run (resolved per build, see below)
+static int s_fa_kv_build = FA_KV_BF16;                  // effective K/V type for the graph being built
+static std::map<std::string, T*>* s_inter_build = nullptr;  // build_dit_dense's `inter`, for sdpa's probes
+// TRELLIS_DBG_FA_RANGE=<letters>: expose every attention's pre-cast Q / K / V (F32) as named
+// intermediates so flow_runner.cpp can print their max|x| per forward (F16 headroom check). The value
+// selects the operands: any string containing 'q' / 'k' / 'v' ("1" or "all" = all three). Each kept
+// operand costs ~103 MiB x 30 blocks at N=17612 (self) -- "v" alone (the only operand without a static
+// bound, see sdpa) is ~3 GiB, "qkv" ~12 GiB. Debug-only: never changes the graph when unset.
+static const std::string s_fa_range = []() -> std::string {
+    const char* e = std::getenv("TRELLIS_DBG_FA_RANGE");
+    if (!e) return "";
+    const std::string v(e);
+    return (v == "1" || v == "all") ? "qkv" : v;
+}();
+
+int dit_fa_kv_parse(const char* v) {
+    if (!v) return -1;
+    const std::string a(v);
+    if (a == "auto") return FA_KV_AUTO;
+    if (a == "bf16") return FA_KV_BF16;
+    if (a == "f16")  return FA_KV_F16;
+    if (a == "f32")  return FA_KV_F32;
+    return -1;
+}
+
+const char* dit_fa_kv_name(int kv) {
+    switch (kv) {
+        case FA_KV_AUTO: return "auto";
+        case FA_KV_BF16: return "bf16";
+        case FA_KV_F16:  return "f16";
+        case FA_KV_F32:  return "f32";
+    }
+    return "?";
+}
+
+// AUTO の解決。優先順: --fa-kv > TRELLIS_FA_KV > TRELLIS_FA_FAST(=f16) > backend 既定。
+// backend 既定は今のところ全 backend で BF16（Metal の切替は docs/design/2026-09-20-metal-fa-f16-kv.md の
+// ゲートを通してから）。CUDA: BF16 K/V は内部で F16 に変換されるが V_SCALE で範囲内、set_prec(F32) が効く。
+// Vulkan (RADV/gfx1151): F16 K/V は sparse flow で crash した記録あり（docs/spec/29-perf-profile.md）。
+int dit_fa_kv_effective(ggml_backend* backend) {
+    int kv = g_fa_kv;
+    if (kv == FA_KV_AUTO) {
+        if (const char* e = std::getenv("TRELLIS_FA_KV")) { const int p = dit_fa_kv_parse(e); if (p > 0) kv = p; }
+    }
+    if (kv == FA_KV_AUTO && std::getenv("TRELLIS_FA_FAST")) kv = FA_KV_F16;
+    if (kv == FA_KV_AUTO) {
+        (void)backend;   // 現時点では backend 依存の既定は無い（全 backend BF16）
+        kv = FA_KV_BF16;
+    }
+    return kv;
+}
 
 static T* lin(ggml_context* c, const Model& m, const std::string& p, T* x) {
     T* w = m.get(p + ".weight");
@@ -196,7 +248,8 @@ static T* mlp_chunked(ggml_context* c, const Model& m, const std::string& pre, T
 }
 
 // SDPA over heads. q:[hd,nh,Lq]  k,v:[hd,nh,Lk] -> [d_model, Lq].  `mask`: optional [Lk_pad,Lq] F16.
-static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr) {
+// `tag` names the attention ("blocks.<i>.self_attn" / "...cross_attn...") for the FA range probes.
+static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr, const std::string& tag = "") {
     const float scale = 1.0f / std::sqrt((float)q->ne[0]);
     // FlashAttention: a fused, tiled SDPA that never materialises the [Lk,Lq,nh] score
     // matrix — O(N) memory instead of O(N^2). That score buffer is exactly what OOMs the
@@ -209,11 +262,21 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     //      happened to dodge it; the HR flow (52.7k tok) hits it ~70%. Fix: **zero-pad K/V's
     //      key dim up to a 256 multiple** — zero keys add exp(0-rowmax)~0 (numerically exact),
     //      remove the garbage tile, AND unlock the aligned (Lk%256==0) kernel path.
-    //  (2) Use **BF16** (not F16) for K/V. CUDA's tensor-core FA kernels still convert BF16
-    //      K/V to F16 internally, so V is power-of-two scaled before the cast and the output is
-    //      scaled back afterward. Attention is linear in V, and this keeps large HR activations
-    //      inside F16's +-65504 range without changing the softmax.
-    // set_prec(GGML_PREC_F32) below is LOAD-BEARING, and only became so in ggml 2d6d0b0c.
+    //  (2) Use **BF16** (not F16) for K/V -- on CUDA. CUDA's tensor-core FA kernels still convert
+    //      BF16 K/V to F16 internally, so V is power-of-two scaled before the cast and the output
+    //      is scaled back afterward. Attention is linear in V, and this keeps large HR activations
+    //      inside F16's +-65504 range without changing the softmax. Q and K never need this: both
+    //      go through rms_gamma (per-head RMSNorm x gamma) right before, so |q_i|, |k_i| <=
+    //      sqrt(head_dim) * max|gamma| (~206 for the shape flows, tools/fa_gamma_bound.py).
+    // The K/V storage type is --fa-kv (dit_fa_kv_effective): bf16 (default everywhere), f16, f32.
+    // METAL IS DIFFERENT (ggml-metal.metal FA_TYPES* macros, read 2026-09-20): the Metal backend
+    // never reads ggml_flash_attn_ext_get_prec, so set_prec is a no-op there, and the kernel's
+    // output accumulator type follows the K/V type -- bf16 K/V: q stored as bfloat (7-bit mantissa)
+    // and the running softmax-weighted V sum kept in HALF across all KV tiles (the same "F16
+    // accumulation stagnates" mechanism described below for CUDA TILE); f16 K/V: q as half (10-bit)
+    // and the sum in FLOAT. So on Metal f16 K/V is the numerically better choice, with V_SCALE
+    // covering the only range risk. See docs/design/2026-09-20-metal-fa-f16-kv.md for the gates.
+    // set_prec(GGML_PREC_F32) below is LOAD-BEARING on CUDA, and only became so in ggml 2d6d0b0c.
     // Before it, only fattn-wmma-f16.cu read ggml_flash_attn_ext_get_prec; TILE (what this
     // shape gets on gfx1151), VEC and MMA silently ignored it and accumulated VKQ in half2.
     // Summing ~15k weighted V terms in F16 stagnates -- small addends round away once the
@@ -230,28 +293,40 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     // --no-fa falls back to the exact chunked path (correct on any backend, ~2.7x slower).
     const bool no_fa = g_no_fa;
     if (!no_fa) {
-        // TRELLIS_FA_FAST=1: F16 K/V + default (F16) accumulation — the shapes
-        // the Vulkan coopmat FA shaders are specialized for. A/B only: F16 K/V
-        // can overflow on HR activations (the reason BF16+F32 is the default).
-        static const bool fa_fast = std::getenv("TRELLIS_FA_FAST") != nullptr;
+        const ggml_type kv_type = s_fa_kv_build == FA_KV_F16 ? GGML_TYPE_F16
+                                : s_fa_kv_build == FA_KV_F32 ? GGML_TYPE_F32 : GGML_TYPE_BF16;
+        // Range probes (TRELLIS_DBG_FA_RANGE): the F32 tensors right before the cast, per attention.
+        auto probe = [&](const char* what, T* t) {
+            if (s_inter_build && !tag.empty() && s_fa_range.find(what[4]) != std::string::npos) {  // what = ".fa_q" etc.
+                const std::string nm = tag + what;
+                (*s_inter_build)[nm] = t; ggml_set_name(t, nm.c_str());
+            }
+            return t;
+        };
         const int64_t KQ_STRIDE = 256;
-        auto prep_kv = [&](T* x) {                              // -> [hd, Lk_pad, nh] BF16
+        auto prep_kv = [&](T* x, const char* what) {           // -> [hd, Lk_pad, nh] kv_type
             T* p = ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3));   // [hd, Lk, nh] F32
             const int64_t pad = (KQ_STRIDE - (p->ne[1] % KQ_STRIDE)) % KQ_STRIDE;
             if (pad) p = ggml_pad(c, p, 0, (int)pad, 0, 0);        // zero-pad key dim
-            return ggml_cast(c, p, fa_fast ? GGML_TYPE_F16 : GGML_TYPE_BF16);
+            probe(what, p);
+            return kv_type == GGML_TYPE_F32 ? p : ggml_cast(c, p, kv_type);
         };
         T* qf = ggml_cont(c, ggml_permute(c, q, 0, 2, 1, 3));  // [hd, Lq, nh]
         if (qf->type != GGML_TYPE_F32) qf = ggml_cast(c, qf, GGML_TYPE_F32);
-        T* kf = prep_kv(k);
+        probe(".fa_q", qf);
+        T* kf = prep_kv(k, ".fa_k");
         constexpr float V_SCALE = 1.0f / 256.0f;
-        T* vf = prep_kv(ggml_scale(c, v, V_SCALE));
+        T* vf = prep_kv(ggml_scale(c, v, V_SCALE), ".fa_v");   // probe sees the SCALED V (what is cast)
         // TRELLIS_FA_NOMASK=1: drop the mask. If the output is UNCHANGED, the mask is being
         // ignored and the zero-padded keys are diluting the softmax (exp(0-rowmax) is only
         // negligible when rowmax >> 0), which shrinks every output toward zero.
         static const bool fa_nomask = std::getenv("TRELLIS_FA_NOMASK") != nullptr;
         T* out = ggml_flash_attn_ext(c, qf, kf, vf, fa_nomask ? nullptr : mask, scale, 0.0f, 0.0f);  // [hd, nh, Lq]
-        if (!fa_fast) ggml_flash_attn_ext_set_prec(out, GGML_PREC_F32);
+        // F32 accumulation for bf16 / f32 K/V, as before. f16 K/V keeps the historical
+        // TRELLIS_FA_FAST meaning on CUDA / Vulkan ("f16 K/V + f16 accumulate", the shapes the Vulkan
+        // coopmat shaders are specialised for; Vulkan: f32acc = prec==F32 || K is BF16). Metal ignores
+        // prec entirely (see above), so there f16 K/V always accumulates in float regardless.
+        if (kv_type != GGML_TYPE_F16) ggml_flash_attn_ext_set_prec(out, GGML_PREC_F32);
         out = ggml_scale(c, out, 1.0f / V_SCALE);
         return ggml_reshape_2d(c, out, d_model, out->ne[2]);   // [d_model, Lq]
     }
@@ -326,7 +401,7 @@ static T* self_attn(ggml_context* c, const Model& m, const std::string& pre, T* 
     k = rms_gamma(c, k, gamma32(c, m, pre + ".k_rms_norm.gamma"), p.rms_eps);
     q = apply_rope(c, q, cos, sin, rope_idx);
     k = apply_rope(c, k, cos, sin, rope_idx);
-    return lin(c, m, pre + ".to_out", sdpa(c, q, k, v, p.d_model, mask));
+    return lin(c, m, pre + ".to_out", sdpa(c, q, k, v, p.d_model, mask, pre));
 }
 
 static T* cross_attn(ggml_context* c, const Model& m, const std::string& pre, T* h, T* cond,
@@ -344,7 +419,7 @@ static T* cross_attn(ggml_context* c, const Model& m, const std::string& pre, T*
     T* k = pick(0); T* v = pick(1);
     q = rms_gamma(c, q, gamma32(c, m, pre + ".q_rms_norm.gamma"), p.rms_eps);
     k = rms_gamma(c, k, gamma32(c, m, pre + ".k_rms_norm.gamma"), p.rms_eps);
-    return lin(c, m, pre + ".to_out", sdpa(c, q, k, v, p.d_model, mask));
+    return lin(c, m, pre + ".to_out", sdpa(c, q, k, v, p.d_model, mask, pre));
 }
 
 // x*(1+scale)+shift, scale/shift: [d_model] broadcast over L
@@ -425,10 +500,19 @@ void dit_rope_index(int head_dim, std::vector<int32_t>& out) {
     for (int i = 0; i < half; ++i) { out[i] = 2 * i; out[half + i] = 2 * i + 1; }
 }
 
+ggml_tensor* dit_sdpa(ggml_context* c, ggml_backend* backend, T* q, T* k, T* v, int d_model) {
+    s_fa_kv_build = dit_fa_kv_effective(backend);
+    s_inter_build = nullptr;
+    T* mask = build_pad_mask(c, k->ne[2], q->ne[2]);
+    return sdpa(c, q, k, v, d_model, mask, "");
+}
+
 ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p,
                              T* h0, T* tfreq, T* cond, T* cos, T* sin,
                              std::map<std::string, T*>* inter, T* proj, T* rope_idx) {
     g_cast_f32 = p.cast_f32;
+    s_fa_kv_build = dit_fa_kv_effective(m.backend);
+    s_inter_build = inter;
     auto keep = [&](const char* n, T* t) { if (inter) (*inter)[n] = t; ggml_set_name(t, n); return t; };
 
     T* h = lin(c, m, "input_layer", h0);                       // [d_model, L]
