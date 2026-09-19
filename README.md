@@ -294,7 +294,9 @@ The 1024 cascade runs on a 16 GB card thanks to **FlashAttention with padded K/V
 the sparse-structure stage, and at the HR token count (≈53k) ggml's tiled FA NaN'd on
 the unpadded last key-tile — zero-padding K/V to a 256 multiple + BF16 fixes both.
 f16 compute is the default and matches torch (`--f32` forces f32; `--no-fa` restores
-the plain-softmax path for A/B testing).
+the plain-softmax path for A/B testing; `--fa-kv {bf16,f16,f32}` picks the FlashAttention
+K/V storage type — bf16 is the default on every backend, see
+`docs/results/2026-09-20-metal-fa-f16-kv.md` for the Metal A/B).
 
 Every neural component is validated against PyTorch (the `trellis-test-*` binaries +
 `tools/ref_*.py`): SS sampler matches torch to rel 4.3e-3 (exact voxel match), DiT
@@ -342,8 +344,9 @@ and still trails Vulkan by 10–40 %.
 **Apple Silicon (Metal):** verified end-to-end on an Apple M5 (24 GB unified):
 res-512 image → textured GLB in **9:21** with a **5.6 GB** peak RSS, all
 neural stages on Metal (2.4M decoded voxels, 4.8M-face raw mesh). bfloat16 and
-f16 tensor APIs are available from M2 on; on M1 use `TRELLIS_FA_FAST=1`
-(f16 K/V) since the default FlashAttention path casts K/V to bf16.
+f16 tensor APIs are available from M2 on; on M1 use `--fa-kv f16`
+(f16 K/V; `TRELLIS_FA_FAST=1` is the legacy spelling) since the default FlashAttention
+path casts K/V to bf16.
 
 ## Tools
 

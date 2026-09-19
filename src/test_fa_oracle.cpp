@@ -16,8 +16,13 @@
 //   gpu: -1 = CPU only, else CPU + the build's GPU device (--gpu-only skips the CPU backend, whose
 //   exact path at N=17612 takes ~45 s per config).
 // Prints per (backend, regime, config): rel_rms = rms(out - ref) / rms(ref), max|d|, bias =
-// mean(out - ref) / rms(ref), nonfinite; and FA_ORACLE_RESULT: OK if every config is finite and
-// the exact path's rel_rms < 1e-5 on every backend.
+// mean(out - ref) / rms(ref), nonfinite; then two verdicts. FA_ORACLE_RESULT: OK if every config
+// is finite with rel_rms < 1e-2 (exit bit 1 otherwise). FA_ORACLE_EXACT_REF: OK if the exact
+// path's rel_rms < 1e-5 on every backend (exit bit 2 otherwise) -- on Metal it is NOT: the F32
+// mul_mat there (kernel_mul_mm_f32_f32) stages both operands as half in threadgroup memory
+// (simdgroup_half8x8), so --no-fa on Metal is a half-operand / float-accumulate path, at the
+// same error level as f16 K/V FlashAttention (measured 2026-09-20, M4 Max: exact 4.5e-4 vs
+// FA f16 3.7e-4 in the flat regime).
 #include "dit.h"
 #include "trellis_args.h"
 #include "npy.h"
@@ -109,7 +114,7 @@ static int run_on(ggml_backend_t backend, const char* label, int N, int nsamp) {
             if (dev) for (int i = 0; i < ggml_graph_n_nodes(g); ++i) if (!ggml_backend_dev_supports_op(dev, ggml_graph_node(g, i))) { supported = false; break; }
             if (!supported) { printf("  %-16s unsupported on this backend (skipped)\n", cfg.name); ggml_free(ctx); continue; }
             ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
-            if (!ggml_gallocr_alloc_graph(alloc, g)) { fprintf(stderr, "  %s: alloc failed\n", cfg.name); rc = 1; ggml_free(ctx); continue; }
+            if (!ggml_gallocr_alloc_graph(alloc, g)) { fprintf(stderr, "  %s: alloc failed\n", cfg.name); rc |= 1; ggml_free(ctx); continue; }
             Stats st;
             for (int rep = 0; rep < 2; ++rep) {   // rep 0 warms the pipelines; rep 1 is timed
                 // Re-upload before EVERY compute: gallocr reuses the input buffers for later nodes of the
@@ -118,7 +123,7 @@ static int run_on(ggml_backend_t backend, const char* label, int N, int nsamp) {
                 ggml_backend_tensor_set(gk, k.data(), 0, k.size() * 4);
                 ggml_backend_tensor_set(gv, v.data(), 0, v.size() * 4);
                 const auto t0 = std::chrono::steady_clock::now();
-                if (ggml_backend_graph_compute(backend, g) != GGML_STATUS_SUCCESS) { fprintf(stderr, "  %s: compute failed\n", cfg.name); rc = 1; break; }
+                if (ggml_backend_graph_compute(backend, g) != GGML_STATUS_SUCCESS) { fprintf(stderr, "  %s: compute failed\n", cfg.name); rc |= 1; break; }
                 st.secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
                 st.ok = true;
             }
@@ -143,8 +148,8 @@ static int run_on(ggml_backend_t backend, const char* label, int N, int nsamp) {
                     }
                 }
                 printf("  %-16s rel_rms=%.3e  max|d|=%.3e  bias=%+.2e  nonfinite=%zu  %.3fs\n", cfg.name, s.rel_rms, s.max_abs, s.bias, s.bad, s.secs);
-                if (s.bad || !(s.rel_rms < 1e-2)) rc = 1;
-                if (cfg.no_fa && !(s.rel_rms < 1e-5)) { printf("  ** exact path is not a valid F32 reference here (rel_rms >= 1e-5)\n"); rc = 1; }
+                if (s.bad || !(s.rel_rms < 1e-2)) rc |= 1;
+                if (cfg.no_fa && !(s.rel_rms < 1e-5)) { printf("  ** exact path is not a valid F32 reference here (rel_rms >= 1e-5)\n"); rc |= 2; }
             }
             ggml_gallocr_free(alloc); ggml_free(ctx);
         }
@@ -171,11 +176,12 @@ int main(int argc, char** argv) {
         if (dev) {
             ggml_backend_t b = ggml_backend_dev_init(dev, nullptr);
             if (b) { rc |= run_on(b, ggml_backend_dev_name(dev), N, nsamp); ggml_backend_free(b); }
-            else { fprintf(stderr, "gpu init failed\n"); rc = 1; }
+            else { fprintf(stderr, "gpu init failed\n"); rc |= 1; }
         } else {
             printf("no GPU device in this build; CPU only\n");
         }
     }
-    printf("FA_ORACLE_RESULT: %s\n", rc == 0 ? "OK" : "FAIL");
+    printf("FA_ORACLE_RESULT: %s\n", (rc & 1) == 0 ? "OK" : "FAIL");
+    printf("FA_ORACLE_EXACT_REF: %s\n", (rc & 2) == 0 ? "OK" : "NOT-F32 (the --no-fa path is not an F32 reference on some tested backend)");
     return rc;
 }
