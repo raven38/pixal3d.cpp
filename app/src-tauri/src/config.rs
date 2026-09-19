@@ -26,8 +26,12 @@ pub struct Config {
     pub models_dir_sv: String,
     #[serde(default = "default_backend")]
     pub backend: String,
+    /// GPU index passed to trellis-server as `--gpu N`. None (missing or null in
+    /// config.json) omits the flag so the server picks the device itself —
+    /// preferring a discrete GPU over a UMA iGPU on Vulkan (#23). 0.9.0 installers
+    /// wrote `"gpu": 0`; that stays an explicit index 0.
     #[serde(default)]
-    pub gpu: i32,
+    pub gpu: Option<i32>,
     #[serde(default = "default_host")]
     pub host: String,
     #[serde(default = "default_port")]
@@ -144,7 +148,7 @@ pub fn load() -> Option<Config> {
         models_dir: root.join("models").to_string_lossy().into_owned(),
         models_dir_sv: if models_sv.is_dir() { models_sv.to_string_lossy().into_owned() } else { String::new() },
         backend: default_backend(),
-        gpu: 0,
+        gpu: None,
         host: default_host(),
         port: default_port(),
         output_dir: String::new(),
@@ -158,4 +162,25 @@ pub fn save(cfg: &Config) -> Result<(), String> {
     }
     let s = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
     std::fs::write(p, s).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+
+    // The installer's `"gpu": 0` (0.9.0) stays an explicit index; `null` or a missing
+    // key means auto-select, and saving keeps `null` so the flag stays omitted.
+    #[test]
+    fn gpu_index_is_optional() {
+        let explicit: Config = serde_json::from_str(r#"{"gpu": 0}"#).unwrap();
+        assert_eq!(explicit.gpu, Some(0));
+        let cpu: Config = serde_json::from_str(r#"{"gpu": -1}"#).unwrap();
+        assert_eq!(cpu.gpu, Some(-1));
+        let null: Config = serde_json::from_str(r#"{"gpu": null}"#).unwrap();
+        assert_eq!(null.gpu, None);
+        let missing: Config = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(missing.gpu, None);
+        let saved: serde_json::Value = serde_json::to_value(&missing).unwrap();
+        assert!(saved["gpu"].is_null());
+    }
 }

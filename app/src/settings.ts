@@ -57,7 +57,7 @@ export async function renderSettings(body: HTMLElement, onSaved: () => void): Pr
     const mvCache = await cacheBlock("model_cache_info", "Pixal3D MV", "set-model-cache-delete", cfg.modelsDir);
     const svCache = await cacheBlock("model_cache_info_sv", "Pixal3D SV", "set-model-cache-delete-sv", cfg.modelsDirSv);
 
-    body.innerHTML = `${ro("Backend", cfg.backend)}${ro("Server binary", cfg.serverBin)}${field("Models directory (Pixal3D MV, f16)", "set-models", cfg.modelsDir)}${mvCache.html}${field("Single-view models directory (Pixal3D SV, optional — leave empty if not installed)", "set-models-sv", cfg.modelsDirSv)}${svCache.html}${dirField("Output folder (generated GLBs are saved here)", "set-output", outputDir)}${field("GPU index (&lt;0 = CPU)", "set-gpu", String(cfg.gpu), "number")}${field("Port", "set-port", String(cfg.port), "number")}<label class="ctl"><span>Server logs</span><div class="dir-row"><input id="set-logs" type="text" value="${escapeHtml(logDir)}" readonly /><button id="set-logs-open" class="tool-btn" type="button">Open</button></div></label><div class="modal-actions"><button id="set-restart" class="tool-btn">Restart server</button><button id="set-save" class="primary">Save &amp; restart</button></div>`;
+    body.innerHTML = `${ro("Backend", cfg.backend)}${ro("Server binary", cfg.serverBin)}${field("Models directory (Pixal3D MV, f16)", "set-models", cfg.modelsDir)}${mvCache.html}${field("Single-view models directory (Pixal3D SV, optional — leave empty if not installed)", "set-models-sv", cfg.modelsDirSv)}${svCache.html}${dirField("Output folder (generated GLBs are saved here)", "set-output", outputDir)}${field("GPU index (empty = auto, prefers the discrete GPU; &lt;0 = CPU)", "set-gpu", cfg.gpu == null ? "" : String(cfg.gpu), "number")}${field("Port", "set-port", String(cfg.port), "number")}<label class="ctl"><span>Server logs</span><div class="dir-row"><input id="set-logs" type="text" value="${escapeHtml(logDir)}" readonly /><button id="set-logs-open" class="tool-btn" type="button">Open</button></div></label><div class="modal-actions"><button id="set-restart" class="tool-btn">Restart server</button><button id="set-save" class="primary">Save &amp; restart</button></div>`;
 
     const wireDelete = (id: string, cmd: string, info: ModelCacheInfo | null, label: string) => {
       const btn = body.querySelector(`#${id}`) as HTMLButtonElement | null;
@@ -78,9 +78,10 @@ export async function renderSettings(body: HTMLElement, onSaved: () => void): Pr
     const save = async () => {
       const modelsDir = (body.querySelector("#set-models") as HTMLInputElement).value.trim();
       const modelsDirSv = (body.querySelector("#set-models-sv") as HTMLInputElement).value.trim();
-      const gpu = parseInt((body.querySelector("#set-gpu") as HTMLInputElement).value, 10);
+      const gpuText = (body.querySelector("#set-gpu") as HTMLInputElement).value.trim();
+      const gpu = gpuText === "" ? null : parseInt(gpuText, 10);
       const port = parseInt((body.querySelector("#set-port") as HTMLInputElement).value, 10);
-      await saveConfig({ modelsDir, modelsDirSv, gpu: isNaN(gpu) ? 0 : gpu, port: isNaN(port) ? 8080 : port, outputDir: outputInput.value.trim() });
+      await saveConfig({ modelsDir, modelsDirSv, gpu: gpu != null && isNaN(gpu) ? null : gpu, port: isNaN(port) ? 8080 : port, outputDir: outputInput.value.trim() });
       try { await invoke("restart_server"); } catch {}
       onSaved();
     };

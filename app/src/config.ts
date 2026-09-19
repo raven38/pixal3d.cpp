@@ -12,7 +12,7 @@ const DEFAULTS: AppConfig = {
   modelsDir: "",
   modelsDirSv: "",
   backend: "unknown",
-  gpu: 0,
+  gpu: null,
   host: "127.0.0.1",
   port: 8080,
   outputDir: "",

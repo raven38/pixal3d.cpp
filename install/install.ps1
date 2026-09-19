@@ -26,7 +26,8 @@ param(
   # including prereleases). Prerelease tags such as v0.10.0-desktop-alpha must be
   # named explicitly or reached via latest-prerelease.
   [string]$Tag = "latest",
-  [int]$Gpu = 0,
+  # GPU index for trellis-server --gpu. Omit for auto (the server prefers a discrete GPU); <0 = CPU.
+  [Nullable[int]]$Gpu = $null,
   [int]$Port = 8080,
   [string]$Dest = "$env:LOCALAPPDATA\trellis-studio",
   [string]$ModelsDir = "",
@@ -84,7 +85,8 @@ function Detect-Backend {
   if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
     try {
       if (nvidia-smi -L 2>$null) {
-        $capText = nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i $Gpu 2>$null |
+        $gpuIdx = if ($null -ne $Gpu) { $Gpu } else { 0 }
+        $capText = nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i $gpuIdx 2>$null |
           Select-Object -First 1
         $cap = 0.0
         if ([double]::TryParse(
@@ -123,7 +125,7 @@ Info "install dir : $Dest"
 Info ("models dir  : {0}{1}" -f $ModelsDir, $(if ($SkipModels) { " (skipped)" } else { "" }))
 if ($ModelManifestSv) { Info "SV models   : $ModelsDirSv" }
 Info "weights     : $WeightsLabel"
-Info "backend/gpu : $Backend / $Gpu     port: $Port"
+Info "backend/gpu : $Backend / $(if ($null -ne $Gpu) { $Gpu } else { 'auto' })     port: $Port"
 Write-Host ""
 if (-not $Yes) {
   $ans = Read-Host "Proceed? [Y/n]"

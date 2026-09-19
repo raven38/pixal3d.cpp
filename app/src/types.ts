@@ -31,7 +31,8 @@ export interface AppConfig {
    */
   modelsDirSv: string;
   backend: string;
-  gpu: number;
+  /** GPU index for trellis-server `--gpu`; null = let the server auto-select (discrete GPU preferred). */
+  gpu: number | null;
   host: string;
   port: number;
   /** where generated GLBs are auto-saved (Tauri only). */

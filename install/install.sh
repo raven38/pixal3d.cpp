@@ -51,7 +51,7 @@ else
   DEST="${XDG_DATA_HOME:-$HOME/.local/share}/trellis-studio"
   CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/trellis-studio"
 fi
-BACKEND=""; GPU=0; PORT=8080; MODELS_DIR=""; SKIP_MODELS=0; SKIP_APP=0; ASSUME_YES=0; QUANT=""
+BACKEND=""; GPU=""; PORT=8080; MODELS_DIR=""; SKIP_MODELS=0; SKIP_APP=0; ASSUME_YES=0; QUANT=""
 # Pixal3D model set (#34): a manifest fixes the exact bytes of every model file.
 MODEL_MANIFEST=""     # path, URL, or "release" (an asset of the resolved release)
 MODEL_BASE_URL=""     # where the model files themselves live
@@ -78,7 +78,7 @@ Trellis Studio installer (Linux)
   --backend cuda|cuda12|rocm|vulkan
                               force a runtime (default: auto-detect; cuda12 is
                               for NVIDIA Pascal/Volta GPUs such as the P100)
-  --gpu N                      GPU index (default 0; <0 = CPU)
+  --gpu N                      GPU index (default: auto — the server prefers a discrete GPU; <0 = CPU)
   --port P                     server port (default 8080)
   --dest DIR                   install location (default $DEST)
   --config-dir DIR             where config.json / release.json are written
@@ -166,7 +166,7 @@ for t in curl tar; do command -v "$t" >/dev/null || die "'$t' is required"; done
 detect_backend() {
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -qi gpu; then
     local cc
-    cc="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "$GPU" 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
+    cc="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "${GPU:-0}" 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
     if [ -n "$cc" ] && awk -v cc="$cc" 'BEGIN { exit !(cc >= 6.0 && cc < 7.5) }'; then
       info "detected NVIDIA compute capability $cc — selecting the CUDA 12 legacy runtime"
       echo cuda12; return
@@ -207,7 +207,7 @@ info "install dir : $DEST"
 info "models dir  : $MODELS_DIR $([ "$SKIP_MODELS" = 1 ] && echo '(skipped)')"
 [ -z "$MODEL_MANIFEST_SV" ] || info "SV models   : $MODELS_DIR_SV"
 info "weights     : $WEIGHTS_LABEL"
-info "backend/gpu : $BACKEND / $GPU     port: $PORT"
+info "backend/gpu : $BACKEND / ${GPU:-auto}     port: $PORT"
 echo
 if [ "$ASSUME_YES" != 1 ] && [ -t 0 ]; then
   read -r -p "Proceed? [Y/n] " ans; case "${ans:-y}" in [nN]*) exit 0;; esac
@@ -765,7 +765,7 @@ cat > "$CONFIG_DIR/config.json" <<JSON
   "modelsDir": "$MODELS_DIR",
   "modelsDirSv": "$CONFIG_MODELS_DIR_SV",
   "backend": "$BACKEND",
-  "gpu": $GPU,
+  "gpu": ${GPU:-null},
   "host": "127.0.0.1",
   "port": $PORT,
   "outputDir": "$DEST/output"
