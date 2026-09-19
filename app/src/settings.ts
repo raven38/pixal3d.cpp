@@ -40,35 +40,47 @@ export async function renderSettings(body: HTMLElement, onSaved: () => void): Pr
     let outputDir = cfg.outputDir;
     if (!outputDir) { try { outputDir = await invoke<string>("default_output_dir"); } catch {} }
     const logDir = await logsDir();
-    let cache: ModelCacheInfo | null = null;
-    let cacheError = "";
-    try { cache = await invoke<ModelCacheInfo>("model_cache_info"); } catch (e) { cacheError = String((e as Error).message ?? e); }
-    const cacheHtml = cache ? `
-      <div class="kv">Managed model cache (manifest-tracked files only): <b>${fmtBytes(cache.sizeBytes)}</b> · ${cache.files} file(s) · ${escapeHtml(cache.manifestVersion || "no manifest")}</div>
+    // MV と SV は別々の managed cache（models / models-sv）。表示と削除も別々に出す。
+    const cacheBlock = async (cmd: string, label: string, deleteId: string, activeDir: string) => {
+      let cache: ModelCacheInfo | null = null;
+      let cacheError = "";
+      try { cache = await invoke<ModelCacheInfo>(cmd); } catch (e) { cacheError = String((e as Error).message ?? e); }
+      const html = cache ? `
+      <div class="kv">${label} managed cache (manifest-tracked files only): <b>${fmtBytes(cache.sizeBytes)}</b> · ${cache.files} file(s) · ${escapeHtml(cache.manifestVersion || "no manifest")}</div>
       <div class="kv muted">${escapeHtml(cache.managedRoot)}</div>
       <div class="kv muted">${escapeHtml(cache.note)}</div>
-      ${cache.deletable ? `<button id="set-model-cache-delete" class="tool-btn" type="button">Delete cached Pixal3D models</button>` : ""}
-      ${!cache.activeIsManaged && cfg.modelsDir ? `<div class="kv muted">External models are read-only to Studio. Changing this path only disconnects the reference; Studio never deletes that directory.</div>` : ""}`
-      : `<div class="kv muted">Managed model cache unavailable${cacheError ? `: ${escapeHtml(cacheError)}` : ""}</div>`;
-
-    body.innerHTML = `${ro("Backend", cfg.backend)}${ro("Server binary", cfg.serverBin)}${field("Models directory", "set-models", cfg.modelsDir)}${cacheHtml}${dirField("Output folder (generated GLBs are saved here)", "set-output", outputDir)}${field("GPU index (&lt;0 = CPU)", "set-gpu", String(cfg.gpu), "number")}${field("Port", "set-port", String(cfg.port), "number")}<label class="ctl"><span>Server logs</span><div class="dir-row"><input id="set-logs" type="text" value="${escapeHtml(logDir)}" readonly /><button id="set-logs-open" class="tool-btn" type="button">Open</button></div></label><div class="modal-actions"><button id="set-restart" class="tool-btn">Restart server</button><button id="set-save" class="primary">Save &amp; restart</button></div>`;
-
-    const deleteBtn = body.querySelector("#set-model-cache-delete") as HTMLButtonElement | null;
-    if (deleteBtn && cache) deleteBtn.onclick = async () => {
-      if (!confirm(`Delete ${cache.files} cached Pixal3D model file(s), ${fmtBytes(cache.sizeBytes)}, from Studio's managed cache? External model folders will not be touched.`)) return;
-      deleteBtn.disabled = true;
-      try { const removed = await invoke<number>("delete_managed_model_cache"); alert(`Removed ${fmtBytes(removed)} from the managed Pixal3D cache.`); await renderSettings(body, onSaved); }
-      catch (e) { deleteBtn.disabled = false; alert(`Could not delete managed models: ${(e as Error).message ?? e}`); }
+      ${cache.deletable ? `<button id="${deleteId}" class="tool-btn" type="button">Delete cached ${label} models</button>` : ""}
+      ${!cache.activeIsManaged && activeDir ? `<div class="kv muted">External models are read-only to Studio. Changing this path only disconnects the reference; Studio never deletes that directory.</div>` : ""}`
+        : `<div class="kv muted">${label} managed cache unavailable${cacheError ? `: ${escapeHtml(cacheError)}` : ""}</div>`;
+      return { cache, html };
     };
+    const mvCache = await cacheBlock("model_cache_info", "Pixal3D MV", "set-model-cache-delete", cfg.modelsDir);
+    const svCache = await cacheBlock("model_cache_info_sv", "Pixal3D SV", "set-model-cache-delete-sv", cfg.modelsDirSv);
+
+    body.innerHTML = `${ro("Backend", cfg.backend)}${ro("Server binary", cfg.serverBin)}${field("Models directory (Pixal3D MV, f16)", "set-models", cfg.modelsDir)}${mvCache.html}${field("Single-view models directory (Pixal3D SV, optional — leave empty if not installed)", "set-models-sv", cfg.modelsDirSv)}${svCache.html}${dirField("Output folder (generated GLBs are saved here)", "set-output", outputDir)}${field("GPU index (&lt;0 = CPU)", "set-gpu", String(cfg.gpu), "number")}${field("Port", "set-port", String(cfg.port), "number")}<label class="ctl"><span>Server logs</span><div class="dir-row"><input id="set-logs" type="text" value="${escapeHtml(logDir)}" readonly /><button id="set-logs-open" class="tool-btn" type="button">Open</button></div></label><div class="modal-actions"><button id="set-restart" class="tool-btn">Restart server</button><button id="set-save" class="primary">Save &amp; restart</button></div>`;
+
+    const wireDelete = (id: string, cmd: string, info: ModelCacheInfo | null, label: string) => {
+      const btn = body.querySelector(`#${id}`) as HTMLButtonElement | null;
+      if (!btn || !info) return;
+      btn.onclick = async () => {
+        if (!confirm(`Delete ${info.files} cached ${label} model file(s), ${fmtBytes(info.sizeBytes)}, from Studio's managed cache? External model folders will not be touched.`)) return;
+        btn.disabled = true;
+        try { const removed = await invoke<number>(cmd); alert(`Removed ${fmtBytes(removed)} from the managed ${label} cache.`); await renderSettings(body, onSaved); }
+        catch (e) { btn.disabled = false; alert(`Could not delete managed models: ${(e as Error).message ?? e}`); }
+      };
+    };
+    wireDelete("set-model-cache-delete", "delete_managed_model_cache", mvCache.cache, "Pixal3D MV");
+    wireDelete("set-model-cache-delete-sv", "delete_managed_model_cache_sv", svCache.cache, "Pixal3D SV");
     (body.querySelector("#set-logs-open") as HTMLButtonElement).onclick = async () => { try { await openLogsDir(); } catch (e) { alert(`Could not open the logs folder: ${(e as Error).message ?? e}`); } };
     const outputInput = body.querySelector("#set-output") as HTMLInputElement;
     (body.querySelector("#set-output-browse") as HTMLButtonElement).onclick = async () => { const picked = await pickDirectory(outputInput.value.trim()); if (picked) outputInput.value = picked; };
     (body.querySelector("#set-output-open") as HTMLButtonElement).onclick = async () => { await saveConfig({ outputDir: outputInput.value.trim() }); try { await openOutputDir(); } catch (e) { alert(`Could not open the output folder: ${(e as Error).message ?? e}`); } };
     const save = async () => {
       const modelsDir = (body.querySelector("#set-models") as HTMLInputElement).value.trim();
+      const modelsDirSv = (body.querySelector("#set-models-sv") as HTMLInputElement).value.trim();
       const gpu = parseInt((body.querySelector("#set-gpu") as HTMLInputElement).value, 10);
       const port = parseInt((body.querySelector("#set-port") as HTMLInputElement).value, 10);
-      await saveConfig({ modelsDir, gpu: isNaN(gpu) ? 0 : gpu, port: isNaN(port) ? 8080 : port, outputDir: outputInput.value.trim() });
+      await saveConfig({ modelsDir, modelsDirSv, gpu: isNaN(gpu) ? 0 : gpu, port: isNaN(port) ? 8080 : port, outputDir: outputInput.value.trim() });
       try { await invoke("restart_server"); } catch {}
       onSaved();
     };

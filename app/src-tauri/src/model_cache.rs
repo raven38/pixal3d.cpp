@@ -22,15 +22,26 @@ pub struct ModelCacheInfo {
 }
 
 pub fn managed_root() -> Result<PathBuf, String> {
+    managed_root_named("models")
+}
+
+/// The managed root for the single-view (SV) model set: a sibling of the MV
+/// root named `models-sv` (portable: `<exe>/models-sv`). Kept separate because
+/// the two sets share file names with different contents (see config.rs).
+pub fn managed_root_sv() -> Result<PathBuf, String> {
+    managed_root_named("models-sv")
+}
+
+fn managed_root_named(leaf: &str) -> Result<PathBuf, String> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             if dir.join("portable.dat").exists() {
-                return Ok(dir.join("models"));
+                return Ok(dir.join(leaf));
             }
         }
     }
     dirs::data_local_dir()
-        .map(|d| d.join("trellis-studio").join("models"))
+        .map(|d| d.join("trellis-studio").join(leaf))
         .ok_or_else(|| "could not determine managed model cache directory".to_string())
 }
 
@@ -189,8 +200,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root() -> PathBuf {
+        // テストは並列に走るので、時刻 + pid だけでは同じ名前を引いて別テストと
+        // ディレクトリを共有することがある（macOS で 6 回中 1 回再現）。連番で一意にする。
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let p = std::env::temp_dir().join(format!("pixal3d-cache-test-{}-{n}", std::process::id()));
+        let k = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let p = std::env::temp_dir().join(format!("pixal3d-cache-test-{}-{n}-{k}", std::process::id()));
         fs::create_dir_all(&p).unwrap();
         p
     }
@@ -224,7 +239,7 @@ mod tests {
     fn rejects_symlinked_model() {
         use std::os::unix::fs::symlink;
         let root = temp_root();
-        let outside = root.parent().unwrap().join(format!("outside-{}", std::process::id()));
+        let outside = root.parent().unwrap().join(format!("{}-outside", root.file_name().unwrap().to_string_lossy()));
         fs::write(&outside, b"secret").unwrap();
         symlink(&outside, root.join("a.gguf")).unwrap();
         write_manifest(&root, &["a.gguf"]);
@@ -236,12 +251,39 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn sv_root_is_a_distinct_sibling_with_the_same_safety_rules() {
+        // managed_root()/managed_root_sv() は exe の位置に依存するので、ここでは
+        // 「別名の兄弟ディレクトリ」という契約と、SV ルートに対しても manifest 記載の
+        // 通常ファイルしか消さないことを、明示のルートで確認する。
+        let mv = temp_root();
+        let sv = mv.parent().unwrap().join(format!("{}-sv", mv.file_name().unwrap().to_string_lossy()));
+        fs::create_dir_all(&mv).unwrap();
+        fs::create_dir_all(&sv).unwrap();
+        assert_ne!(mv, sv);
+        write_manifest(&mv, &["dinov3.gguf"]);
+        write_manifest(&sv, &["dinov3.gguf", "pixal3d_ss_flow_sv.gguf"]);
+        fs::write(mv.join("dinov3.gguf"), b"mv").unwrap();
+        fs::write(sv.join("dinov3.gguf"), b"sv").unwrap();
+        fs::write(sv.join("pixal3d_ss_flow_sv.gguf"), b"flow").unwrap();
+        fs::write(sv.join("stray.bin"), b"keep").unwrap();
+
+        let removed = delete_all(&sv).unwrap();
+        assert_eq!(removed, 6);
+        assert!(!sv.join("dinov3.gguf").exists());
+        assert!(sv.join("stray.bin").exists(), "untracked files in the SV root survive");
+        // MV ルートは無傷（同名 dinov3.gguf を巻き込まない）。
+        assert_eq!(fs::read(mv.join("dinov3.gguf")).unwrap(), b"mv");
+        fs::remove_dir_all(&mv).ok();
+        fs::remove_dir_all(&sv).ok();
+    }
+
+    #[test]
     fn rejects_symlinked_managed_root() {
         use std::os::unix::fs::symlink;
         let target = temp_root();
         write_manifest(&target, &["a.gguf"]);
         fs::write(target.join("a.gguf"), b"aaa").unwrap();
-        let alias = target.parent().unwrap().join(format!("pixal3d-cache-root-alias-{}", std::process::id()));
+        let alias = target.parent().unwrap().join(format!("{}-alias", target.file_name().unwrap().to_string_lossy()));
         symlink(&target, &alias).unwrap();
         assert!(delete_all(&alias).unwrap_err().contains("must not be a symlink"));
         assert!(target.join("a.gguf").exists());

@@ -17,6 +17,13 @@ pub struct Config {
     pub server_bin: String,
     #[serde(rename = "modelsDir", default)]
     pub models_dir: String,
+    /// Optional second model directory for the single-view (SV) set. The MV (f16)
+    /// and SV (q8_0) sets share five file names with different contents, so they
+    /// cannot live in one directory. Empty => SV is not configured; the server then
+    /// reports sv.configured=false on /capabilities and Studio disables SV mode.
+    /// Absent in configs written before 0.10.0 — `default` keeps those valid.
+    #[serde(rename = "modelsDirSv", default)]
+    pub models_dir_sv: String,
     #[serde(default = "default_backend")]
     pub backend: String,
     #[serde(default)]
@@ -130,9 +137,12 @@ pub fn load() -> Option<Config> {
     // app works the moment you drop those in and launch.
     let root = portable_root()?;
     let server = root.join("runtime").join(server_bin_name());
+    // models-sv/ is picked up the same way when it exists (portable SV set).
+    let models_sv = root.join("models-sv");
     server.exists().then(|| Config {
         server_bin: server.to_string_lossy().into_owned(),
         models_dir: root.join("models").to_string_lossy().into_owned(),
+        models_dir_sv: if models_sv.is_dir() { models_sv.to_string_lossy().into_owned() } else { String::new() },
         backend: default_backend(),
         gpu: 0,
         host: default_host(),
