@@ -168,10 +168,17 @@ NafGgmlOpts naf_ggml_opts_for(const Model& naf) {
     // 診断専用: WebGPU と同じ lowering を他 backend で再現してメモリを測るためのトグル
     // (docs/PIXAL3D_WEBGPU_MEMORY.md §11)。値は計算内容を変えない厳密な再表現。
     if (const char* e = getenv("TRELLIS_DBG_NAF_GENERIC")) o.generic_lowering = (*e != '0');
-    // Direct conv only where the im2col path is the worse choice (WebGPU: no [K*K*Ci, W*H] f16
-    // buffer, f32 activations into the GEMM); CUDA/CPU keep the validated im2col graph.
-    const bool is_webgpu = naf.backend && strncmp(ggml_backend_name(naf.backend), "WebGPU", 6) == 0;
-    o.direct_conv = is_webgpu && dev_supports(naf, cd);
+    // Direct conv where the im2col path is the worse choice: WebGPU (no [K*K*Ci, W*H] f16 buffer,
+    // f32 activations into the GEMM) and CUDA, where the sem_encoder's k=3 im2col at S=1024 makes
+    // the encoder graph 3332 MB vs 1541 MB direct (4090, 2026-09-20; vs the CPU reference the
+    // direct graph's tex cond is L2rel 1.0e-6, trellis-test-pixal3d-cond-tex --host). CPU and the
+    // other backends keep the validated im2col graph.
+    const char* bname = naf.backend ? ggml_backend_name(naf.backend) : "";
+    const bool is_webgpu = strncmp(bname, "WebGPU", 6) == 0;
+    const bool is_cuda   = strncmp(bname, "CUDA", 4) == 0;
+    o.direct_conv = (is_webgpu || is_cuda) && dev_supports(naf, cd);
+    // 診断専用 A/B: どの backend でも direct / im2col を強制する (TRELLIS_DBG_NAF_GENERIC と同様)。
+    if (const char* e = getenv("TRELLIS_DBG_NAF_DIRECT")) o.direct_conv = (*e != '0') && dev_supports(naf, cd);
     ggml_free(c);
     return o;
 }
