@@ -52,4 +52,72 @@ const saved = JSON.parse(await readFile(p, 'utf8'));
 if (Math.abs(saved.mesh_scale - 0.25) > 1e-6) throw new Error(`mesh_scale not patched: ${saved.mesh_scale}`);
 if (saved.frames?.[0]?.file_path !== 'side.png') throw new Error('drag reorder was not reflected in frames order');
 console.log('HEADLESS_MV_PREFLIGHT_OK');
+
+// ---- MV completion path (#25): the result must reach the viewer, gallery and
+// "Save GLB…" through main.ts, and must NOT be silently downloaded.
+// vite preview has no trellis-server, so mock /generate-mv with a minimal GLB.
+function minimalGlb() {
+  // One untextured triangle: enough for model-viewer to load and frame it.
+  const bin = Buffer.alloc(36);
+  [[0, 0, 0], [1, 0, 0], [0, 1, 0]].flat().forEach((v, i) => bin.writeFloatLE(v, i * 4));
+  const json = Buffer.from(JSON.stringify({
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }],
+    bufferViews: [{ buffer: 0, byteLength: bin.length }],
+    buffers: [{ byteLength: bin.length }],
+  }));
+  const pad = Buffer.alloc((4 - (json.length % 4)) % 4, 0x20);
+  const chunk = (type, body) => {
+    const h = Buffer.alloc(8);
+    h.writeUInt32LE(body.length, 0);
+    h.write(type, 4, 'ascii');
+    return Buffer.concat([h, body]);
+  };
+  const chunks = Buffer.concat([chunk('JSON', Buffer.concat([json, pad])), chunk('BIN\0', bin)]);
+  const header = Buffer.alloc(12);
+  header.write('glTF', 0, 'ascii');
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(12 + chunks.length, 8);
+  return Buffer.concat([header, chunks]);
+}
+const glb = minimalGlb();
+let mvRequests = 0;
+await page.route('**/generate-mv', async (route) => {
+  mvRequests++;
+  await route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glb });
+});
+const silentDownload = page.waitForEvent('download', { timeout: 2500 }).then(() => true, () => false);
+await page.locator('#mvcal-generate').click();
+await page.waitForFunction(() => document.querySelector('#mvcal-stage')?.textContent === 'complete', null, { timeout: 15000 });
+if (mvRequests !== 1) throw new Error(`expected one /generate-mv request, saw ${mvRequests}`);
+await page.waitForFunction(() => document.querySelector('#viewer-caption')?.textContent?.includes('mesh_scale 0.250'), null, { timeout: 10000 });
+const caption = await page.locator('#viewer-caption').textContent();
+if (!caption.includes('1536') || !caption.includes('seed 42')) throw new Error(`unexpected MV caption: ${caption}`);
+if (await page.locator('#save-glb').isDisabled()) throw new Error('Save GLB… must be enabled after an MV result');
+if (await page.locator('#reset-view').isDisabled()) throw new Error('Reset view must be enabled after an MV result');
+if (await page.locator('.gitem').count() !== 1) throw new Error('MV result must be registered in the gallery');
+const gmeta = await page.locator('.gitem .gmeta').textContent();
+if (gmeta !== '1536 · MV') throw new Error(`unexpected gallery meta: ${gmeta}`);
+if (await silentDownload) throw new Error('MV result must not trigger a silent browser download');
+// Save GLB… (browser mode) is the explicit download, named after the MV run.
+const savePromise = page.waitForEvent('download');
+await page.locator('#save-glb').click();
+const savedGlb = await savePromise;
+if (savedGlb.suggestedFilename() !== 'multiview_1536_seed42_scale0.250.glb') throw new Error(`unexpected Save GLB name: ${savedGlb.suggestedFilename()}`);
+// Re-opening the MV record from the gallery must not overwrite the single-image dropzone.
+// loadRecord bails out before touching any UI when model-viewer can't render, so this
+// step needs WebGL (SwiftShader in headless Chromium); skip it explicitly otherwise.
+const hasWebgl = await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
+if (hasWebgl) {
+  await page.locator('.gitem').first().click();
+  await page.waitForFunction(() => document.querySelector('#viewer-caption')?.textContent?.startsWith('multiview ·'), null, { timeout: 10000 });
+  if (!(await page.locator('#input-preview').evaluate((el) => el.classList.contains('hidden')))) throw new Error('loading an MV record must not populate the single-image dropzone');
+} else {
+  console.log('HEADLESS_MV_REOPEN_SKIPPED (no WebGL in this browser)');
+}
+console.log('HEADLESS_MV_COMPLETION_OK');
 await browser.close();
