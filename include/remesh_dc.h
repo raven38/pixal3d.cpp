@@ -6,10 +6,16 @@
 // simplification and UV unwrapping can digest.
 #pragma once
 #include "dual_grid.h"
+#include <cstdint>
+#include <functional>
 
 namespace trellis {
 
 class TriBvh;
+
+// Split [0, n) into one contiguous chunk per hardware thread and run fn(begin, end)
+// on each; serial (single call) on the pthread-less Emscripten build.
+void parallel_for(int64_t n, const std::function<void(int64_t, int64_t)>& fn);
 
 // `bvh` must be built over (verts, faces). Returns an empty mesh on failure
 // (caller keeps the un-remeshed path).

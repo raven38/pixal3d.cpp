@@ -22,12 +22,13 @@ public:
     Hit closest(const float p[3], float max_dist = 1e30f) const;
     bool empty() const { return nodes_.empty(); }
 
-private:
     struct Node {
         float bmin[3], bmax[3];
         int32_t left;    // internal: index of left child (right = left+1); leaf: first prim index
         int32_t count;   // 0 for internal nodes; >0 = leaf primitive count
     };
+
+private:
     std::vector<Node> nodes_;
     std::vector<int32_t> prim_;
     const float* verts_ = nullptr;
