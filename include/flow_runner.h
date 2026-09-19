@@ -48,9 +48,8 @@ private:
     void check_device_budget() const;
     const Model& m_; DiTParams p_; int N_, Lc_;
     ggml_context* ctx_ = nullptr; ggml_cgraph* g_ = nullptr; ggml_gallocr_t alloc_ = nullptr;
-    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr, *gidx_ = nullptr;
+    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr;
     std::vector<float> rcos_, rsin_;   // re-uploaded each forward (gallocr may reuse input buffers)
-    std::vector<int32_t> ridx_;        // RoPE even|odd index input (dit_rope_index)
     size_t alloc_bytes_ = 0;
     std::map<std::string, ggml_tensor*> inter_;   // [dbg] named intermediates for NaN localization
     bool dbg_nan_ = false, dbg_done_ = false;

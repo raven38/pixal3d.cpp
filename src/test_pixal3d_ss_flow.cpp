@@ -108,11 +108,9 @@ int main(int argc, char** argv) {
     ggml_tensor* gcos = ggml_new_tensor_4d(c, GGML_TYPE_F32, 1, half, 1, L);   ggml_set_input(gcos);
     ggml_tensor* gsin = ggml_new_tensor_4d(c, GGML_TYPE_F32, 1, half, 1, L);   ggml_set_input(gsin);
     ggml_tensor* gpj  = ggml_new_tensor_2d(c, GGML_TYPE_F32, Dp, L);           ggml_set_input(gpj);
-    ggml_tensor* gidx = ggml_new_tensor_1d(c, GGML_TYPE_I32, p.head_dim);      ggml_set_input(gidx);
-    vector<int32_t> ridx; trellis::dit_rope_index(p.head_dim, ridx);
 
     std::map<string, ggml_tensor*> inter;
-    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj, gidx);
+    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj, nullptr);   // rope_idx unused since the de-interleaved RoPE
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 32768, false);
     ggml_build_forward_expand(g, out);
@@ -128,7 +126,6 @@ int main(int argc, char** argv) {
     ggml_backend_tensor_set(gcos, rcos.data(),  0, rcos.size()  * 4);
     ggml_backend_tensor_set(gsin, rsin.data(),  0, rsin.size()  * 4);
     ggml_backend_tensor_set(gpj,  pj.data(),    0, pj.size()    * 4);
-    ggml_backend_tensor_set(gidx, ridx.data(),  0, ridx.size()  * sizeof(int32_t));
 
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) { fprintf(stderr, "compute failed\n"); return 1; }
 
