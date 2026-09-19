@@ -131,6 +131,66 @@ function updateGenerateEnabled(): void {
   generateBtn.disabled = !(serverOnline && inputImage && !generating);
 }
 
+/** Source image filename without its extension. */
+function glbStem(rec: GenRecord): string {
+  return rec.name.replace(/\.[^.]+$/, "") || "model";
+}
+
+/** Filename used when auto-saving a finished generation to the output folder. */
+function outputFileName(rec: GenRecord): string {
+  return `${glbStem(rec)}_${rec.params.resolution}_seed${rec.params.seed}_${rec.id}.glb`;
+}
+
+/** Shared completion path for every generation kind: save → gallery → preview. */
+async function completeGeneration(rec: GenRecord): Promise<void> {
+  const { glb, params } = rec;
+  currentGlb = glb;
+
+  // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
+  // deliverable and must survive any later failure — a dead gallery DB (some
+  // WebKitGTK builds can't open IndexedDB) or a WebGL/model-viewer crash must
+  // never cost the user a successful generation.
+  let savedPath: string | null = null;
+  if (isTauri()) {
+    try {
+      const bytes = new Uint8Array(await glb.arrayBuffer());
+      savedPath = await saveToOutputDir(outputFileName(rec), bytes);
+    } catch (e) {
+      toast(`Auto-save to output folder failed: ${(e as Error).message}`, "err");
+    }
+  }
+  toast(savedPath ? `Saved to ${savedPath}` : "Generation complete", "ok");
+
+  // 2) Add it to the gallery. The store falls back to in-memory if IndexedDB
+  // is unavailable, so this never throws and never blocks the save above.
+  await put(rec);
+  if (isEphemeral() && !warnedEphemeral) {
+    warnedEphemeral = true;
+    toast(
+      "Gallery won't persist across restarts (IndexedDB unavailable on this system) — " +
+        "but every generation is still saved to your output folder.",
+      "err",
+    );
+  }
+  activeId = rec.id;
+  setViewerTools(true);
+  viewerCaption.textContent = `${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB`;
+  await refreshGallery();
+
+  // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
+  try {
+    await viewer.load(glb);
+    const thumb = await viewer.thumbnail();
+    if (thumb) {
+      rec.thumb = thumb;
+      await put(rec);
+      await refreshGallery();
+    }
+  } catch (e) {
+    toast(`3D preview couldn't render (your result is still saved): ${(e as Error).message}`, "err");
+  }
+}
+
 async function doGenerate(): Promise<void> {
   if (!inputImage || generating) return;
   const params = readParams();
@@ -146,8 +206,6 @@ async function doGenerate(): Promise<void> {
   abort = new AbortController();
   try {
     const { glb } = await generate(inputImage, params, abort.signal);
-    currentGlb = glb;
-
     const rec: GenRecord = {
       id: newId(),
       ts: Date.now(),
@@ -157,52 +215,7 @@ async function doGenerate(): Promise<void> {
       glb,
       thumb: null,
     };
-
-    // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
-    // deliverable and must survive any later failure — a dead gallery DB (some
-    // WebKitGTK builds can't open IndexedDB) or a WebGL/model-viewer crash must
-    // never cost the user a successful generation.
-    let savedPath: string | null = null;
-    if (isTauri()) {
-      try {
-        const bytes = new Uint8Array(await glb.arrayBuffer());
-        const base = inputName.replace(/\.[^.]+$/, "") || "model";
-        const fname = `${base}_${params.resolution}_seed${params.seed}_${rec.id}.glb`;
-        savedPath = await saveToOutputDir(fname, bytes);
-      } catch (e) {
-        toast(`Auto-save to output folder failed: ${(e as Error).message}`, "err");
-      }
-    }
-    toast(savedPath ? `Saved to ${savedPath}` : "Generation complete", "ok");
-
-    // 2) Add it to the gallery. The store falls back to in-memory if IndexedDB
-    // is unavailable, so this never throws and never blocks the save above.
-    await put(rec);
-    if (isEphemeral() && !warnedEphemeral) {
-      warnedEphemeral = true;
-      toast(
-        "Gallery won't persist across restarts (IndexedDB unavailable on this system) — " +
-          "but every generation is still saved to your output folder.",
-        "err",
-      );
-    }
-    activeId = rec.id;
-    setViewerTools(true);
-    viewerCaption.textContent = `${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB`;
-    await refreshGallery();
-
-    // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
-    try {
-      await viewer.load(glb);
-      const thumb = await viewer.thumbnail();
-      if (thumb) {
-        rec.thumb = thumb;
-        await put(rec);
-        await refreshGallery();
-      }
-    } catch (e) {
-      toast(`3D preview couldn't render (your result is still saved): ${(e as Error).message}`, "err");
-    }
+    await completeGeneration(rec);
   } catch (e) {
     if (abort?.signal.aborted) toast("Generation cancelled");
     else toast((e as Error).message || "generation failed", "err");
