@@ -37,6 +37,7 @@ const viewer = new Viewer($("viewer-mount"));
 let inputImage: Blob | null = null;
 let inputName = "input.png";
 let currentGlb: Blob | null = null;
+let currentGlbName = "model.glb"; // default filename offered by "Save GLB…"
 let activeId: string | null = null;
 let generating = false;
 let abort: AbortController | null = null;
@@ -172,11 +173,10 @@ async function doGenerate(): Promise<void> {
  * 3 モード共通の結果処理: 出力フォルダへ保存 → gallery → viewer。順序は 0.9.0 と同じで、
  * ディスクへの保存を最優先にする（gallery DB や WebGL が死んでも成果物は残す）。
  */
-async function recordResult(r: { mode: GenMode; name: string; params: GenParams; input: Blob; glb: Blob }): Promise<void> {
+async function recordResult(r: {
+  mode: GenMode; name: string; params: GenParams; input: Blob; glb: Blob; mv?: GenRecord["mv"];
+}): Promise<void> {
   const { glb, params } = r;
-  currentGlb = glb;
-  inputImage = r.input;
-  inputName = r.name;
   const rec: GenRecord = {
     id: newId(),
     ts: Date.now(),
@@ -186,7 +186,10 @@ async function recordResult(r: { mode: GenMode; name: string; params: GenParams;
     input: r.input,
     glb,
     thumb: null,
+    ...(r.mv ? { mv: r.mv } : {}),
   };
+  currentGlb = glb;
+  currentGlbName = `${glbStem(rec)}.glb`;
   {
     // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
     // deliverable and must survive any later failure — a dead gallery DB (some
@@ -196,10 +199,7 @@ async function recordResult(r: { mode: GenMode; name: string; params: GenParams;
     if (isTauri()) {
       try {
         const bytes = new Uint8Array(await glb.arrayBuffer());
-        const base = r.name.replace(/\.[^.]+$/, "") || "model";
-        const tag = r.mode === "trellis2" ? "" : r.mode === "pixal3d-sv" ? "_sv" : "_mv";
-        const fname = `${base}${tag}_${params.resolution}_seed${params.seed}_${rec.id}.glb`;
-        savedPath = await saveToOutputDir(fname, bytes);
+        savedPath = await saveToOutputDir(`${glbStem(rec)}_${rec.id}.glb`, bytes);
       } catch (e) {
         toast(`Auto-save to output folder failed: ${(e as Error).message}`, "err");
       }
@@ -219,7 +219,8 @@ async function recordResult(r: { mode: GenMode; name: string; params: GenParams;
     }
     activeId = rec.id;
     setViewerTools(true);
-    viewerCaption.textContent = `${modeLabel(r.mode)} · ${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB`;
+    viewerCaption.textContent =
+      `${modeLabel(r.mode)} · ${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB${mvCaption(rec)}`;
     await refreshGallery();
 
     // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
@@ -239,6 +240,23 @@ async function recordResult(r: { mode: GenMode; name: string; params: GenParams;
 
 function modeLabel(mode: GenMode | undefined): string {
   return mode === "pixal3d-sv" ? "Pixal3D SV" : mode === "pixal3d-mv" ? "Pixal3D MV" : "TRELLIS.2";
+}
+
+/**
+ * Stem shared by the auto-saved (`<stem>_<id>.glb`) and the "Save GLB…" (`<stem>.glb`)
+ * filenames: `<image>_<res>_seed<seed>` for TRELLIS.2, `<image>_sv_…` for SV and
+ * `multiview_…_scale<s>` / `canonical4_…_scale<s>` for MV.
+ */
+function glbStem(rec: GenRecord): string {
+  const base = rec.name.replace(/\.[^.]+$/, "") || "model";
+  const tag = rec.mode === "pixal3d-sv" ? "_sv" : "";
+  const scale = rec.mv ? `_scale${rec.mv.meshScale.toFixed(3)}` : "";
+  return `${base}${tag}_${rec.params.resolution}_seed${rec.params.seed}${scale}`;
+}
+
+/** " · mesh_scale 0.250" for multiview records, "" otherwise. */
+function mvCaption(rec: GenRecord): string {
+  return rec.mv ? ` · mesh_scale ${rec.mv.meshScale.toFixed(3)}` : "";
 }
 
 generateBtn.addEventListener("click", doGenerate);
@@ -269,10 +287,11 @@ window.addEventListener("pixal3d-mv-result", (event) => {
   const d = (event as CustomEvent<MvResultDetail>).detail;
   void recordResult({
     mode: "pixal3d-mv",
-    name: `${d.name}_scale${d.meshScale.toFixed(3)}`,
+    name: d.name,
     params: { resolution: d.resolution, seed: d.seed, bgRemoval: "auto", uv: "xatlas" },
     input: d.input,
     glb: d.glb,
+    mv: { meshScale: d.meshScale, numViews: d.numViews },
   });
 });
 window.addEventListener("pixal3d-mv-error", (event) => {
@@ -310,8 +329,7 @@ resetViewBtn.addEventListener("click", () => viewer.resetView());
 saveGlbBtn.addEventListener("click", async () => {
   if (!currentGlb) return;
   const bytes = new Uint8Array(await currentGlb.arrayBuffer());
-  const base = inputName.replace(/\.[^.]+$/, "") || "model";
-  const ok = await saveBytes(`${base}.glb`, bytes);
+  const ok = await saveBytes(currentGlbName, bytes);
   if (ok) toast("Saved", "ok");
 });
 
@@ -325,16 +343,22 @@ async function loadRecord(id: string): Promise<void> {
     toast((e as Error).message, "err");
     return;
   }
-  inputImage = rec.input;
-  inputName = rec.name;
-  inputPreview.src = URL.createObjectURL(rec.input);
-  inputPreview.classList.remove("hidden");
-  dropHint.classList.add("hidden");
-  applyParams(rec.params);
+  if (!rec.mode || rec.mode === "trellis2") {
+    // SV/MV records have no TRELLIS.2 source image: leave the dropzone and the
+    // single-image controls as they are.
+    inputImage = rec.input;
+    inputName = rec.name;
+    inputPreview.src = URL.createObjectURL(rec.input);
+    inputPreview.classList.remove("hidden");
+    dropHint.classList.add("hidden");
+    applyParams(rec.params);
+  }
   currentGlb = rec.glb;
+  currentGlbName = `${glbStem(rec)}.glb`;
   activeId = rec.id;
   setViewerTools(true);
-  viewerCaption.textContent = `${modeLabel(rec.mode)} · ${rec.name} · ${rec.params.resolution} · seed ${rec.params.seed}`;
+  viewerCaption.textContent =
+    `${modeLabel(rec.mode)} · ${rec.name} · ${rec.params.resolution} · seed ${rec.params.seed}${mvCaption(rec)}`;
   updateGenerateEnabled();
   await refreshGallery();
 }

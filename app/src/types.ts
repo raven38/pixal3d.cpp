@@ -54,6 +54,8 @@ export interface GenRecord {
   input: Blob; // source image
   glb: Blob; // resulting model/gltf-binary
   thumb: Blob | null; // model-viewer snapshot for the gallery
+  /** pixal3d-mv only: `input` is then the first view. */
+  mv?: { meshScale: number; numViews: number };
 }
 
 /** One model set as reported by trellis-server GET /capabilities. */

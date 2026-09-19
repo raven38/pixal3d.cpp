@@ -24,6 +24,7 @@ interface TransformMeta {
 
 type ViewEntry = { file: File; frame: TransformFrame; url: string };
 
+/** `pixal3d-mv-result` CustomEvent detail; consumed by main.ts. */
 export interface MvResultDetail {
   glb: Blob;
   /** The first view, used as the gallery thumbnail source. */
@@ -34,6 +35,8 @@ export interface MvResultDetail {
   seed: number;
   /** true when no transforms.json was given (server-side canonical turntable rig). */
   canonical: boolean;
+  /** Number of views sent to the server. */
+  numViews: number;
 }
 
 // transforms.json 無しのときにカードへ表示する姿勢名。姿勢そのもの（行列・FOV・距離）は
@@ -497,7 +500,7 @@ export function mountMvCalibration(root: HTMLElement): void {
       stage.textContent = "complete";
       const detail: MvResultDetail = {
         glb, input: views[0].file, name: canonical ? "canonical4" : "multiview",
-        meshScale, resolution, seed: seedValue, canonical,
+        meshScale, resolution, seed: seedValue, canonical, numViews: views.length,
       };
       window.dispatchEvent(new CustomEvent<MvResultDetail>("pixal3d-mv-result", { detail }));
     } catch (e) {

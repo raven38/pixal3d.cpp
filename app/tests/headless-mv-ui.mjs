@@ -8,6 +8,8 @@
 //   4. SV パネル: 不透明画像は拒否、FOV 範囲外は拒否、/capabilities が無いと Generate 無効
 //   5. busy ゲート（stub サーバ）: busy=true で全モードの Generate 無効、
 //      Stop waiting 後は busy=false かつ completed 増まで無効のまま
+//   6. MV 完了パス（#25）: /generate-mv の結果が viewer / gallery / Save GLB… に届き、
+//      黙ってダウンロードされず、gallery から開き直しても TRELLIS.2 の入力を汚さない
 import http from 'node:http';
 import { chromium } from 'playwright';
 
@@ -26,8 +28,37 @@ const transforms = {
 const fail = (msg) => { throw new Error(msg); };
 const png = (name, buf = rgbaPng) => ({ name, mimeType: 'image/png', buffer: buf });
 
-// ---- stub trellis-server: /health と /capabilities だけ。生成は永遠に応答しない ----------
-const stub = { busy: false, completed: 0, sv: { configured: true, available: true, model_set: 'pixal3d-sv-q8_0', version: 'v1', model_family: 'sv' } };
+// 三角形 1 枚の untextured GLB。/generate-mv の stub 応答（model-viewer がロードできる最小構成）。
+function minimalGlb() {
+  const bin = Buffer.alloc(36);
+  [[0, 0, 0], [1, 0, 0], [0, 1, 0]].flat().forEach((v, i) => bin.writeFloatLE(v, i * 4));
+  const json = Buffer.from(JSON.stringify({
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }],
+    bufferViews: [{ buffer: 0, byteLength: bin.length }],
+    buffers: [{ byteLength: bin.length }],
+  }));
+  const pad = Buffer.alloc((4 - (json.length % 4)) % 4, 0x20);
+  const chunk = (type, body) => {
+    const h = Buffer.alloc(8);
+    h.writeUInt32LE(body.length, 0);
+    h.write(type, 4, 'ascii');
+    return Buffer.concat([h, body]);
+  };
+  const chunks = Buffer.concat([chunk('JSON', Buffer.concat([json, pad])), chunk('BIN\0', bin)]);
+  const header = Buffer.alloc(12);
+  header.write('glTF', 0, 'ascii');
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(12 + chunks.length, 8);
+  return Buffer.concat([header, chunks]);
+}
+
+// ---- stub trellis-server: /health, /capabilities, /generate-mv（即答）。/generate-sv は永遠に応答しない ----
+const stub = { busy: false, completed: 0, mvRequests: 0, sv: { configured: true, available: true, model_set: 'pixal3d-sv-q8_0', version: 'v1', model_family: 'sv' } };
 const pending = new Set();
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -38,6 +69,13 @@ const server = http.createServer((req, res) => {
   if (req.url === '/capabilities') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ busy: stub.busy, completed: stub.completed, mv: { configured: true, available: true, model_set: 'pixal3d-f16', version: 'v1', model_family: 'mv' }, sv: stub.sv }));
+    return;
+  }
+  if (req.url === '/generate-mv' && req.method === 'POST') {
+    stub.mvRequests++;
+    stub.completed++;
+    req.resume();
+    req.on('end', () => { res.writeHead(200, { 'Content-Type': 'model/gltf-binary' }); res.end(minimalGlb()); });
     return;
   }
   if (req.url === '/generate-sv' && req.method === 'POST') {
@@ -189,5 +227,50 @@ await page.waitForFunction(() => !document.querySelector('#svp-generate')?.disab
 console.log('ok   busy gate + Stop waiting re-enable');
 
 console.log('HEADLESS_MV_PREFLIGHT_OK');
+
+// ---- 6. MV 完了パス（#25）-----------------------------------------------------------
+// 結果は main.ts 経由で viewer / gallery / Save GLB… に届き、黙ってダウンロードされない。
+// stub が /generate-mv に三角形 1 枚の GLB を返す（model-viewer がロードできる最小構成）。
+await pickMode('pixal3d-mv');
+await input.setInputFiles([
+  { name: 'transforms.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...transforms, mesh_scale: 0.25 })) },
+  png('front.png'), png('side.png'),
+]);
+await page.locator('#mvcal-body').waitFor({ state: 'visible' });
+await page.waitForFunction(() => !document.querySelector('#mvcal-preflight')?.textContent?.includes('error(s)'));
+await page.locator('#mvcal-res').selectOption('1536');
+await page.waitForFunction(() => !document.querySelector('#mvcal-generate')?.disabled, null, { timeout: 15000 });
+const silentDownload = page.waitForEvent('download', { timeout: 2500 }).then(() => true, () => false);
+await page.locator('#mvcal-generate').click();
+await page.waitForFunction(() => document.querySelector('#mvcal-stage')?.textContent === 'complete', null, { timeout: 15000 });
+if (stub.mvRequests !== 1) fail(`expected one /generate-mv request, saw ${stub.mvRequests}`);
+await page.waitForFunction(() => document.querySelector('#viewer-caption')?.textContent?.includes('mesh_scale 0.250'), null, { timeout: 10000 });
+const caption = await page.locator('#viewer-caption').textContent();
+if (!caption.startsWith('Pixal3D MV · 1536 · seed 42')) fail(`unexpected MV caption: ${caption}`);
+if (await page.locator('#save-glb').isDisabled()) fail('Save GLB… must be enabled after an MV result');
+if (await page.locator('#reset-view').isDisabled()) fail('Reset view must be enabled after an MV result');
+if (await page.locator('.gitem').count() !== 1) fail('MV result must be registered in the gallery');
+const gmeta = await page.locator('.gitem .gmeta').textContent();
+if (gmeta !== 'MV 1536') fail(`unexpected gallery meta: ${gmeta}`);
+if (await silentDownload) fail('MV result must not trigger a silent browser download');
+// Save GLB…（browser mode）が明示のダウンロード。名前は MV 実行に由来する。
+const savePromise = page.waitForEvent('download');
+await page.locator('#save-glb').click();
+const savedGlb = await savePromise;
+if (savedGlb.suggestedFilename() !== 'multiview_1536_seed42_scale0.250.glb') fail(`unexpected Save GLB name: ${savedGlb.suggestedFilename()}`);
+// gallery から MV レコードを開き直しても TRELLIS.2 のドロップゾーンを上書きしない。
+// loadRecord は model-viewer がロードできないと UI に触らず戻るので、この段だけ WebGL が要る
+// （headless Chromium は SwiftShader で持つ）。無い環境では明示してスキップする。
+const hasWebgl = await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
+if (hasWebgl) {
+  await page.locator('.gitem').first().click();
+  await page.waitForFunction(() => document.querySelector('#viewer-caption')?.textContent?.startsWith('Pixal3D MV · multiview ·'), null, { timeout: 10000 });
+  if (!(await page.locator('#input-preview').evaluate((el) => el.classList.contains('hidden')))) fail('loading an MV record must not populate the single-image dropzone');
+} else {
+  console.log('HEADLESS_MV_REOPEN_SKIPPED (no WebGL in this browser)');
+}
+console.log('ok   MV completion path (viewer / gallery / Save GLB…, no silent download)');
+
+console.log('HEADLESS_MV_COMPLETION_OK');
 await browser.close();
 server.close();
