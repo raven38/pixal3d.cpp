@@ -164,6 +164,8 @@ add_library(trellis_core STATIC
   src/naf_gpu.cpp
   src/transforms_json.cpp
   src/pixal3d_input.cpp
+  src/image_preprocess.cpp
+  src/model_manifest.cpp
   src/pixal3d_postprocess.cpp
   src/graph_dump.cpp
 )
@@ -386,6 +388,11 @@ set_target_properties(trellis-test-birefnet PROPERTIES BUILD_RPATH "${GGML_RPATH
 add_executable(trellis-test-preprocess src/test_preprocess.cpp)
 target_link_libraries(trellis-test-preprocess PRIVATE trellis_core)
 set_target_properties(trellis-test-preprocess PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# SV 入力経路（gauge カメラ + pre-matted RGBA クロップ）の契約テスト。外部ファイル不要。
+add_executable(trellis-test-sv-input src/test_sv_input.cpp)
+target_link_libraries(trellis-test-sv-input PRIVATE trellis_core)
+set_target_properties(trellis-test-sv-input PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 add_executable(trellis-test-deform src/test_deform.cpp)
 target_link_libraries(trellis-test-deform PRIVATE trellis_core)

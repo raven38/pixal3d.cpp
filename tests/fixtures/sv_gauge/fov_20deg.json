@@ -1,0 +1,36 @@
+{
+  "camera_angle_x": 0.3490658503988659,
+  "mesh_scale": 1,
+  "frames": [
+    {
+      "file_path": "input.png",
+      "name": "front (single-view canonical gauge)",
+      "transform_matrix": [
+        [
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          -1,
+          -2.8356409098088546
+        ],
+        [
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ]
+    }
+  ]
+}

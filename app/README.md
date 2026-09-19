@@ -69,4 +69,6 @@ Requires Node 20+, Rust, and the Tauri v2 platform dependencies.
 npm run tauri build
 ```
 
-Before the `v0.9.0-desktop-alpha` release, package/Tauri version metadata must be synchronized with the release tag and installer asset lookup must be verified against prerelease/tag-specific GitHub Releases.
+Version metadata (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`) carries the numeric version only (`0.10.0`); the `-desktop-alpha` prerelease marker lives in the git tag because Tauri's Windows bundler rejects prerelease identifiers. Keep the five files in agreement before tagging (see `docs/PIXAL3D_RELEASE_CHECKLIST.md`).
+
+Studio modes (0.10.0): **TRELLIS.2** (single image, unchanged from 0.9.0), **Pixal3D single view** (one pre-matted RGBA image + FOV → `POST /generate-sv`, needs the SV model set: `modelsDirSv` in the config / "SV models directory" in Settings) and **Pixal3D multi-view** (`transforms.json` + images, or the canonical 4-view turntable rig without `transforms.json`). Generate availability follows `GET /capabilities`; **Stop waiting** only stops this window's wait — the server finishes the generation, and Generate returns once the server reports `busy=false` with an increased `completed` counter.

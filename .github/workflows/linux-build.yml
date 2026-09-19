@@ -16,6 +16,9 @@ on:
       - 'install/generate.sh'
       - 'install/test_natural_order.sh'
       - 'install/test_pixal3d_weight_selection.sh'
+      - 'tests/**'
+      - 'tools/run_pixal3d_estimated.py'
+      - 'tools/test_crop_parity.py'
       - '.github/workflows/linux-build.yml'
   push:
     branches: [main]
@@ -28,6 +31,9 @@ on:
       - 'install/generate.sh'
       - 'install/test_natural_order.sh'
       - 'install/test_pixal3d_weight_selection.sh'
+      - 'tests/**'
+      - 'tools/run_pixal3d_estimated.py'
+      - 'tools/test_crop_parity.py'
       - '.github/workflows/linux-build.yml'
   workflow_dispatch:
 
@@ -84,6 +90,22 @@ jobs:
       # MV に黙ってフォールバックしないことと、0 < FOV < pi の camera 契約を固定する。
       - name: Check Pixal3D weight selection and FOV contract
         run: bash ./install/test_pixal3d_weight_selection.sh ./build/trellis-cli
+
+      # 単一視点（SV）入力の契約: gauge カメラ・pre-matted クロップ・ブラウザ実装との一致
+      # （共有フィクスチャ tests/fixtures/sv_gauge）。外部ファイル不要、リポジトリルートで実行。
+      - name: Run the single-view input contract test
+        run: ./build/trellis-test-sv-input tests/fixtures/sv_gauge
+
+      # Python 実装（tools/run_pixal3d_estimated.py）と C++ のクロップが同じ矩形を返すこと。
+      - name: Check crop parity between Python and C++
+        run: |
+          python3 -m pip install --quiet pillow numpy
+          python3 tools/test_crop_parity.py ./build/trellis-test-sv-input
+
+      # trellis-server の HTTP 契約: /health 不変・/capabilities の判定・/generate-sv の
+      # fail-closed・busy/completed。モデル重みは要らない（manifest + sparse ファイル）。
+      - name: Run the trellis-server contract test
+        run: bash tests/server_contract.sh ./build/trellis-server
 
       - name: Show binaries
         if: always()

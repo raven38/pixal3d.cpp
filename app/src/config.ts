@@ -10,8 +10,9 @@ const LS_KEY = "trellis.config";
 const DEFAULTS: AppConfig = {
   serverBin: "",
   modelsDir: "",
+  modelsDirSv: "",
   backend: "unknown",
-  gpu: 0,
+  gpu: null,
   host: "127.0.0.1",
   port: 8080,
   outputDir: "",

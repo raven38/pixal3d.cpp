@@ -197,16 +197,30 @@ release has a single-view and a multiview checkpoint for each of the four flow s
 names the converted single-view files with `_sv.gguf` and the multiview files with `_mv.gguf`.
 The same native loader/graph can read either family, while the five shared models are unchanged.
 `sv` is validated at V=1 and `mv` at V=4; other view counts are allowed with an explicit warning.
-This selector changes the checkpoint family only — the input still uses the `--views` camera
-contract. A one-frame `transforms.json` is therefore required until the separate camera-estimation
-wrapper is merged.
+This selector changes the checkpoint family only — with `--views` the input still uses the camera
+contract (a one-frame `transforms.json`); `--sv-image` below synthesizes that frame for you.
 
-**SV distribution status:** this PR provides **runtime + conversion support only**. The normal
-installer and the currently published `pixal3d-f16` / `pixal3d-q8_0` manifests remain MV-only, so
-`install.sh` does not install the four `_sv.gguf` files yet. To exercise SV from a source checkout,
-start from an upstream TencentARC/Pixal3D snapshot that contains the plain (non-`_mv`)
-safetensors/config files under `ckpts/`, then convert the four flows into the same directory that
-already contains the shared Pixal3D models:
+**Single-view input without a `transforms.json` (0.10.0):** `--sv-image IMAGE.png` takes one
+pre-matted RGBA image, crops it the way the reference preprocess does (alpha bbox, 1.1× square,
+transparent padding) and synthesizes the front gauge camera (`mesh_scale` 1.0, FOV `--fov RAD`,
+default 20°) in the shared C++ — no separate camera-estimation wrapper is needed. It forces
+`--pixal3d-weights sv`, and the staged `input.png` + `transforms.json` are kept next to the output
+so the run can be replayed as a normal `--views` input. `trellis-server` exposes the same path as
+`POST /generate-sv`, and Trellis Studio has a **Pixal3D single view** mode.
+
+```bash
+./build/trellis-cli --sv-image belle_front.png --fov 0.3490658503988659 \
+                    --models /path/to/pixal3d-sv-q8_0-v1 --seed 42 --res 1024 out.glb
+```
+
+**SV distribution status (0.10.0):** the SV set is a *second* model directory, never merged into
+the MV one — `pixal3d-sv-q8_0 v1` and `pixal3d-f16 v1` / `pixal3d-q8_0 v1` share five file names
+with different bytes. `install.sh --model-manifest-sv … --model-base-url-sv …` installs and
+verifies it into `<dest>/models-sv` and writes `modelsDirSv` for Studio; `trellis-server
+--models-sv DIR` serves it and reports both sets in `GET /capabilities`. To build the SV files
+from a source checkout instead, start from an upstream TencentARC/Pixal3D snapshot that contains
+the plain (non-`_mv`) safetensors/config files under `ckpts/`, then convert the four flows into a
+directory that also contains the shared Pixal3D models:
 
 ```bash
 export TRELLIS_MODELS=/path/to/TencentARC/Pixal3D

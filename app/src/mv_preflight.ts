@@ -153,3 +153,37 @@ export async function imageAlphaStatus(file: File): Promise<AlphaCheckResult> {
 export function hasErrors(items: PreflightItem[]): boolean {
   return items.some((i) => i.level === "error");
 }
+
+/**
+ * transforms.json 無し（canonical turntable rig）のプリフライト。姿勢はサーバの共有 C++ が
+ * 合成するので、ここで見るのは「ちょうど 4 枚」「明示 mesh_scale」「解像度」「並び順の確認」だけ。
+ * 並び順は機械では検証できない（画像から front/right を判定しない）ので、利用者の明示確認を
+ * 必須にする。
+ */
+export function validateCanonicalRig(
+  imageCount: number,
+  meshScale: number | null,
+  resolution: number,
+  orderConfirmed: boolean,
+): PreflightItem[] {
+  const out: PreflightItem[] = [];
+  if (imageCount !== 4) {
+    out.push({ level: "error", code: "views", message: `without transforms.json exactly 4 views are required (front, right, back, left); got ${imageCount}` });
+  } else {
+    out.push({ level: "ok", code: "views", message: "4 views · canonical turntable rig (elevation 0, FOV 20°)" });
+  }
+  if (!finitePositive(meshScale)) {
+    out.push({ level: "error", code: "mesh_scale", message: "mesh_scale must be supplied explicitly as a finite positive number" });
+  } else {
+    out.push({ level: "ok", code: "mesh_scale", message: `mesh_scale ${meshScale}` });
+  }
+  if (resolution !== 1024 && resolution !== 1536) {
+    out.push({ level: "error", code: "resolution", message: "resolution must be 1024 or 1536" });
+  }
+  if (!orderConfirmed) {
+    out.push({ level: "error", code: "order", message: "confirm that the cards are ordered front, right, back, left" });
+  } else {
+    out.push({ level: "ok", code: "order", message: "view order confirmed: front, right, back, left" });
+  }
+  return out;
+}

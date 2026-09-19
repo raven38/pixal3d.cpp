@@ -52,6 +52,32 @@ std::vector<std::string> list_view_images(const std::string& dir, std::string* e
 bool synthesize_canonical_rig(const std::vector<std::string>& image_files, float mesh_scale,
                               TransformsFile& out, std::string& error);
 
+// ---- 単一視点入力（SV gauge）-----------------------------------------------------------
+// 画像 1 枚だけの Pixal3D SV 推論に使う、正面固定の「ゲージ」カメラ。web/app/single_view.js の
+// makeSingleViewTransforms と同一の規約で、これを共有 C++ 側の正本とする（JS はブラウザ経路の
+// 都合で残るが、tests/fixtures/sv_gauge/*.json を共有フィクスチャとして
+// trellis-test-sv-input と web/app/test_single_view.mjs の双方が読み、一致を検査する）。
+//
+//   mesh_scale = 1.0 固定（単一視点では被写体の実寸を決められないので、既定の物差しを置く）
+//   distance   = 1 / (2 * mesh_scale * tan(fov/2))
+//   姿勢       = canonical rig の front と同じ向きで、距離だけ上式
+//
+// canonical rig（4 視点）と違い距離が FOV から決まるのは、1 枚では三角測量ができず
+// 「FOV と距離の積」しか効かないため。FOV を変えたら距離も連動させないと画角が壊れる。
+constexpr float SINGLE_VIEW_DEFAULT_FOV = 0.3490658503988659f;   // 20 deg
+constexpr float SINGLE_VIEW_MESH_SCALE  = 1.0f;
+
+// `image_file` 1 枚の TransformsFile を作る。fov_rad は有限かつ 0 < fov < pi。
+// 範囲外・非有限・空のファイル名は false（既定 FOV へ落とさない）。
+bool synthesize_single_view_gauge(const std::string& image_file, float fov_rad,
+                                  TransformsFile& out, std::string& error);
+
+// `tf` を transforms.json として `path` へ書く。SV の staging ディレクトリを
+// 「普通の --views 入力」として成立させるために使う（合成したカメラをファイル化するので、
+// 読み込み側に SV 専用の分岐が要らず、視点数からモードを推測する余地も生まれない）。
+// 生成物は人と tools/silhouette_iou.py がそのまま読める。
+bool write_transforms_json(const std::string& path, const TransformsFile& tf, std::string& error);
+
 // multiview 入力ディレクトリのメタデータを 1 本の経路で解決する。
 //   - `dir/transforms.json` が存在する  → 従来どおり parse（壊れていれば失敗。合成へ落とさない）。
 //     mesh_scale_set のときだけ、parse 成功後に mesh_scale を上書きする。

@@ -34,8 +34,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/models" "$HOME/.config/trellis-studio"
-          rm -f "$RUNNER_TEMP/dummy-server-started"
+          mkdir -p "$RUNNER_TEMP/models" "$RUNNER_TEMP/models-sv" "$HOME/.config/trellis-studio"
+          rm -f "$RUNNER_TEMP/dummy-server-started" "$RUNNER_TEMP/dummy-server-args"
           SMOKE_PORT="$(python3 - <<'PY'
           import socket
           with socket.socket() as s:
@@ -47,14 +47,21 @@ jobs:
           echo "SMOKE_PORT=$SMOKE_PORT" >> "$GITHUB_ENV"
           cat > "$RUNNER_TEMP/trellis-server-smoke.py" <<'PY'
           #!/usr/bin/env python3
-          import argparse, os
+          import argparse, json, os
           from http.server import BaseHTTPRequestHandler, HTTPServer
           p=argparse.ArgumentParser(add_help=False)
-          p.add_argument('--models'); p.add_argument('--gpu'); p.add_argument('--host', default='127.0.0.1'); p.add_argument('--port', type=int, required=True)
+          p.add_argument('--models'); p.add_argument('--models-sv', default=''); p.add_argument('--gpu'); p.add_argument('--host', default='127.0.0.1'); p.add_argument('--port', type=int, required=True)
           a,_=p.parse_known_args()
+          # 0.10.0: Studio は modelsDirSv が空でないとき --models-sv を渡す。受け取った値を
+          # 記録し、後段でコンフィグの値と一致することを検証する（A8）。
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'dummy-server-args'), 'w') as f:
+              f.write(json.dumps({'models': a.models, 'models_sv': a.models_sv}))
           class H(BaseHTTPRequestHandler):
               def do_GET(self):
                   if self.path == '/health': self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
+                  elif self.path == '/capabilities':
+                      body=json.dumps({'busy':False,'completed':0,'mv':{'configured':True,'available':False,'model_set':None,'version':None,'model_family':'pixal3d-mv','reason':'dummy'},'sv':{'configured':bool(a.models_sv),'available':False,'model_set':None,'version':None,'model_family':'pixal3d-sv','reason':'dummy'}}).encode()
+                      self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers(); self.wfile.write(body)
                   else: self.send_response(404); self.end_headers()
               def log_message(self, fmt, *args): pass
           with open(os.path.join(os.environ['RUNNER_TEMP'], 'dummy-server-started'), 'w') as f:
@@ -65,7 +72,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/trellis-server-smoke.py"
           python3 - <<'PY'
           import json, os
-          cfg={'serverBin':os.path.join(os.environ['RUNNER_TEMP'],'trellis-server-smoke.py'),'modelsDir':os.path.join(os.environ['RUNNER_TEMP'],'models'),'backend':'test','gpu':-1,'host':'127.0.0.1','port':int(os.environ['SMOKE_PORT']),'outputDir':''}
+          cfg={'serverBin':os.path.join(os.environ['RUNNER_TEMP'],'trellis-server-smoke.py'),'modelsDir':os.path.join(os.environ['RUNNER_TEMP'],'models'),'modelsDirSv':os.path.join(os.environ['RUNNER_TEMP'],'models-sv'),'backend':'test','gpu':-1,'host':'127.0.0.1','port':int(os.environ['SMOKE_PORT']),'outputDir':''}
           open(os.path.expanduser('~/.config/trellis-studio/config.json'),'w').write(json.dumps(cfg))
           PY
       - name: Launch real Tauri window under Xvfb and verify supervised child lifecycle
@@ -94,6 +101,15 @@ jobs:
           test -s "$RUNNER_TEMP/dummy-server-started" || { echo 'Studio did not start the configured dummy server'; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }
           DUMMY_PID="$(cat "$RUNNER_TEMP/dummy-server-started")"
           kill -0 "$DUMMY_PID" 2>/dev/null || { echo 'dummy server marker exists but process is not alive'; exit 1; }
+          # 0.10.0: 2 つ目のモデルディレクトリ（modelsDirSv）が --models-sv として子プロセスへ届くこと。
+          python3 - <<'PY'
+          import json, os
+          got=json.load(open(os.path.join(os.environ['RUNNER_TEMP'],'dummy-server-args')))
+          want={'models':os.path.join(os.environ['RUNNER_TEMP'],'models'),'models_sv':os.path.join(os.environ['RUNNER_TEMP'],'models-sv')}
+          assert got==want, f'dummy server args mismatch: got={got} want={want}'
+          print('DUMMY_SERVER_ARGS_OK', got)
+          PY
+          curl -fsS "http://127.0.0.1:$SMOKE_PORT/capabilities" | python3 -c 'import json,sys; c=json.load(sys.stdin); assert c["sv"]["configured"] is True, c; print("CAPABILITIES_SV_CONFIGURED_OK")'
           mapped=0
           for i in $(seq 1 40); do xwininfo -root -tree | grep -Fq 'Trellis Studio' && { mapped=1; break; }; sleep .25; done
           [ "$mapped" = 1 ] || { xwininfo -root -tree || true; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }

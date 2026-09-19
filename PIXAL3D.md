@@ -26,6 +26,9 @@ Initial release gates are tracked in [`docs/PIXAL3D_RELEASE_CHECKLIST.md`](docs/
 - native resident `trellis-server`
 - 1024 / 1536 MV generation
 - pre-matted RGBA + `transforms.json`
+- **0.10.0** (`v0.10.0-desktop-alpha`): Pixal3D single view (one RGBA image + FOV, 1024 only) and
+  canonical 4-view input without `transforms.json`, both from Trellis Studio; optional second
+  model directory `pixal3d-sv-q8_0 v1` via the installer
 - explicit `mesh_scale` (automatic estimation is not a supported release path)
 - CUDA/Vulkan only where the release candidate is actually validated
 - native WebGPU is not advertised while issue #2 remains open
@@ -39,7 +42,9 @@ Initial release gates are tracked in [`docs/PIXAL3D_RELEASE_CHECKLIST.md`](docs/
 - browser-safe wasm32 postprocess/memory budgets
 - verified local OPFS model-set installation is implemented; automatic persistent model delivery/version lifecycle remains tracked by #9
 
-Planned prerelease tags: `v0.9.0-desktop-alpha` and `v0.9.0-web-alpha`.
+Prerelease tags: `v0.9.0-desktop-alpha` and `v0.9.0-web-alpha` (tagged). Next: `v0.10.0-desktop-alpha`
+— Desktop feature parity with the Web alpha's single-view mode (Pixal3D SV, canonical 4-view rig,
+second model directory; design `docs/design/2026-09-19-desktop-0.10.0-sv-parity.md`).
 
 ## Repository strategy
 

@@ -53,7 +53,11 @@ def preprocess_prematted_rgba(source: Path, destination: Path) -> None:
 
     alpha = rgba.getchannel("A")
     amin, amax = alpha.getextrema()
-    if amin == 255:
+    # しきい値 250 は src/image_preprocess.cpp / src/pixal3d_input.cpp の load_rgba /
+    # web/app/single_view.js と同じ。以前はここだけ 255 で、最小 alpha が 250〜254 の画像を
+    # Python だけが受理し、同じ画像を C++ ローダが「has no real alpha channel」で弾いていた
+    # （tools/test_crop_parity.py が検出）。3 実装を 250 に揃える。
+    if amin >= 250:
         fail("input image has no real alpha matte; provide a pre-matted RGBA image")
     if amax == 0:
         fail("input image is fully transparent")

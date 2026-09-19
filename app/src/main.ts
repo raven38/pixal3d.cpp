@@ -1,12 +1,14 @@
 import "./ui.css";
-import { generate, health } from "./api";
+import { capabilities, generate, health } from "./api";
 import { loadConfig } from "./config";
+import { blockedReason, canGenerate, observeCapabilities, setLocalGenerating, setServerOnline, stopWaiting, subscribeGate } from "./gate";
+import { mountMvCalibration, type MvResultDetail } from "./mv_calibration";
 import { renderSettings } from "./settings";
 import { all, clear as clearStore, del as removeRecord, get as getRecord, isEphemeral, newId, put } from "./store";
+import { mountSvPanel, type SvResultDetail } from "./sv_panel";
 import { isTauri, listen, saveBytes, saveToOutputDir } from "./tauri";
 import { Viewer } from "./viewer";
-import type { MvResultDetail } from "./mv_calibration";
-import { DEFAULT_PARAMS, type GenParams, type GenRecord } from "./types";
+import { DEFAULT_PARAMS, type GenMode, type GenParams, type GenRecord } from "./types";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -37,7 +39,6 @@ let inputName = "input.png";
 let currentGlb: Blob | null = null;
 let currentGlbName = "model.glb"; // default filename offered by "Save GLB…"
 let activeId: string | null = null;
-let serverOnline = false;
 let generating = false;
 let abort: AbortController | null = null;
 let elapsedTimer: number | null = null;
@@ -130,85 +131,18 @@ function fmtElapsed(ms: number): string {
 }
 
 function updateGenerateEnabled(): void {
-  generateBtn.disabled = !(serverOnline && inputImage && !generating);
+  generateBtn.disabled = !(inputImage && canGenerate());
+  const why = blockedReason();
+  generateBtn.title = why && inputImage && !generating ? `Generate is paused: ${why}` : "";
 }
-
-/** Stem shared by the auto-saved and the "Save GLB…" filenames: the source image
- *  name for single-image runs, a self-describing tag for multiview runs. */
-function glbStem(rec: GenRecord): string {
-  if (rec.kind === "mv") {
-    return `multiview_${rec.params.resolution}_seed${rec.params.seed}_scale${rec.mv?.meshScale.toFixed(3)}`;
-  }
-  return rec.name.replace(/\.[^.]+$/, "") || "model";
-}
-
-/** Filename used when auto-saving a finished generation to the output folder. */
-function outputFileName(rec: GenRecord): string {
-  if (rec.kind === "mv") return `${glbStem(rec)}_${rec.id}.glb`;
-  return `${glbStem(rec)}_${rec.params.resolution}_seed${rec.params.seed}_${rec.id}.glb`;
-}
-
-/** " · mesh_scale 0.250" for multiview records, "" otherwise. */
-function mvCaption(rec: GenRecord): string {
-  return rec.kind === "mv" ? ` · mesh_scale ${rec.mv?.meshScale.toFixed(3)}` : "";
-}
-
-/** Shared completion path for every generation kind: save → gallery → preview. */
-async function completeGeneration(rec: GenRecord): Promise<void> {
-  const { glb, params } = rec;
-  currentGlb = glb;
-  currentGlbName = `${glbStem(rec)}.glb`;
-
-  // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
-  // deliverable and must survive any later failure — a dead gallery DB (some
-  // WebKitGTK builds can't open IndexedDB) or a WebGL/model-viewer crash must
-  // never cost the user a successful generation.
-  let savedPath: string | null = null;
-  if (isTauri()) {
-    try {
-      const bytes = new Uint8Array(await glb.arrayBuffer());
-      savedPath = await saveToOutputDir(outputFileName(rec), bytes);
-    } catch (e) {
-      toast(`Auto-save to output folder failed: ${(e as Error).message}`, "err");
-    }
-  }
-  toast(savedPath ? `Saved to ${savedPath}` : "Generation complete", "ok");
-
-  // 2) Add it to the gallery. The store falls back to in-memory if IndexedDB
-  // is unavailable, so this never throws and never blocks the save above.
-  await put(rec);
-  if (isEphemeral() && !warnedEphemeral) {
-    warnedEphemeral = true;
-    toast(
-      "Gallery won't persist across restarts (IndexedDB unavailable on this system) — " +
-        "but every generation is still saved to your output folder.",
-      "err",
-    );
-  }
-  activeId = rec.id;
-  setViewerTools(true);
-  viewerCaption.textContent =
-    `${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB` + mvCaption(rec);
-  await refreshGallery();
-
-  // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
-  try {
-    await viewer.load(glb);
-    const thumb = await viewer.thumbnail();
-    if (thumb) {
-      rec.thumb = thumb;
-      await put(rec);
-      await refreshGallery();
-    }
-  } catch (e) {
-    toast(`3D preview couldn't render (your result is still saved): ${(e as Error).message}`, "err");
-  }
-}
+subscribeGate(updateGenerateEnabled);
 
 async function doGenerate(): Promise<void> {
   if (!inputImage || generating) return;
+  if (!canGenerate()) return;
   const params = readParams();
   generating = true;
+  setLocalGenerating(true);
   updateGenerateEnabled();
   progress.classList.remove("hidden");
   progressStage.textContent = "starting…";
@@ -220,48 +154,171 @@ async function doGenerate(): Promise<void> {
   abort = new AbortController();
   try {
     const { glb } = await generate(inputImage, params, abort.signal);
-    const rec: GenRecord = {
-      id: newId(),
-      ts: Date.now(),
-      name: inputName,
-      params,
-      input: inputImage,
-      glb,
-      thumb: null,
-    };
-    await completeGeneration(rec);
+    currentGlb = glb;
+
+    await recordResult({ mode: "trellis2", name: inputName, params, input: inputImage, glb });
   } catch (e) {
-    if (abort?.signal.aborted) toast("Generation cancelled");
+    if (abort?.signal.aborted) toast("Stopped waiting — the server keeps computing this generation");
     else toast((e as Error).message || "generation failed", "err");
   } finally {
     generating = false;
+    setLocalGenerating(false);
     if (elapsedTimer) window.clearInterval(elapsedTimer);
     progress.classList.add("hidden");
     updateGenerateEnabled();
   }
 }
 
-generateBtn.addEventListener("click", doGenerate);
-cancelBtn.addEventListener("click", () => abort?.abort());
-
-// ---- Pixal3D multiview result (dispatched by mv_calibration.ts) ----
-// Same completion path as /generate: output folder → gallery → viewer. The
-// first view stands in for `input` so the gallery thumbnail fallback works.
-window.addEventListener("pixal3d-mv-result", (event) => {
-  const d = (event as CustomEvent<MvResultDetail>).detail;
+/**
+ * 3 モード共通の結果処理: 出力フォルダへ保存 → gallery → viewer。順序は 0.9.0 と同じで、
+ * ディスクへの保存を最優先にする（gallery DB や WebGL が死んでも成果物は残す）。
+ */
+async function recordResult(r: {
+  mode: GenMode; name: string; params: GenParams; input: Blob; glb: Blob; mv?: GenRecord["mv"];
+}): Promise<void> {
+  const { glb, params } = r;
   const rec: GenRecord = {
     id: newId(),
     ts: Date.now(),
+    name: r.name,
+    params,
+    mode: r.mode,
+    input: r.input,
+    glb,
+    thumb: null,
+    ...(r.mv ? { mv: r.mv } : {}),
+  };
+  currentGlb = glb;
+  currentGlbName = `${glbStem(rec)}.glb`;
+  {
+    // 1) Write the GLB to the output folder FIRST. This on-disk file is the real
+    // deliverable and must survive any later failure — a dead gallery DB (some
+    // WebKitGTK builds can't open IndexedDB) or a WebGL/model-viewer crash must
+    // never cost the user a successful generation.
+    let savedPath: string | null = null;
+    if (isTauri()) {
+      try {
+        const bytes = new Uint8Array(await glb.arrayBuffer());
+        savedPath = await saveToOutputDir(`${glbStem(rec)}_${rec.id}.glb`, bytes);
+      } catch (e) {
+        toast(`Auto-save to output folder failed: ${(e as Error).message}`, "err");
+      }
+    }
+    toast(savedPath ? `Saved to ${savedPath}` : "Generation complete", "ok");
+
+    // 2) Add it to the gallery. The store falls back to in-memory if IndexedDB
+    // is unavailable, so this never throws and never blocks the save above.
+    await put(rec);
+    if (isEphemeral() && !warnedEphemeral) {
+      warnedEphemeral = true;
+      toast(
+        "Gallery won't persist across restarts (IndexedDB unavailable on this system) — " +
+          "but every generation is still saved to your output folder.",
+        "err",
+      );
+    }
+    activeId = rec.id;
+    setViewerTools(true);
+    viewerCaption.textContent =
+      `${modeLabel(r.mode)} · ${params.resolution} · seed ${params.seed} · ${(glb.size / 1e6).toFixed(1)} MB${mvCaption(rec)}`;
+    await refreshGallery();
+
+    // 3) Best-effort 3D preview + gallery thumbnail — never blocks the save above.
+    try {
+      await viewer.load(glb);
+      const thumb = await viewer.thumbnail();
+      if (thumb) {
+        rec.thumb = thumb;
+        await put(rec);
+        await refreshGallery();
+      }
+    } catch (e) {
+      toast(`3D preview couldn't render (your result is still saved): ${(e as Error).message}`, "err");
+    }
+  }
+}
+
+function modeLabel(mode: GenMode | undefined): string {
+  return mode === "pixal3d-sv" ? "Pixal3D SV" : mode === "pixal3d-mv" ? "Pixal3D MV" : "TRELLIS.2";
+}
+
+/**
+ * Stem shared by the auto-saved (`<stem>_<id>.glb`) and the "Save GLB…" (`<stem>.glb`)
+ * filenames: `<image>_<res>_seed<seed>` for TRELLIS.2, `<image>_sv_…` for SV and
+ * `multiview_…_scale<s>` / `canonical4_…_scale<s>` for MV.
+ */
+function glbStem(rec: GenRecord): string {
+  const base = rec.name.replace(/\.[^.]+$/, "") || "model";
+  const tag = rec.mode === "pixal3d-sv" ? "_sv" : "";
+  const scale = rec.mv ? `_scale${rec.mv.meshScale.toFixed(3)}` : "";
+  return `${base}${tag}_${rec.params.resolution}_seed${rec.params.seed}${scale}`;
+}
+
+/** " · mesh_scale 0.250" for multiview records, "" otherwise. */
+function mvCaption(rec: GenRecord): string {
+  return rec.mv ? ` · mesh_scale ${rec.mv.meshScale.toFixed(3)}` : "";
+}
+
+generateBtn.addEventListener("click", doGenerate);
+// Stop waiting: 応答待ちだけをやめる。サーバはこの生成を最後まで計算するので、gate.ts が
+// /capabilities の busy/completed で「終わった」と確認するまで全モードの Generate を止める。
+cancelBtn.addEventListener("click", () => {
+  abort?.abort();
+  stopWaiting();
+});
+
+// ---- Pixal3D SV / MV panels ----
+mountSvPanel($("sv-mount"));
+mountMvCalibration($("mv-calibration-mount"));
+window.addEventListener("pixal3d-sv-result", (event) => {
+  const d = (event as CustomEvent<SvResultDetail>).detail;
+  void recordResult({
+    mode: "pixal3d-sv",
+    name: d.name,
+    params: { resolution: 1024, seed: d.seed, bgRemoval: "auto", uv: "xatlas" },
+    input: d.input,
+    glb: d.glb,
+  });
+});
+window.addEventListener("pixal3d-sv-error", (event) => {
+  toast(`Pixal3D single-view generation failed: ${(event as CustomEvent<string>).detail}`, "err");
+});
+window.addEventListener("pixal3d-mv-result", (event) => {
+  const d = (event as CustomEvent<MvResultDetail>).detail;
+  void recordResult({
+    mode: "pixal3d-mv",
     name: d.name,
     params: { resolution: d.resolution, seed: d.seed, bgRemoval: "auto", uv: "xatlas" },
-    input: d.views[0],
+    input: d.input,
     glb: d.glb,
-    thumb: null,
-    kind: "mv",
-    mv: { meshScale: d.meshScale, numViews: d.views.length },
-  };
-  completeGeneration(rec).catch((e) => toast((e as Error).message || "multiview completion failed", "err"));
+    mv: { meshScale: d.meshScale, numViews: d.numViews },
+  });
 });
+window.addEventListener("pixal3d-mv-error", (event) => {
+  toast(`Pixal3D multiview generation failed: ${(event as CustomEvent<string>).detail}`, "err");
+});
+
+// ---- mode switching ----
+const modePanels: Record<GenMode, HTMLElement> = {
+  trellis2: $("trellis2-panel"),
+  "pixal3d-sv": $("sv-mount"),
+  "pixal3d-mv": $("mv-calibration-mount"),
+};
+function setMode(mode: GenMode): void {
+  for (const [m, el] of Object.entries(modePanels)) el.hidden = m !== mode;
+  try { localStorage.setItem("trellis.mode", mode); } catch { /* private mode */ }
+}
+document.querySelectorAll<HTMLInputElement>('input[name="gen-mode"]').forEach((radio) => {
+  radio.addEventListener("change", () => { if (radio.checked) setMode(radio.value as GenMode); });
+});
+{
+  let saved: string | null = null;
+  try { saved = localStorage.getItem("trellis.mode"); } catch { /* ignore */ }
+  const initial: GenMode = saved === "pixal3d-sv" || saved === "pixal3d-mv" ? saved : "trellis2";
+  const radio = document.querySelector<HTMLInputElement>(`input[name="gen-mode"][value="${initial}"]`);
+  if (radio) radio.checked = true;
+  setMode(initial);
+}
 
 // ---- viewer tools ----
 function setViewerTools(on: boolean): void {
@@ -286,9 +343,9 @@ async function loadRecord(id: string): Promise<void> {
     toast((e as Error).message, "err");
     return;
   }
-  if (rec.kind !== "mv") {
-    // A multiview record has no single source image: leave the dropzone and
-    // the single-image controls as they are.
+  if (!rec.mode || rec.mode === "trellis2") {
+    // SV/MV records have no TRELLIS.2 source image: leave the dropzone and the
+    // single-image controls as they are.
     inputImage = rec.input;
     inputName = rec.name;
     inputPreview.src = URL.createObjectURL(rec.input);
@@ -300,7 +357,8 @@ async function loadRecord(id: string): Promise<void> {
   currentGlbName = `${glbStem(rec)}.glb`;
   activeId = rec.id;
   setViewerTools(true);
-  viewerCaption.textContent = `${rec.name} · ${rec.params.resolution} · seed ${rec.params.seed}` + mvCaption(rec);
+  viewerCaption.textContent =
+    `${modeLabel(rec.mode)} · ${rec.name} · ${rec.params.resolution} · seed ${rec.params.seed}${mvCaption(rec)}`;
   updateGenerateEnabled();
   await refreshGallery();
 }
@@ -328,7 +386,7 @@ async function refreshGallery(): Promise<void> {
 
     const meta = document.createElement("div");
     meta.className = "gmeta";
-    meta.textContent = `${r.params.resolution}${r.kind === "mv" ? " · MV" : ""}`;
+    meta.textContent = r.mode && r.mode !== "trellis2" ? `${r.mode === "pixal3d-sv" ? "SV" : "MV"} ${r.params.resolution}` : `${r.params.resolution}`;
     item.appendChild(meta);
 
     const delBtn = document.createElement("button");
@@ -376,7 +434,9 @@ async function pollHealth(): Promise<void> {
   const cfg = await loadConfig(true);
   backendBadge.textContent = cfg.backend !== "unknown" ? cfg.backend : "—";
   const ok = await health();
-  serverOnline = ok;
+  setServerOnline(ok);
+  // /capabilities は 0.10.0 で追加。旧サーバでは null になり、gate は 0.9.0 の挙動に戻る。
+  observeCapabilities(ok ? await capabilities() : null);
   serverDot.className = "dot " + (ok ? "ok" : "err");
   serverLabel.textContent = ok ? "ready" : cfg.configured ? "offline" : "setup needed";
   const needSetup = !ok && !cfg.configured;
