@@ -432,10 +432,16 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
           trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
           trellis::Pixal3dSlatCondParams prm{1024, grid, 512, mesh_scale};
-          c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
+          // Device-resident, sparse-coords cond (the browser path): proj comes back already
+          // gathered at shc, and no dense R^3 / NAF map is materialized (host path: 1 GiB NAF
+          // map + 2 GiB dense proj per view on the device). naf_block_chunk = the split-graph
+          // path's own auto value (256 MiB / (d^2*D*4), d = 8); set explicitly because the
+          // T <= 512 gate would otherwise keep the single-graph path, whose per-view graph is
+          // 3789 MB vs 2065 MB (4090, cond-tex --naf-t 512: identical numerics, 16.9 -> 11.1 s).
+          prm.naf_block_chunk = 1024;
+          c = trellis::pixal3d_cond_slat_gpu(dino, naf, views1024, prm, nullptr, &shc);
           dino.free(); naf.free(); }
-        vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
-        c.proj.clear(); c.proj.shrink_to_fit();
+        vector<float> proj_sp = std::move(c.proj);
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * shc.size());
         slat_norm = mv_shape_flow(W.shape1024, cfg, F32, gpu, shc,
@@ -481,10 +487,13 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
               trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
               trellis::Pixal3dSlatCondParams prm{1024, grid, 1024, mesh_scale};
-              c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
+              // Split-graph sparse-coords cond (cond_slat_gpu_chunked): the NAF@1024 map is
+              // consumed block-chunk by block-chunk, never as one [1024, 1024^2] tensor. The
+              // host path's CUDA kernel cudaMallocs that map whole (4 GiB out + 1 GiB q per
+              // view; measured +5.66 GB spikes on the 4090, 2026-09-19).
+              c = trellis::pixal3d_cond_slat_gpu(dino, naf, views1024, prm, nullptr, &shc);
               dino.free(); naf.free(); }
-            vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
-            c.proj.clear(); c.proj.shrink_to_fit();
+            vector<float> proj_sp = std::move(c.proj);
             vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
 
             trellis::Model m = trellis::Model::load(W.tex, gpu);
