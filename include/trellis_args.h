@@ -47,6 +47,10 @@ struct TrellisParams {
     std::string output = "model.glb";                           // output .glb
     std::string copyright;                                      // glTF asset.copyright metadata
     std::string models = "models";              // GGUF dir; override with --models DIR
+    // --models-sv DIR: trellis-server 専用。単一視点(SV)モデルセットのディレクトリ。
+    // MV(f16) と SV(q8_0) は共有 5 ファイルが同名で中身が違うため 1 つのディレクトリに
+    // 同居できない（設計書 D3）。未指定なら /generate-sv は 503 を返す。
+    std::string models_sv;
     std::string host   = "127.0.0.1";                           // trellis-server only
     int      port = 8080;                                       // trellis-server only
     int      gpu  = 0;                                          // >=0 GPU index, <0 CPU

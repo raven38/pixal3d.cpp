@@ -35,7 +35,14 @@ bool parse_float_strict(const char* s, float& out) {
 void print_usage(const char* argv0, bool server) {
     if (server) {
         fprintf(stderr,
-            "usage: %s [--host H] [--port P] [--models DIR] [--gpu N] [generation defaults...]\n",
+            "usage: %s [--host H] [--port P] [--models DIR] [--models-sv DIR] [--gpu N]\n"
+            "           [generation defaults...]\n"
+            "\n"
+            "      --models-sv DIR  single-view (SV) model set for POST /generate-sv. The MV and\n"
+            "                       SV sets cannot share one directory (five files have the same\n"
+            "                       names with different contents), so this is a second directory.\n"
+            "                       Without it /generate-sv returns 503 and GET /capabilities\n"
+            "                       reports sv.configured=false.\n",
             argv0);
     } else {
         fprintf(stderr,
@@ -135,6 +142,7 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
         else if (a == "--views")                { const char* v = need(a.c_str()); if (!v) return false; p.views = v; }
+        else if (a == "--models-sv")            { const char* v = need(a.c_str()); if (!v) return false; p.models_sv = v; }
         else if (a == "--sv-image")             { const char* v = need(a.c_str()); if (!v) return false; p.sv_image = v; }
         else if (a == "--fov")                  { const char* v = need(a.c_str()); if (!v) return false;
                                                   char* end = nullptr; const double d = strtod(v, &end);

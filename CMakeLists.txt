@@ -165,6 +165,7 @@ add_library(trellis_core STATIC
   src/transforms_json.cpp
   src/pixal3d_input.cpp
   src/image_preprocess.cpp
+  src/model_manifest.cpp
   src/pixal3d_postprocess.cpp
   src/graph_dump.cpp
 )
