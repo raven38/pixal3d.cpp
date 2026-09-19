@@ -35,6 +35,15 @@ struct TrellisParams {
     // もので、公式 SV パイプライン（inference.py の camera_params / MoGe 推定）の再現ではない。
     std::string pixal3d_weights = "mv";
     bool pixal3d_weights_set = false;
+    // --sv-image PATH: 画像 1 枚から Pixal3D SV 推論を回す入口。`image`（TRELLIS.2）とも
+    // `views`（MV）とも排他で、指定されると SV 重みを選ぶ。視点数からモードを推測する経路は
+    // 作らない（docs/design/2026-09-19-desktop-0.10.0-sv-parity.md D1）。実行時は
+    // <出力 GLB の stem>.svviews/ にクロップ済み input.png と合成 transforms.json を書き、
+    // その普通の --views 入力として走る。staging は消さない（IoU ゲートが読むため）。
+    std::string sv_image;
+    // --fov RAD: SV gauge カメラの水平 FOV。0 < fov < pi。--sv-image 専用。
+    float sv_fov = 0.3490658503988659f;   // 20 deg
+    bool  sv_fov_set = false;
     std::string output = "model.glb";                           // output .glb
     std::string copyright;                                      // glTF asset.copyright metadata
     std::string models = "models";              // GGUF dir; override with --models DIR

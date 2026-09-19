@@ -17,6 +17,7 @@
 #include "pixal3d_cond.h"
 #include "proj_grid.h"   // mat4_inverse_d: 入力段で transform_matrix の可逆性を確認する
 #include "transforms_json.h"
+#include "image_preprocess.h"
 #include <filesystem>
 // Declarations only (no *_IMPLEMENTATION define here) -- stbi_load/stbir_resize_uint8 are
 // implemented once in preprocess.cpp, part of trellis_core, which this binary links against.
@@ -613,7 +614,56 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     return 0;
 }
 
+// --sv-image: 1 枚の pre-matted RGBA を「普通の --views 入力」へ落としてから MV 経路を回す。
+// staging（クロップ済み input.png + 合成 transforms.json）は消さない。受け入れゲート
+// （tools/silhouette_iou.py）と利用者がそのまま読めることを優先する。
+static int trellis_run_sv(const trellis::TrellisParams& cfg) {
+    const std::string stem = cfg.output.size() > 4 && cfg.output.compare(cfg.output.size() - 4, 4, ".glb") == 0
+                           ? cfg.output.substr(0, cfg.output.size() - 4)
+                           : cfg.output;
+    const std::filesystem::path dir = stem + ".svviews";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        fprintf(stderr, "[trellis] cannot create the single-view staging directory %s: %s\n",
+                dir.string().c_str(), ec.message().c_str());
+        return 1;
+    }
+
+    printf("[0/6] Pixal3D single view: %s\n", cfg.sv_image.c_str());
+    std::string err;
+    const std::string staged_png = (dir / "input.png").string();
+    if (!trellis::preprocess_prematted_rgba_file(cfg.sv_image, staged_png, err)) {
+        fprintf(stderr, "[trellis] %s\n", err.c_str());
+        return 1;
+    }
+    trellis::TransformsFile tf;
+    if (!trellis::synthesize_single_view_gauge("input.png", cfg.sv_fov, tf, err)) {
+        fprintf(stderr, "[trellis] %s\n", err.c_str());
+        return 1;
+    }
+    if (!trellis::write_transforms_json((dir / "transforms.json").string(), tf, err)) {
+        fprintf(stderr, "[trellis] %s\n", err.c_str());
+        return 1;
+    }
+    printf("      staged %s (gauge FOV %.6f rad = %.2f deg, mesh_scale %.4f)\n",
+           dir.string().c_str(), (double)cfg.sv_fov, (double)cfg.sv_fov * 180.0 / 3.14159265358979323846,
+           (double)tf.mesh_scale);
+
+    trellis::TrellisParams p = cfg;
+    p.views = dir.string();
+    p.sv_image.clear();
+    p.pixal3d_weights = "sv";
+    p.pixal3d_weights_set = true;
+    // gauge が mesh_scale を確定させているので、--mesh-scale による上書きは受けない。
+    p.mesh_scale_set = false;
+    p.num_views = 1;
+    p.num_views_set = true;
+    return trellis_run_mv(p);
+}
+
 int trellis_run(const trellis::TrellisParams& cfg) {
+    if (!cfg.sv_image.empty()) return trellis_run_sv(cfg);
     if (!cfg.views.empty()) return trellis_run_mv(cfg);
     // Unbuffered, not line-buffered: MSVCRT treats _IOLBF as full buffering, which
     // swallows stage progress when piped (e.g. under Lemonade) if the process crashes.

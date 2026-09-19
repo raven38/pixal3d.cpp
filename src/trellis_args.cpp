@@ -54,6 +54,12 @@ void print_usage(const char* argv0, bool server) {
         "      --res 512|1024|1536 geometry resolution\n"
         "      --max-tokens N      HR token budget              (default 49152)\n"
         "      --views DIR         Pixal3D multiview mode: DIR has transforms.json + RGBA\n"
+        "      --sv-image PATH     Pixal3D single-view mode: one pre-matted RGBA image.\n"
+        "                          Crops it like the reference preprocess, synthesizes the\n"
+        "                          front gauge camera (mesh_scale 1.0) and runs the SV flow\n"
+        "                          weights. Mutually exclusive with --views and an input image.\n"
+        "                          The staged crop + transforms.json are kept next to the GLB.\n"
+        "      --fov RAD           --sv-image gauge FOV in radians (default 0.349066 = 20 deg).\n"
         "      --pixal3d-weights V sv|mv flow weights (default mv). sv expects 1 view;\n"
         "                          mv expects 4. Requires --views.\n"
         "                          views (frame 0 = main/front view). Mutually exclusive\n"
@@ -129,6 +135,12 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
         else if (a == "--views")                { const char* v = need(a.c_str()); if (!v) return false; p.views = v; }
+        else if (a == "--sv-image")             { const char* v = need(a.c_str()); if (!v) return false; p.sv_image = v; }
+        else if (a == "--fov")                  { const char* v = need(a.c_str()); if (!v) return false;
+                                                  char* end = nullptr; const double d = strtod(v, &end);
+                                                  if (!end || *end != '\0' || !std::isfinite(d)) {
+                                                      fprintf(stderr, "[trellis] --fov expects a finite number of radians, got '%s'\n", v); return false; }
+                                                  p.sv_fov = (float)d; p.sv_fov_set = true; }
         else if (a == "--pixal3d-weights")      { const char* v = need(a.c_str()); if (!v) return false;
                                                   const std::string w = v;
                                                   if (w != "sv" && w != "mv") {
@@ -176,8 +188,41 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
     // in --views mode there is no positional image, so the lone positional is the output.
     // --pixal3d-weights は Pixal3D (--views) 経路専用。指定だけして TRELLIS.2 経路で走ると
     // 「SV を実行した」と誤認されるので、ここで落とす。
-    if (p.pixal3d_weights_set && p.views.empty()) {
-        fprintf(stderr, "[trellis] --pixal3d-weights requires --views DIR (it selects Pixal3D flow weights)\n");
+    if (p.pixal3d_weights_set && p.views.empty() && p.sv_image.empty()) {
+        fprintf(stderr, "[trellis] --pixal3d-weights requires --views DIR or --sv-image PATH (it selects Pixal3D flow weights)\n");
+        return false;
+    }
+    if (!p.sv_image.empty()) {
+        if (!p.views.empty()) { fprintf(stderr, "[trellis] --sv-image and --views are mutually exclusive\n"); return false; }
+        if (!p.image.empty()) { fprintf(stderr, "[trellis] --sv-image and --image/positional image are mutually exclusive\n"); return false; }
+        // --pixal3d-weights mv を SV 入力に付けても通さない（V=1 で MV 重みを回すのは
+        // 既知の破綻モードで、デスクトップからは選べないようにする）。
+        if (p.pixal3d_weights_set && p.pixal3d_weights != "sv") {
+            fprintf(stderr, "[trellis] --sv-image always uses the single-view flow weights; drop --pixal3d-weights mv\n");
+            return false;
+        }
+        p.pixal3d_weights = "sv";
+        p.pixal3d_weights_set = true;
+        if (!(p.sv_fov > 0.0f) || !(p.sv_fov < 3.14159274f) || !std::isfinite(p.sv_fov)) {
+            fprintf(stderr, "[trellis] --fov must satisfy 0 < fov < pi radians\n");
+            return false;
+        }
+        // D10: SV のリリース対応解像度は 1024 のみ。1536 は API/UI/CLI とも受けない。
+        if (!p.cascade || p.hr_res != 1024) {
+            fprintf(stderr, "[trellis] --sv-image supports --res 1024 only in this release\n");
+            return false;
+        }
+        // --views と同じく、位置引数は出力 GLB 1 つだけ。2 つあるなら 1 つ目は入力画像の
+        // つもりなので、汎用の "unexpected argument" ではなく排他として落とす。
+        if (npos > 1) {
+            fprintf(stderr, "[trellis] --sv-image and a positional input image are mutually exclusive\n");
+            return false;
+        }
+        if (npos == 1) p.output = pos[0];
+        return true;
+    }
+    if (p.sv_fov_set && p.sv_image.empty()) {
+        fprintf(stderr, "[trellis] --fov requires --sv-image PATH (it sets the single-view gauge camera)\n");
         return false;
     }
     if (!p.views.empty()) {

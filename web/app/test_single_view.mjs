@@ -115,4 +115,24 @@ assert.deepEqual(
   { manifestUrl:'https://window.test/m.json', modelBaseUrl:'https://window.test/files' },
 );
 
+// ---- D9: C++ 実装（src/transforms_json.cpp の synthesize_single_view_gauge）との一致 ----
+// 共有フィクスチャ tests/fixtures/sv_gauge/*.json は、この JS 実装から生成した gauge を
+// そのまま保存したもの。C++ テスト（trellis-test-sv-input）も同じファイルを読んで
+// 相対誤差 1e-6 で比較する。ここが落ちたら、JS を変えてフィクスチャを再生成していない
+// （= 共有 C++ 側と無言で食い違った）ということ。
+{
+  const cases = [
+    ['fov_20deg.json', 0.3490658503988659],
+    ['fov_30deg.json', Math.PI / 6],
+    ['fov_45deg.json', Math.PI / 4],
+    ['fov_min.json', 1e-3],
+    ['fov_max.json', Math.PI - 1e-3],
+  ];
+  for (const [file, fov] of cases) {
+    const want = JSON.parse(readFileSync(join(repoRoot, 'tests', 'fixtures', 'sv_gauge', file), 'utf8'));
+    const got = makeSingleViewTransforms(want.frames[0].file_path, fov);
+    assert.deepEqual(got, want, `${file} no longer matches makeSingleViewTransforms; regenerate the shared fixture and re-run trellis-test-sv-input`);
+  }
+}
+
 console.log('WEB_SINGLE_VIEW_CONTRACT_OK');
