@@ -48,9 +48,12 @@ full walkthrough and installer options.
 
 ## Showcase
 
-Seven image→3D reconstructions produced end-to-end by trellis.cpp **v0.4.3** on a
-single Radeon 8060S (all res-1024 cascade, seed 42, ~300K faces, 2048² atlas; the
-GLBs and their Z-Image-Turbo source images live in
+Seven single-image→3D reconstructions produced end-to-end by pixal3d.cpp
+(commit `ec464fe`, CUDA) on a single RTX 4090 with the published single-view
+Pixal3D model set `pixal3d-sv-q8_0 v1` — BiRefNet matte → MoGe-2 FOV estimate →
+`--views … --pixal3d-weights sv` (all res-1024 cascade, seed 42, Pixal3D's
+default ~1M-face / 4096² atlas postprocess; the GLBs, their Z-Image-Turbo source
+images and the per-asset numbers live in
 [`assets/showcase/`](assets/showcase/)):
 
 <p>
@@ -63,12 +66,12 @@ GLBs and their Z-Image-Turbo source images live in
 <a href="assets/showcase/racer/racer_quad4k.png"><img src="assets/showcase/racer/racer_quad4k.png" width="49%"></a>
 </p>
 
-Each grid is a 4096×4096 four-view capture — front / right / back / left at 75°
-elevation, 2048² per view — made with
-[`tools/mv_preview/render_quad.js`](tools/mv_preview/render_quad.js), a headless
-Playwright driver around Google's `<model-viewer>`: it serves
-`tools/mv_preview/quad.html`, loads the GLB into a 2×2 grid of viewers, waits for
-auto-framing to settle, captures each view via `toBlob`, and
+Each grid is a 4096×4096 four-view capture — `<model-viewer>` orbits 0° / 90° /
+180° / 270° at 75° elevation, 2048² per view (in Pixal3D's reference frame the
+view matching the source image is the 180° tile, bottom-left) — made with the
+[`tools/mv_preview/render_quad.js`](tools/mv_preview/render_quad.js) recipe, a
+headless Playwright driver around Google's `<model-viewer>`: one navigation per
+view, wait for auto-framing to settle, capture via `toBlob`, and
 [`stitch_quad.py`](tools/mv_preview/stitch_quad.py) assembles the final grid.
 
 ## Trellis Studio (desktop app)
