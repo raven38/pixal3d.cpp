@@ -54,6 +54,11 @@ private:
     size_t alloc_bytes_ = 0;
     std::map<std::string, ggml_tensor*> inter_;   // [dbg] named intermediates for NaN localization
     bool dbg_nan_ = false, dbg_done_ = false;
+    // --profile: forward counter (the profiling passes run after forward #1, once the backend's
+    // lazy pipeline compiles on #0 are done) and the whole-graph time of every forward so far.
+    int fwd_count_ = 0;
+    std::vector<double> whole_s_;
+    void profile_forward();
 };
 
 // Dense factory: RoPE from R^3 grid (ij meshgrid, z fastest). N = R^3.

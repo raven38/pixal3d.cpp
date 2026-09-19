@@ -312,6 +312,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     }
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;
     trellis::g_no_fa = cfg.no_fa;
+    trellis::g_profile = cfg.profile;
     trellis::g_require_gpu = cfg.require_gpu;
     trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;
@@ -339,7 +340,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     const Pixal3dWeights W = mv_weight_paths(M, cfg.pixal3d_weights);
     mv_warn_view_count(cfg.pixal3d_weights, V);
     if (!mv_check_weights(W, cfg.pixal3d_weights, do_tex)) return 1;
-    printf("      flow weights: %s\n", cfg.pixal3d_weights.c_str());
+    printf("      flow weights: %s  (load %.1fs)\n", cfg.pixal3d_weights.c_str(), now() - t0);
     double t_stage = now();
 
     printf("[2/6] SS proj conditioning + flow\n");
@@ -553,6 +554,9 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     }
 
     printf("[6/6] write %s\n", outglb.c_str());
+    t_stage = now();
+    const double t_post0 = t_stage;
+    auto lap = [&](const char* what) { printf("      [post] %s (%.1fs)\n", what, now() - t_stage); t_stage = now(); };
     bool textured = false;
     if (!pbr6.empty()) {
         const bool boxuv = !cfg.xatlas;
@@ -562,7 +566,9 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         const int T = cfg.tex >= 0 ? cfg.tex : 4096;
         trellis::weld_vertices(mesh.verts, mesh.faces, colors.empty() ? nullptr : &colors, 1.0f / ((float)so.res * 8.0f));
         trellis::fill_small_holes(mesh.faces);
+        lap("weld + fill_small_holes");
         trellis::TriBvh bvh = trellis::TriBvh::build(mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F());
+        lap("bvh build");
         int remesh_band = cfg.band > 0 ? cfg.band : 1;   // MV default: 1 (see dump_post branch above)
         trellis::Mesh rm = trellis::remesh_narrow_band_dc(mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(), bvh, so.res, remesh_band);
         if (rm.F() > 0) {
@@ -570,6 +576,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             int ndrop = trellis::drop_small_components(rm.verts, rm.faces, 0.02f);
             printf("  remesh postproc: dropped %d floater comps -> V=%d F=%d\n", ndrop, rm.V(), rm.F());
         }
+        lap("remesh_dc + clean + drop_small_components");
         const std::vector<float>& sverts = rm.F() > 0 ? rm.verts : mesh.verts;
         const std::vector<int32_t>& sfaces = rm.F() > 0 ? rm.faces : mesh.faces;
         std::vector<float> dv, dp; std::vector<int32_t> df;
@@ -584,12 +591,14 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             int ndrop2 = trellis::drop_small_components(dv, df, 0.03f);
             if (ndrop2) printf("  decimated postproc: dropped %d more comps -> F=%d\n", ndrop2, (int)df.size()/3);
         }
+        lap("decimate + weld + fill + drop");
         const int dV = (int)dv.size()/3, dF = (int)df.size()/3;
         trellis::VoxelPbr vox{pbr_coords, &pbr6, pbr_res, &bvh};
         const std::vector<float> no_vp;
         trellis::BakedMesh bm = boxuv ? trellis::uv_box_project(dv, dV, df, dF, no_vp, T, &vox)
                                       : trellis::uv_bake(dv, dV, df, dF, no_vp, T, &vox);
         if (!boxuv && !bm.ok()) bm = trellis::uv_chart_project(dv, dV, df, dF, no_vp, T, &vox);
+        lap("uv unwrap + PBR bake");
         if (bm.ok()) {
             mv_apply_reference_frame(bm.verts);   // baking (UVs/atlas) is done -- safe to rotate now
             trellis::write_glb_textured(outglb.c_str(), bm.verts.data(), (int64_t)bm.verts.size()/3, bm.uv.data(),
@@ -601,6 +610,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             stbi_write_png(tex.c_str(), bm.T, bm.T, 4, bm.base.data(), bm.T*4);
             textured = true;
             printf("      textured GLB (atlas %d, +%s)\n", bm.T, tex.c_str());
+            lap("GLB + PNG write");
         } else printf("      uv_bake failed; falling back to vertex colors\n");
     }
     mv_apply_reference_frame(mesh.verts);   // matches inference_mv.py's post-hoc glb.apply_transform(rot)
@@ -610,6 +620,8 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
                            cfg.copyright.empty() ? nullptr : cfg.copyright.c_str());
     std::string ply = outglb.substr(0, outglb.find_last_of('.')) + ".ply";
     trellis::write_ply(ply.c_str(), mesh.verts.data(), mesh.V(), mesh.faces.data(), mesh.F(), colors.empty() ? nullptr : colors.data());
+    lap("PLY write");
+    printf("      postprocess total (%.1fs)\n", now() - t_post0);
     printf("done in %.1fs -> %s (+ %s)\n", now() - t0, outglb.c_str(), ply.c_str());
     return 0;
 }
@@ -681,6 +693,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
     // Publish the cross-module flags this run wants (modules read them with an env fallback).
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;  // f16 default (rope bug was the real issue)
     trellis::g_no_fa = cfg.no_fa;
+    trellis::g_profile = cfg.profile;
     trellis::g_require_gpu = cfg.require_gpu;
     trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;
