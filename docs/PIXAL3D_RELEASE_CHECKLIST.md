@@ -272,7 +272,7 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | Real Tauri/WebKitGTK window + Studio-spawned server lifecycle | ✅ #17 / PR #26 | Xvfb CI |
 | MV metadata/image/alpha/mesh_scale preflight | ✅ #19 / PR #27 | headless UI CI |
 | CUDA `ss_decode` graph-support path exercised on NVIDIA hardware | ✅ #11 | NVIDIA L4 validation |
-| Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ⬜ #18 | **real machine** |
+| Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ✅ installer / CLI / server / Studio MV generate + auto-save; ⬜ viewer (MV results bypass it, see below) | **real machine** (RTX 4090, 2026-09-19, below) |
 | Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ✅ headless (see below) / ⬜ viewer | **real machine** |
 | Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` verify-only path is now executed in Windows CI by PR #44; full clean-install remains #18 |
 | Installer downloads/verifies the exact model set against its manifest | ✅ | `--model-manifest` / `--verify-models` (see below); verified against the real `pixal3d-q8_0 v1` set and fail-closed cases, plus Linux/Windows tiny-set CI in PR #44 |
@@ -316,6 +316,32 @@ fallback of the Vulkan path does not occur.
 Not covered: the Studio GUI on Linux (WebKitGTK window, gallery/save) — only the runtime and CLI.
 Logs/renders: `docs/results/linux-webgpu-gate/l4-clean-vulkan-20260912/` and
 `.../l4-clean-cuda-20260912/`.
+
+### Clean-install Windows — CUDA 13 and Vulkan (2026-09-19, RTX 4090 / Windows 11 Home, Ryzen 9 7950X)
+
+`install.ps1 -Backend cuda -Tag v0.9.0-desktop-alpha -Dest D:\pixal3d\trellis-studio -ModelManifest <pixal3d-q8_0 v1> -Yes`
+run as a file through WSL→`powershell.exe` interop, then `trellis-cli.exe`, `trellis-server.exe` and
+Trellis Studio driven by simulated input + screenshots. Input: the official `assets/mv_images/example`
+(cyclops, 4 views, `mesh_scale` 1.0) — not the `/opt/gate/views` input of the L4 rows above, so the
+times are indicative, not same-input. Driver 591.86, WebView2 153, display 3840×2160 @150 %.
+
+| step | result |
+|---|:---:|
+| installer | done in ~3.5 min; runtime + Studio (NSIS silent, exe 0.9.0, unsigned) + `pixal3d-q8_0 v1` **verified** (9 files); receipt `verified: true`. Cosmetic: the final `done — launch…` line is mojibake under CP932 when run as a file (BOM-less UTF-8 `.ps1`; `irm \| iex` unaffected) |
+| CUDA CLI, MV 1024 | rc 0, **292.3 s**, GLB 34,131,188 B (Vo=639,858 Fo=974,646, atlas 4096); GPU memory 1,467 → peak **9,524 MiB** |
+| CUDA server | `/health` 200 within 40 s; `POST /generate-mv` → 200, 34,509,580 B in 283.8 s. Neural stages and remesh print identical statistics to the CLI run; the GLBs diverge at `decimate_qem_gpu` (486,985 vs 487,052 vertices) — GPU QEM is not deterministic |
+| Studio GUI | window + `CUDA ● ready`; server spawned within 1 s of launch and exits within 1 s of a graceful close; MV panel: Open dialog → `4 image(s) · 4/4 matched`, scale `1.000 · from transforms.json`, `Preflight passed` → **`complete 4:50`**; GLB auto-downloaded to `%USERPROFILE%\Downloads\pixal3d_mv_scale1.000.glb` (34,198,576 B) with no in-app indication; viewer and gallery stay empty (MV results go through `<a download>`, `app/src/mv_entry.ts`) |
+| Vulkan CLI, same input | rc 0, **624.3 s**, GLB 34,262,100 B, peak **18,801 MiB**, NAF@1024 `5 unsupported node(s)` CPU fallback as on Linux — **only after `GGML_VK_VISIBLE_DEVICES=0`**: by default the "largest VRAM" heuristic in `trellis_model.cpp::make_backend` picks the Ryzen iGPU (`using Vulkan1 (104468 MB)`, UMA reports system RAM) over the 4090, and `--gpu 0` cannot override it because index 0 *is* the heuristic. Bug; any iGPU + dGPU desktop is affected |
+
+| path (cyclops, seed 1) | SS | Shape-512 | Shape-1024 | Texture | total |
+|---|---:|---:|---:|---:|---:|
+| RTX 4090 CUDA 13 native (CLI) | **4.6 s** | **8.2 s** | **54.8 s** | **64.2 s** | **292.3 s** |
+| RTX 4090 Vulkan native (CLI) | 19.3 s | 27.5 s | 105.5 s | 126.5 s | 624.3 s |
+
+Not covered: the single-image (TRELLIS.2) Studio path, Settings, gallery persistence, 1536,
+Vulkan through Studio/server, the CUDA 12 and ROCm archives. The box already had the VC++ 2022
+runtime installed. Logs, receipt, screenshots and renders are kept outside the repo
+(`win-desktop-alpha-20260919/`); GLBs on the machine under `D:\pixal3d\out\`.
 
 ## macOS Desktop alpha (2026-09-10)
 
