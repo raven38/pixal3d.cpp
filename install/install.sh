@@ -163,12 +163,44 @@ die()  { echo "${c_r}error:${c_0} $*" >&2; exit 1; }
 for t in curl tar; do command -v "$t" >/dev/null || die "'$t' is required"; done
 
 # ---- backend detection -----------------------------------------------------
+# The `cuda` bundle is built with CUDA 13.1, whose corresponding driver branch is R590
+# (NVIDIA CUDA Toolkit Release Notes, Table 2 "CUDA Toolkit and Corresponding Driver
+# Branch": 13.0 -> R580, 13.1 -> R590). Minor-version compatibility lets 13.x binaries
+# run on >= 580 drivers for SASS, but PTX JIT-compiled by an older driver is not
+# covered. On WSL2 the user-mode CUDA libraries come from the Windows driver package
+# (/usr/lib/wsl/lib) and can lag the Windows kernel-mode driver: with 580.178.04
+# user-mode libraries trellis-server segfaults in libnvidia-ptxjitcompiler at the first
+# kernel (#35). Below this major version the CUDA 12.9 `cuda12` bundle is used instead.
+CUDA13_MIN_DRIVER_MAJOR=590
+
+is_wsl() { grep -qi microsoft /proc/version 2>/dev/null || uname -r 2>/dev/null | grep -qi microsoft; }
+
+# First line of `nvidia-smi`: "NVIDIA-SMI 580.178.04  Driver Version: 591.86  CUDA Version: 13.1".
+# The NVIDIA-SMI field is the user-mode library version; on WSL2 it can differ from
+# "Driver Version" (the Windows kernel-mode driver). Prints the major number or nothing.
+usermode_driver_major() {
+  nvidia-smi 2>/dev/null | sed -n 's/.*NVIDIA-SMI[[:space:]]*\([0-9][0-9]*\)\..*/\1/p' | head -1
+}
+
+# On WSL2 with a user-mode driver older than the CUDA 13.1 runtime needs, print the
+# offending major version; otherwise print nothing (stdout is the value, like detect_backend).
+wsl_cuda13_driver_too_old() {
+  [ "$PLATFORM" = linux ] && is_wsl || return 0
+  local drv; drv="$(usermode_driver_major)"
+  if [ -n "$drv" ] && [ "$drv" -lt "$CUDA13_MIN_DRIVER_MAJOR" ]; then echo "$drv"; fi
+}
+
 detect_backend() {
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -qi gpu; then
     local cc
     cc="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "${GPU:-0}" 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
     if [ -n "$cc" ] && awk -v cc="$cc" 'BEGIN { exit !(cc >= 6.0 && cc < 7.5) }'; then
       info "detected NVIDIA compute capability $cc — selecting the CUDA 12 legacy runtime"
+      echo cuda12; return
+    fi
+    local old; old="$(wsl_cuda13_driver_too_old)"
+    if [ -n "$old" ]; then
+      warn "WSL2: the user-mode CUDA driver is $old.x (nvidia-smi) but the CUDA 13.1 runtime corresponds to the R$CUDA13_MIN_DRIVER_MAJOR driver branch — selecting the CUDA 12 runtime (cuda12). Update the Windows NVIDIA driver to use the cuda runtime."
       echo cuda12; return
     fi
     echo cuda; return
@@ -201,6 +233,10 @@ else
   log "backend (forced): ${c_b}${BACKEND}${c_0}"
 fi
 case "$BACKEND" in cuda|cuda12|rocm|vulkan|metal) ;; *) die "invalid backend: $BACKEND";; esac
+if [ "$BACKEND" = cuda ]; then
+  OLD_DRV="$(wsl_cuda13_driver_too_old)"
+  [ -z "$OLD_DRV" ] || die "WSL2: the user-mode CUDA driver is $OLD_DRV.x (nvidia-smi) but the CUDA 13.1 runtime (--backend cuda) corresponds to the R$CUDA13_MIN_DRIVER_MAJOR driver branch; trellis-server would segfault in libnvidia-ptxjitcompiler (#35). Use --backend cuda12, or update the Windows NVIDIA driver so /usr/lib/wsl/lib catches up."
+fi
 
 echo
 info "install dir : $DEST"
