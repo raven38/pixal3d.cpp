@@ -376,7 +376,9 @@ See `.github/workflows/release.yml` for the exact flags the release binaries use
 (GPU target lists, `-DGGML_OPENMP=OFF` on Windows). Releases also include a
 `cuda12` variant built with CUDA 12.9 for Pascal/Volta GPUs (compute capability
 6.0/6.1/7.0); the standalone installers select it automatically for devices such
-as the Tesla P100.
+as the Tesla P100, and `install.sh` also selects it on **WSL2** when the user-mode
+CUDA driver reported by `nvidia-smi` is older than the R590 branch the CUDA 13.1
+runtime corresponds to (#35).
 
 ## Layout
 
