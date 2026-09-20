@@ -17,7 +17,9 @@
 #include "proj_grid.h"
 #include "trellis_model.h"
 #include "graph_dump.h"
+#include "trellis_args.h"   // g_profile_cond
 #include "ggml.h"
+#include <cstdio>
 #include <functional>
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
@@ -116,6 +118,7 @@ Pixal3dCond pixal3d_cond_ss_gpu(const Model& dinov3, const std::vector<Pixal3dVi
         if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("pixal3d_cond_ss_gpu: alloc failed");
         const size_t ab = ggml_gallocr_get_buffer_size(alloc, 0);
         if (ab > st.view_alloc_bytes) st.view_alloc_bytes = ab;
+        st.peak_bytes = std::max(st.peak_bytes, st.weight_bytes + resident_bytes + ab);
 
         ggml_backend_tensor_set(in.img, normed.data(), 0, normed.size() * 4);
         ggml_backend_tensor_set(in.cos, rcos.data(), 0, rcos.size() * 4);
@@ -143,7 +146,7 @@ Pixal3dCond pixal3d_cond_ss_gpu(const Model& dinov3, const std::vector<Pixal3dVi
     ggml_backend_buffer_free(pbuf);
     ggml_free(pc);
 
-    st.peak_bytes = st.weight_bytes + st.cond_bytes + st.view_alloc_bytes;
+    // peak_bytes is tracked at each graph using the persistent buffers resident at that point.
     st.total_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (stats) *stats = st;
     return out;
@@ -211,14 +214,12 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
         ggml_backend_buffer_clear(b, 0);
         return b;
     };
-    // pooled [T*T, 256] と q_bm [256, T*T]（T=1024 で各 1 GiB）は寿命が重ならない区間が長い:
-    // pooled は G2 で書かれ G3 で読み切り、q_bm は G3 で書かれ G4 で読み切る。view ごとに
-    // G2 の直前 / G3 の直前に確保し、G3 の後 / G4 の後に解放して、G2（encoder グラフ 1.5 GB）
-    // と G4（attention グラフ）の常駐分を 1 GiB 減らす（4090 実測 +4.42 → 約 3.2 GB, #40）。
     ggml_context *cp = nullptr, *cq = nullptr, *cs = nullptr;
     T *P_pooled = nullptr, *Q_bm = nullptr;
+    // pooled / q_bm are 1 GiB each at T=1024. Allocate them only for the graph phases
+    // that need them instead of keeping both resident for the whole call.
     ggml_backend_buffer_t bp = nullptr, bq = nullptr;
-    size_t resident_bytes = 0;    // 今デバイスに載っている永続バッファの合計（peak 計算用）
+    size_t resident_bytes = 0;
     cs = ggml_init({ ggml_tensor_overhead() * 8 + 256, nullptr, true });
     T* K_rows   = ggml_new_tensor_2d(cs, GGML_TYPE_F32, 256, nblk);
     T* V_rows   = ggml_new_tensor_2d(cs, GGML_TYPE_F32, D, NP);
@@ -234,12 +235,31 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
     st.weight_bytes = (dinov3.buffer ? ggml_backend_buffer_get_size(dinov3.buffer) : 0)
                     + (naf.buffer ? ggml_backend_buffer_get_size(naf.buffer) : 0);
     const size_t bytes_p = (size_t)TT * 256 * 4, bytes_q = (size_t)256 * TT * 4;
-    st.cond_bytes = bytes_p + bytes_q + ggml_backend_buffer_get_size(bs);   // 最大同時常駐 (G3 中)
+    st.cond_bytes = bytes_p + bytes_q + ggml_backend_buffer_get_size(bs);
     resident_bytes = ggml_backend_buffer_get_size(bs);
+
+    // --profile-cond: per-graph-kind exclusive laps (build+alloc / upload / compute / free) summed per
+    // view, plus the host-side tap preparation. printf only; nothing here re-runs a graph (the
+    // accumulator graphs are NOT idempotent -- see docs/design/2026-09-20-conditioning-profiler.md).
+    struct GKind { double build = 0, upload = 0, compute = 0, free_ = 0; int n = 0; };
+    enum { K_DINO, K_ENC, K_QK, K_ATTN, K_COUNT };
+    static const char* kind_name[K_COUNT] = { "dino", "naf_enc", "naf_qk", "naf_attn" };
+    GKind gk[K_COUNT];
+    double t_host_taps = 0, t_host_chunk_prep = 0, t_persistent = 0; int attn_skipped = 0;
+    auto kind_of = [](const char* tag) {
+        const std::string t = tag;
+        if (t.find("_naf_enc") != std::string::npos) return (int)K_ENC;
+        if (t.find("_naf_qk") != std::string::npos) return (int)K_QK;
+        if (t.find("_naf_attn") != std::string::npos) return (int)K_ATTN;
+        return (int)K_DINO;
+    };
+    using clk = std::chrono::steady_clock;
+    auto secs = [](clk::time_point a, clk::time_point b) { return std::chrono::duration<double>(b - a).count(); };
 
     // グラフを1本組んで走らせる小ヘルパ（入力の投入は alloc 後に upload() で行う）。
     auto run_graph = [&](ggml_context* c, const std::vector<T*>& outs, const char* tag,
                          const std::function<void()>& upload) {
+        const auto ta = clk::now();
         ggml_cgraph* g = ggml_new_graph_custom(c, 16384, false);
         for (T* o : outs) ggml_build_forward_expand(g, o);
         trellis_graph_dump(tag, g);
@@ -248,13 +268,18 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
         if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error(std::string("alloc failed: ") + tag);
         const size_t ab = ggml_gallocr_get_buffer_size(alloc, 0);
         if (ab > st.view_alloc_bytes) st.view_alloc_bytes = ab;
-        st.peak_bytes = std::max(st.peak_bytes, st.weight_bytes + resident_bytes + ab);
         if (getenv("TRELLIS_DBG_COND")) fprintf(stderr, "[cond] %-40s graph buffer %.1f MB (%d nodes)\n", tag, ab / 1048576.0, ggml_graph_n_nodes(g));
+        const auto tb = clk::now();
         upload();
+        const auto tc = clk::now();
         if (ggml_backend_graph_compute(dinov3.backend, g) != GGML_STATUS_SUCCESS)
             throw std::runtime_error(std::string("compute failed: ") + tag);
         ggml_backend_synchronize(dinov3.backend);
+        const auto td = clk::now();
         ggml_gallocr_free(alloc);
+        const auto te = clk::now();
+        GKind& k = gk[kind_of(tag)];
+        k.build += secs(ta, tb); k.upload += secs(tb, tc); k.compute += secs(tc, td); k.free_ += secs(td, te); k.n++;
     };
 
     const float inv_v = 1.0f / (float)V;
@@ -283,6 +308,8 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
                 idx_lr[t].swap(il); w_lr[t].swap(wl); idx_hr[t].swap(ih); w_hr[t].swap(wh);
             }
         }
+        for (GKind& k : gk) k = GKind{};
+        t_host_taps = secs(tv, clk::now()); t_host_chunk_prep = 0; t_persistent = 0; attn_skipped = 0;
 
         // ---- G1: DINOv3 -> global 累積, patch map を V_rows へ, lr tap 累積 ----
         {
@@ -314,7 +341,12 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
         }
 
         // ---- G2: NAF encoder -> pooled を永続バッファへ ----
-        bp = alloc_one(cp, P_pooled, TT, 256); resident_bytes += bytes_p;
+        {
+            const auto tp = clk::now();
+            bp = alloc_one(cp, P_pooled, TT, 256);
+            resident_bytes += bytes_p;
+            t_persistent += secs(tp, clk::now());
+        }
         // S == T（pool が恒等）なら 2 枝を別グラフにして pooled の前半/後半へ直接書く。
         // concat 用の 1 GiB と、片枝を保持したままもう片枝を回すぶんのピークが消える。
         if (S == Tn) {
@@ -342,7 +374,12 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
         }
 
         // ---- G3: block 行 stripe ごとに RoPE -> q_bm / k_rows ----
-        bq = alloc_one(cq, Q_bm, 256, TT); resident_bytes += bytes_q;
+        {
+            const auto tp = clk::now();
+            bq = alloc_one(cq, Q_bm, 256, TT);
+            resident_bytes += bytes_q;
+            t_persistent += secs(tp, clk::now());
+        }
         for (int b0 = 0; b0 < Hp; b0 += nbrow) {
             const int nrow = std::min(nbrow, Hp - b0);
             const int64_t sy = (int64_t)nrow * dy, Pp = sy * Tn;
@@ -376,11 +413,17 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
             ggml_free(c);
         }
 
-        ggml_backend_buffer_free(bp); ggml_free(cp); bp = nullptr; cp = nullptr; P_pooled = nullptr;
-        resident_bytes -= bytes_p;    // pooled は G3 で読み切った
+        {
+            const auto tp = clk::now();
+            ggml_backend_buffer_free(bp); ggml_free(cp);
+            bp = nullptr; cp = nullptr; P_pooled = nullptr;
+            resident_bytes -= bytes_p;
+            t_persistent += secs(tp, clk::now());
+        }
 
         // ---- G4: block chunk ごとに attention -> その chunk の hr tap を累積 ----
         for (int blk0 = 0; blk0 < nblk; blk0 += chunk_blk) {
+            const auto tp = clk::now();
             const int nb = std::min(chunk_blk, nblk - blk0);
             const int64_t lo = (int64_t)d2 * blk0, hi = lo + (int64_t)d2 * nb;
             std::vector<int32_t> ci[4]; std::vector<float> cw[4];
@@ -392,7 +435,8 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
                     if (g >= lo && g < hi) { ci[t][(size_t)j] = (int32_t)(g - lo); cw[t][(size_t)j] = w_hr[t][(size_t)j]; any = true; }
                 }
             }
-            if (!any) continue;   // この chunk に落ちる tap が無い
+            t_host_chunk_prep += secs(tp, clk::now());
+            if (!any) { attn_skipped++; continue; }   // この chunk に落ちる tap が無い
 
             ggml_context* c = ggml_init({ meta, nullptr, true });
             T* wi = ggml_new_tensor_1d(c, GGML_TYPE_I32, (int64_t)81 * nblk); ggml_set_input(wi);
@@ -414,12 +458,30 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
             });
             ggml_free(c);
         }
-        ggml_backend_buffer_free(bq); ggml_free(cq); bq = nullptr; cq = nullptr; Q_bm = nullptr;
-        resident_bytes -= bytes_q;    // q_bm は G4 で読み切った
+        {
+            const auto tp = clk::now();
+            ggml_backend_buffer_free(bq); ggml_free(cq);
+            bq = nullptr; cq = nullptr; Q_bm = nullptr;
+            resident_bytes -= bytes_q;
+            t_persistent += secs(tp, clk::now());
+        }
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tv).count();
         if (ms > st.view_ms_max) st.view_ms_max = ms;
+        if (g_profile_cond) {
+            double acc = t_host_taps + t_host_chunk_prep + t_persistent;
+            printf("      [cond-v] cond_slat_gpu S=%d R=%d T=%d view %d: host taps %.2f | chunk_prep %.2f | persistent alloc/free %.2f", S, R, Tn, v, t_host_taps, t_host_chunk_prep, t_persistent);
+            for (int k = 0; k < K_COUNT; ++k) {
+                const GKind& g = gk[k];
+                if (!g.n) continue;
+                acc += g.build + g.upload + g.compute + g.free_;
+                printf(" | %s x%d: build %.2f up %.2f compute %.2f free %.2f", kind_name[k], g.n, g.build, g.upload, g.compute, g.free_);
+            }
+            printf("  (attn chunks skipped %d; laps %.2f of view %.2fs)\n", attn_skipped, acc, ms / 1e3);
+            fflush(stdout);
+        }
     }
 
+    const auto t_rb = clk::now();
     std::vector<float> hg = tensor_to_f32(acc_glob), hl = tensor_to_f32(acc_lr), hh = tensor_to_f32(acc_hr);
     for (int t = 0; t < NPREFIX; ++t)
         for (int c = 0; c < D; ++c) out.global[(size_t)t * D + c] = hg[(size_t)t * D + c];
@@ -430,8 +492,9 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
     }
     ggml_backend_buffer_free(bs);
     ggml_free(cs);
+    if (g_profile_cond) { printf("      [cond-v] cond_slat_gpu: readback + interleave + free %.2f\n", secs(t_rb, clk::now())); fflush(stdout); }
 
-    // peak_bytes は run_graph が「重み + そのとき常駐していた永続バッファ + グラフ」で更新済み
+    st.peak_bytes = st.weight_bytes + st.cond_bytes + st.view_alloc_bytes;
     st.total_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (stats) *stats = st;
     return out;
@@ -534,6 +597,7 @@ Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
             }
         }
 
+        const auto t_taps = std::chrono::steady_clock::now();   // --profile-cond laps (host taps / build+alloc / upload / compute / free)
         size_t meta = ggml_tensor_overhead() * 8192 + ggml_graph_overhead_custom(16384, false) + (1 << 20);
         ggml_context* c = ggml_init({ meta, nullptr, true });
         Dinov3Inputs in{};
@@ -574,6 +638,7 @@ Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
         if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("pixal3d_cond_slat_gpu: alloc failed");
         const size_t ab = ggml_gallocr_get_buffer_size(alloc, 0);
         if (ab > st.view_alloc_bytes) st.view_alloc_bytes = ab;
+        const auto t_alloc = std::chrono::steady_clock::now();
 
         ggml_backend_tensor_set(in.img, normed.data(), 0, normed.size() * 4);
         ggml_backend_tensor_set(in.cos, rcos.data(), 0, rcos.size() * 4);
@@ -589,13 +654,24 @@ Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
             ggml_backend_tensor_set(gidx_hr[t], idx_hr[t].data(), 0, idx_hr[t].size() * sizeof(int32_t));
             ggml_backend_tensor_set(gw_hr[t], w_hr[t].data(), 0, w_hr[t].size() * sizeof(float));
         }
+        const auto t_up = std::chrono::steady_clock::now();
         if (ggml_backend_graph_compute(dinov3.backend, g) != GGML_STATUS_SUCCESS)
             throw std::runtime_error("pixal3d_cond_slat_gpu: compute failed");
         ggml_backend_synchronize(dinov3.backend);
+        const auto t_comp = std::chrono::steady_clock::now();
+        const int n_nodes = ggml_graph_n_nodes(g);   // g lives in c: read before ggml_free
         ggml_gallocr_free(alloc);   // release this view's temporaries before the next view
         ggml_free(c);
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tv).count();
+        const auto t_end = std::chrono::steady_clock::now();
+        const double ms = std::chrono::duration<double, std::milli>(t_end - tv).count();
         if (ms > st.view_ms_max) st.view_ms_max = ms;
+        if (g_profile_cond) {
+            auto sec = [](std::chrono::steady_clock::time_point a, std::chrono::steady_clock::time_point b) { return std::chrono::duration<double>(b - a).count(); };
+            printf("      [cond-v] cond_slat_gpu_single S=%d R=%d T=%d view %d: host taps %.2f | build+alloc %.2f | upload %.2f | compute %.2f | free %.2f  (view %.2fs, graph %.0f MB, %d nodes)\n",
+                   S, R, Tn, v, sec(tv, t_taps), sec(t_taps, t_alloc), sec(t_alloc, t_up), sec(t_up, t_comp), sec(t_comp, t_end), ms / 1e3,
+                   ab / 1048576.0, n_nodes);
+            fflush(stdout);
+        }
     }
 
     // One readback: ggml channel-major [D, tok] -> host token-major, proj = [lr || hr] per token.
