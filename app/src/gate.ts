@@ -35,6 +35,7 @@ const state: GateState = {
 
 let completedAtStop = -1;
 const listeners = new Set<(s: GateState) => void>();
+const lostListeners = new Set<(msg: string) => void>();
 
 function emit(): void {
   for (const fn of listeners) fn(state);
@@ -88,6 +89,25 @@ export function stopWaiting(): void {
     completedAtStop = state.capabilities.completed;
     state.awaitingServer = true;
   }
+  emit();
+}
+
+/**
+ * サーバ消失（#36）: Tauri の `server-exited` か、生成中に /health が続けて落ちたとき。
+ * 応答待ちのパネルはこれで fetch を abort し、進行中の状態を畳む（サーバは死んでいるので
+ * Stop waiting と違って「まだ計算中」ではない）。ゲートは offline に戻す。
+ */
+export function onServerLost(fn: (msg: string) => void): () => void {
+  lostListeners.add(fn);
+  return () => lostListeners.delete(fn);
+}
+
+export function notifyServerLost(msg: string): void {
+  state.serverOnline = false;
+  state.serverBusy = false;
+  state.awaitingServer = false;
+  state.capabilities = null;
+  for (const fn of lostListeners) fn(msg);
   emit();
 }
 
