@@ -47,7 +47,7 @@ jobs:
           echo "SMOKE_PORT=$SMOKE_PORT" >> "$GITHUB_ENV"
           cat > "$RUNNER_TEMP/trellis-server-smoke.py" <<'PY'
           #!/usr/bin/env python3
-          import argparse, json, os
+          import argparse, json, os, signal
           from http.server import BaseHTTPRequestHandler, HTTPServer
           p=argparse.ArgumentParser(add_help=False)
           p.add_argument('--models'); p.add_argument('--models-sv', default=''); p.add_argument('--gpu'); p.add_argument('--host', default='127.0.0.1'); p.add_argument('--port', type=int, required=True)
@@ -63,6 +63,13 @@ jobs:
                       body=json.dumps({'busy':False,'completed':0,'mv':{'configured':True,'available':False,'model_set':None,'version':None,'model_family':'pixal3d-mv','reason':'dummy'},'sv':{'configured':bool(a.models_sv),'available':False,'model_set':None,'version':None,'model_family':'pixal3d-sv','reason':'dummy'}}).encode()
                       self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers(); self.wfile.write(body)
                   else: self.send_response(404); self.end_headers()
+              def do_POST(self):
+                  # #36: a generate request kills the server the way the WSL2 CUDA 13.1 runtime
+                  # died (SIGSEGV mid-request, no response). The shell must reap it and report it.
+                  if self.path.startswith('/generate'):
+                      print('DUMMY_TRELLIS_SERVER_SUICIDE', flush=True)
+                      os.kill(os.getpid(), signal.SIGSEGV)
+                  self.send_response(404); self.end_headers()
               def log_message(self, fmt, *args): pass
           with open(os.path.join(os.environ['RUNNER_TEMP'], 'dummy-server-started'), 'w') as f:
               f.write(str(os.getpid()))
@@ -121,14 +128,50 @@ jobs:
           # SIGTERM validates the Linux parent-death child cleanup path, not the UI CloseRequested handler.
           kill "$APP_PID"
           wait "$APP_PID" 2>/dev/null || true
+          exited=0
           for i in $(seq 1 40); do
             if ! curl -fsS "http://127.0.0.1:$SMOKE_PORT/health" >/dev/null 2>&1 && ! kill -0 "$DUMMY_PID" 2>/dev/null; then
-              echo SERVER_CHILD_EXIT_OK
-              kill "$XVFB_PID" 2>/dev/null || true; wait "$XVFB_PID" 2>/dev/null || true; trap - EXIT; exit 0
+              exited=1; break
             fi
             sleep .25
           done
-          echo 'server still alive after Tauri process exit'; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1
+          [ "$exited" = 1 ] || { echo 'server still alive after Tauri process exit'; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }
+          echo SERVER_CHILD_EXIT_OK
+
+          # ---- #36: the server dies mid-request. Second launch of the same app + dummy server;
+          # a POST /generate-mv makes the dummy SIGSEGV itself. The shell must reap the child (no
+          # zombie), write "[studio] server exited unexpectedly (signal 11)" to the launch log
+          # (the same line is emitted as the `server-exited` event the UI turns into the toast)
+          # and stay alive itself. The DOM-level reaction (toast text, #mvcal-generate re-enabled)
+          # is asserted by the Playwright smoke (headless-mv-ui.mjs section 7), which drives the
+          # same TypeScript in browser mode.
+          rm -f "$RUNNER_TEMP/dummy-server-started"
+          "$APP" > "$RUNNER_TEMP/tauri-smoke-2.log" 2>&1 &
+          APP_PID=$!
+          ok=0
+          for i in $(seq 1 60); do
+            if [ "$(curl -fsS "http://127.0.0.1:$SMOKE_PORT/health" 2>/dev/null || true)" = "ok" ]; then ok=1; break; fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then cat "$RUNNER_TEMP/tauri-smoke-2.log"; exit 1; fi
+            sleep 1
+          done
+          [ "$ok" = 1 ] || { cat "$RUNNER_TEMP/tauri-smoke-2.log"; exit 1; }
+          DUMMY_PID="$(cat "$RUNNER_TEMP/dummy-server-started")"
+          LOG_DIR="$HOME/.local/share/trellis-studio/logs"
+          LAUNCH_LOG="$(ls -t "$LOG_DIR"/trellis-server-*.log | head -1)"
+          curl -s -o /dev/null -X POST --data-binary 'x' "http://127.0.0.1:$SMOKE_PORT/generate-mv" || true
+          reported=0
+          for i in $(seq 1 40); do
+            if grep -q 'server exited unexpectedly (signal 11)' "$LAUNCH_LOG"; then reported=1; break; fi
+            sleep .25
+          done
+          [ "$reported" = 1 ] || { echo 'shell did not report the server death'; cat "$LAUNCH_LOG"; cat "$RUNNER_TEMP/tauri-smoke-2.log"; exit 1; }
+          STAT="$(ps -o stat= -p "$DUMMY_PID" 2>/dev/null | tr -d ' ' || true)"
+          [ -z "$STAT" ] || { echo "dead server not reaped: pid $DUMMY_PID stat=$STAT"; exit 1; }
+          kill -0 "$APP_PID" 2>/dev/null || { echo 'Studio died with its server'; cat "$RUNNER_TEMP/tauri-smoke-2.log"; exit 1; }
+          echo SERVER_CRASH_REPORTED_AND_REAPED_OK
+          kill "$APP_PID"
+          wait "$APP_PID" 2>/dev/null || true
+          kill "$XVFB_PID" 2>/dev/null || true; wait "$XVFB_PID" 2>/dev/null || true; trap - EXIT; exit 0
       - name: Upload WebKitGTK screenshot
         if: always()
         uses: actions/upload-artifact@v4

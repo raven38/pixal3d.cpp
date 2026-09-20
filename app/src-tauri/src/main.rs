@@ -179,7 +179,11 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Trellis Studio")
         .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            // Every way out ends in server::stop. ExitRequested covers app.exit() and
+            // the last window closing; Exit (LoopDestroyed) is the only event a macOS
+            // `quit` (Cmd+Q, AppleScript, Dock) delivers — tao maps applicationWillTerminate
+            // straight to it — which is how the server was orphaned on macOS (#24).
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
                 server::stop(app.state::<ServerState>().inner());
             }
         });

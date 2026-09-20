@@ -1,5 +1,5 @@
 import { CANONICAL_RIG_VIEWS, generateMultiview, type MultiviewFile } from "./api";
-import { blockedReason, canGenerate, setLocalGenerating, stopWaiting, subscribeGate } from "./gate";
+import { blockedReason, canGenerate, onServerLost, setLocalGenerating, stopWaiting, subscribeGate } from "./gate";
 import { listen } from "./tauri";
 import {
   hasErrors,
@@ -162,6 +162,7 @@ export function mountMvCalibration(root: HTMLElement): void {
   let activeAbort: AbortController | null = null;
   let timer: number | null = null;
   let generating = false;
+  let lostMsg = "";   // サーバ消失で abort したとき、その理由（Stop waiting と区別する）
   let lastPreflight: PreflightItem[] = [];
   const alphaCache = new WeakMap<File, AlphaCheckResult>();
 
@@ -470,6 +471,11 @@ export function mountMvCalibration(root: HTMLElement): void {
     activeAbort?.abort();
     stopWaiting();
   });
+  onServerLost((msg) => {
+    if (!generating || !activeAbort) return;
+    lostMsg = msg;
+    activeAbort.abort();
+  });
   gen.addEventListener("click", async () => {
     if ((!meta && !canonical) || !views.length || generating || !canGenerate()) return;
     const items = await runPreflight();
@@ -479,6 +485,7 @@ export function mountMvCalibration(root: HTMLElement): void {
     if (meshScale == null) return;
     generating = true;
     setLocalGenerating(true);
+    lostMsg = "";
     activeAbort = new AbortController();
     gen.disabled = true;
     cancel.disabled = false;
@@ -504,7 +511,9 @@ export function mountMvCalibration(root: HTMLElement): void {
       };
       window.dispatchEvent(new CustomEvent<MvResultDetail>("pixal3d-mv-result", { detail }));
     } catch (e) {
-      if (activeAbort.signal.aborted) {
+      if (activeAbort.signal.aborted && lostMsg) {
+        stage.textContent = lostMsg;   // main.ts が toast を出す。ここでは重ねない
+      } else if (activeAbort.signal.aborted) {
         stage.textContent = "stopped waiting — the server keeps computing this generation";
       } else {
         stage.textContent = "failed";

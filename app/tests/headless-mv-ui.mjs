@@ -10,6 +10,9 @@
 //      Stop waiting 後は busy=false かつ completed 増まで無効のまま
 //   6. MV 完了パス（#25）: /generate-mv の結果が viewer / gallery / Save GLB… に届き、
 //      黙ってダウンロードされず、gallery から開き直しても TRELLIS.2 の入力を汚さない
+//   7. サーバ消失（#36、browser mode）: 生成中に stub が接続を切る（/health も落ちる、/generate-mv は
+//      応答しない）→ /health 3 回連続失敗で err toast、進行状態が畳まれ、サーバ復帰後に Generate が
+//      再有効化される。先に、短い断（/health 1 回失敗）では生成が捨てられず完了することを見る
 import http from 'node:http';
 import { chromium } from 'playwright';
 
@@ -58,9 +61,13 @@ function minimalGlb() {
 }
 
 // ---- stub trellis-server: /health, /capabilities, /generate-mv（即答）。/generate-sv は永遠に応答しない ----
-const stub = { busy: false, completed: 0, mvRequests: 0, sv: { configured: true, available: true, model_set: 'pixal3d-sv-q8_0', version: 'v1', model_family: 'sv' } };
+const stub = { busy: false, completed: 0, mvRequests: 0, dead: false, holdMv: false, sv: { configured: true, available: true, model_set: 'pixal3d-sv-q8_0', version: 'v1', model_family: 'sv' } };
 const pending = new Set();
+const pendingMv = new Set();
 const server = http.createServer((req, res) => {
+  // dead: サーバが落ちた状態。新しい接続は即切断（fetch は失敗）。保留中の応答はそのまま
+  // 放置する（#36 で観測した「fetch が永遠に返らない」状態を再現する）。
+  if (stub.dead) { req.socket.destroy(); return; }
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -73,6 +80,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/generate-mv' && req.method === 'POST') {
     stub.mvRequests++;
+    if (stub.holdMv) { pendingMv.add(res); req.resume(); return; }
     stub.completed++;
     req.resume();
     req.on('end', () => { res.writeHead(200, { 'Content-Type': 'model/gltf-binary' }); res.end(minimalGlb()); });
@@ -272,5 +280,52 @@ if (hasWebgl) {
 console.log('ok   MV completion path (viewer / gallery / Save GLB…, no silent download)');
 
 console.log('HEADLESS_MV_COMPLETION_OK');
+
+// ---- 7. サーバ消失（#36）---------------------------------------------------------
+// MV パネル（section 6 の入力のまま）で Generate → stub は /generate-mv を保留 → stub が「死ぬ」
+// （新規接続は切断、保留中の応答は返さない）。browser mode では pollHealth が生成中の offline を
+// 2 回続けて見たら handleServerLost: err toast、fetch abort、進行状態を畳む。
+const startHeldMv = async (expectRequests) => {
+  await page.waitForFunction(() => !document.querySelector('#mvcal-generate')?.disabled, null, { timeout: 15000 });
+  stub.holdMv = true;
+  await page.locator('#mvcal-generate').click();
+  await page.waitForFunction(() => !document.querySelector('#mvcal-cancel')?.disabled);
+  for (let i = 0; i < 40 && pendingMv.size === 0; i++) await new Promise((r) => setTimeout(r, 250));
+  if (pendingMv.size !== 1 || stub.mvRequests !== expectRequests) fail(`expected /generate-mv request #${expectRequests} to be held, saw ${stub.mvRequests} (held ${pendingMv.size})`);
+};
+// 7a. 短い断: /health が 1 回落ちる（4 s 周期のポーリング 1 回分）だけでは生成を捨てない。
+await startHeldMv(2);
+stub.dead = true;
+await page.waitForTimeout(4500);
+stub.dead = false;
+await page.waitForTimeout(4500);
+if (await page.locator('#mvcal-cancel').isDisabled()) fail('a single missed health poll must not abandon the generation');
+if ([...await page.locator('.toast.err').allTextContents()].some((t) => t.includes('stopped responding'))) fail('no server-lost toast for a short outage');
+stub.holdMv = false;
+stub.completed++;
+for (const res of pendingMv) { res.writeHead(200, { 'Content-Type': 'model/gltf-binary' }); res.end(minimalGlb()); }
+pendingMv.clear();
+await page.waitForFunction(() => document.querySelector('#mvcal-stage')?.textContent === 'complete', null, { timeout: 15000 });
+console.log('ok   short health outage keeps the generation (no false server-lost)');
+
+// 7b. 本当に消えた: /health が 3 回続けて落ちる → toast、進行状態が畳まれる。
+await startHeldMv(3);
+stub.dead = true;
+await page.waitForFunction(() => [...document.querySelectorAll('.toast.err')].some((t) => t.textContent.includes('server stopped responding during generation')), null, { timeout: 25000 });
+await page.waitForFunction(() => document.querySelector('#mvcal-cancel')?.disabled, null, { timeout: 5000 });
+const lostStage = await page.locator('#mvcal-stage').textContent();
+if (!lostStage.includes('server stopped responding')) fail(`MV stage should name the lost server, got: ${lostStage}`);
+if (!(await page.locator('#mvcal-generate').isDisabled())) fail('Generate must stay disabled while the server is gone');
+if (await page.locator('#server-label').textContent() !== 'offline') fail('status must show offline after the server was lost');
+// サーバ復帰（Settings → Restart server 相当）: 保留していた応答は返らないまま、Generate が戻る
+stub.dead = false;
+stub.holdMv = false;
+for (const res of pendingMv) res.socket.destroy();
+pendingMv.clear();
+await page.waitForFunction(() => !document.querySelector('#mvcal-generate')?.disabled, null, { timeout: 15000 });
+if (await page.locator('#server-label').textContent() !== 'ready') fail('status must be ready again once the server answers');
+console.log('ok   server lost mid-generation → toast, state cleared, Generate re-enabled after restart');
+
+console.log('HEADLESS_SERVER_LOST_OK');
 await browser.close();
 server.close();
