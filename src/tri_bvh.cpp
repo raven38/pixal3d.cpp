@@ -11,6 +11,22 @@ namespace {
 
 inline float dot3(const float* a, const float* b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
 
+template <class Fn>
+void parallel_tasks(int64_t n, Fn&& fn) {
+    if (n <= 0) return;
+    const int nt = std::min<int64_t>(parallel_threads(), n);
+    if (nt <= 1) { fn(0, n); return; }
+    std::vector<std::thread> ts;
+    ts.reserve((size_t)nt);
+    const int64_t chunk = (n + nt - 1) / nt;
+    for (int i = 0; i < nt; ++i) {
+        const int64_t b = (int64_t)i * chunk, e = std::min(n, b + chunk);
+        if (b >= e) break;
+        ts.emplace_back([&fn, b, e] { fn(b, e); });
+    }
+    for (auto& th : ts) th.join();
+}
+
 // Ericson, Real-Time Collision Detection 5.1.5: closest point on triangle to p.
 void closest_on_tri(const float* p, const float* a, const float* b, const float* c, float* out) {
     float ab[3], ac[3], ap[3];
@@ -85,7 +101,7 @@ int32_t bvh_split(std::vector<TriBvh::Node>& nodes, std::vector<int32_t>& prim, 
         const int nt = std::max(1, (int)std::thread::hardware_concurrency());
         std::vector<float> lo((size_t)nt * 3, 1e30f), hi((size_t)nt * 3, -1e30f);
         const int64_t n = s.end - s.begin, chunk = (n + nt - 1) / nt;
-        parallel_for(nt, [&](int64_t tb, int64_t te) {
+        parallel_tasks(nt, [&](int64_t tb, int64_t te) {
             for (int64_t t = tb; t < te; ++t) {
                 const int64_t b = s.begin + t * chunk, e = std::min<int64_t>(s.end, b + chunk);
                 if (b < e) scan((int32_t)b, (int32_t)e, &lo[(size_t)t * 3], &hi[(size_t)t * 3]);
@@ -153,7 +169,7 @@ TriBvh TriBvh::build(const float* verts, int64_t V, const int32_t* faces, int64_
     while (level.size() < n_sub) {
         std::vector<int32_t> mids(level.size());
         const bool par_bbox = level.size() == 1;
-        parallel_for((int64_t)level.size(), [&](int64_t b, int64_t e) {
+        parallel_tasks((int64_t)level.size(), [&](int64_t b, int64_t e) {
             for (int64_t i = b; i < e; ++i) mids[(size_t)i] = bvh_split(t.nodes_, t.prim_, cent, verts, faces, level[(size_t)i], par_bbox);
         });
         next.clear();
