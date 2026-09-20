@@ -13,6 +13,7 @@
 #      空き容量不足はダウンロード前に落ちる
 #   5. WSL2 のユーザーモード CUDA ドライバ判定（#35、nvidia-smi / uname をスタブ）:
 #      580 系 → cuda12、590 以上 → cuda、非 WSL の 580 → cuda、--backend cuda 明示 + 580 → 停止
+#   6. 最終行の "add your models dir in Settings" は --skip-models のときだけ（#37、section 3 内）
 # を確認する。最後に INSTALLER_MANIFEST_OK を出す。
 set -euo pipefail
 
@@ -211,6 +212,10 @@ rm -rf "$DEST/models-sv" "$CFG"
 run 0 "model set verified" "${COMMON[@]}"
 python3 -c "import json,sys; c=json.load(open('$CFG/config.json')); assert c['modelsDirSv']=='', c; print('SV_EMPTY_OK')"
 pass "without an SV set modelsDirSv is empty"
+# #37: the models were installed, so the final line must not send the user to Settings
+grep -q "add your models dir in Settings" <<<"$LAST_OUT" && fail "final message must not ask for a models dir when the models were installed"
+run 0 "add your models dir in Settings" "${COMMON[@]}" --skip-models
+pass "final message points at Settings only with --skip-models"
 
 # 3e. 空き容量不足はダウンロード前に落ちる（size_bytes 1e15 の manifest）
 python3 - "$ASSETS/sv/pixal3d-models.json" "$WORK/huge.json" <<'PY'

@@ -23,7 +23,7 @@ jobs:
       - name: Install Tauri/Xvfb dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb x11-utils dbus-x11 curl
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb x11-utils x11-apps imagemagick dbus-x11 curl
       - name: Install app dependencies
         working-directory: app
         run: npm ci
@@ -114,6 +114,10 @@ jobs:
           for i in $(seq 1 40); do xwininfo -root -tree | grep -Fq 'Trellis Studio' && { mapped=1; break; }; sleep .25; done
           [ "$mapped" = 1 ] || { xwininfo -root -tree || true; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1; }
           echo TAURI_WINDOW_MAPPED_AND_SERVER_OK
+          # WebKitGTK rendering evidence (#37: <select> text was light-on-light on Linux). The
+          # window is left to settle, then the whole Xvfb screen is captured for the artifact.
+          sleep 3
+          xwd -root -display "$DISPLAY" -silent | convert xwd:- "$RUNNER_TEMP/studio-webkitgtk.png" || echo 'screenshot failed (non-fatal)'
           # SIGTERM validates the Linux parent-death child cleanup path, not the UI CloseRequested handler.
           kill "$APP_PID"
           wait "$APP_PID" 2>/dev/null || true
@@ -125,6 +129,14 @@ jobs:
             sleep .25
           done
           echo 'server still alive after Tauri process exit'; cat "$RUNNER_TEMP/tauri-smoke.log"; exit 1
+      - name: Upload WebKitGTK screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-webkitgtk-screenshot
+          path: ${{ runner.temp }}/studio-webkitgtk.png
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Show Tauri/Xvfb logs on failure
         if: failure()
         run: |

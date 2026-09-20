@@ -831,7 +831,7 @@ JSON
 info "release receipt: $CONFIG_DIR/release.json"
 
 echo
-log "${c_g}done${c_0} — launch Trellis Studio${SKIP_MODELS:+ (add your models dir in Settings)}."
+log "${c_g}done${c_0} — launch Trellis Studio$([ "$SKIP_MODELS" = 1 ] && echo ' (add your models dir in Settings)')."
 # `cmd && info ...` as the last statement would make a successful install exit 1
 # whenever the AppImage is absent (e.g. --skip-app), which now matters because
 # callers gate on the exit code.

@@ -31,7 +31,7 @@ function injectStyle(): void {
     .svp-title{font-weight:650}.svp-sub{font-size:12px;opacity:.7;margin:3px 0 10px}
     .svp-drop{border:1px dashed #4a5260;border-radius:10px;padding:14px;text-align:center;cursor:pointer;background:#111419;position:relative;min-height:120px}
     .svp-drop.drag{border-color:#50d2ff;background:#122029}
-    .svp-drop img{max-width:100%;max-height:220px;object-fit:contain;display:block;margin:0 auto}
+    .svp-drop img{max-width:100%;max-height:220px;object-fit:contain;display:block;margin:0 auto}.svp-drop img[hidden]{display:none}
     .svp-controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}.svp-controls label{font-size:12px}.svp-controls input,.svp-controls select{width:100%;box-sizing:border-box;margin-top:4px}
     .svp-preflight{margin-top:10px;padding:8px;border:1px solid #30343b;border-radius:8px;font-size:11px}.svp-preflight ul{margin:5px 0 0;padding-left:18px}.svp-preflight .error{color:#ff8e8e}.svp-preflight .ok{color:#75d49b}.svp-preflight .warning{color:#e6b85c}
     .svp-avail{margin-top:8px;font-size:11px;line-height:1.4}.svp-avail.bad{color:#e6b85c}.svp-avail.good{color:#75d49b}
