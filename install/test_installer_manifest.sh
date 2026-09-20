@@ -275,9 +275,15 @@ run_stub 0 "auto-detected backend: .*cuda" 590.44.01 "$WSL_KERNEL" "${WSL_COMMON
 pass "WSL2 + user-mode driver 590.x keeps cuda"
 
 rm -rf "$WORK/wsl-dest" "$WORK/wsl-cfg"
-run_stub 0 "auto-detected backend: .*cuda" 580.178.04 "$NATIVE_KERNEL" "${WSL_COMMON[@]}"
-[ "$(backend_in_config)" = cuda ] || fail "a non-WSL 580 driver must not be downgraded, got $(backend_in_config)"
-pass "native Linux + 580.x is left on cuda (WSL2-only rule)"
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  # is_wsl() also reads the real /proc/version, which a PATH stub cannot fake; on a WSL host
+  # this case would (correctly) still see WSL, so it is skipped there rather than faked.
+  echo "skip native Linux + 580.x case: this host is WSL (/proc/version)"
+else
+  run_stub 0 "auto-detected backend: .*cuda" 580.178.04 "$NATIVE_KERNEL" "${WSL_COMMON[@]}"
+  [ "$(backend_in_config)" = cuda ] || fail "a non-WSL 580 driver must not be downgraded, got $(backend_in_config)"
+  pass "native Linux + 580.x is left on cuda (WSL2-only rule)"
+fi
 
 rm -rf "$WORK/wsl-dest" "$WORK/wsl-cfg"
 run_stub 1 "Use --backend cuda12" 580.178.04 "$WSL_KERNEL" "${WSL_COMMON[@]}" --backend cuda
