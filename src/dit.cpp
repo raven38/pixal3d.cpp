@@ -36,6 +36,7 @@ static constexpr int64_t kAttnChunkBytes = 1024ll * 1024 * 1024;
 #endif
 bool g_no_fa = false;             // --no-fa; set by trellis_run
 bool g_profile = false;           // --profile; set by trellis_run (read in flow_runner.cpp)
+bool g_profile_cond = false;      // --profile-cond; set by trellis_run (read in pixal3d_cond*.cpp, naf_gpu.cpp, shape_decoder.cpp, dinov3.cpp)
 
 static T* lin(ggml_context* c, const Model& m, const std::string& p, T* x) {
     T* w = m.get(p + ".weight");

@@ -127,6 +127,7 @@ The most useful ones:
 | `--seed N` | RNG seed |
 | `--require-gpu` | fail instead of falling back to the (very slow, RAM-hungry) CPU path |
 | `--profile` | after the second forward of every flow DiT, re-submit the same graph as role×block slices and as single nodes and print the breakdown (`[prof]` lines: by role / by block / by op / top nodes, plus the slice-sum vs whole-forward ratios). Timing only — the sampler still uses the whole-graph output. Adds roughly 4 forwards per flow |
+| `--profile-cond` | print per-view / per-stage wall-clock laps of the conditioning (DINOv3 → NAF → projection, host and device paths) and of the sparse decoders / cascade upsample (`[cond-v]` lines). printf only — adds no compute, unlike `--profile`, so it can be used to time the conditioning without the flow side-passes heating the GPU first. The coarse per-stage `[cond]` laps are printed always, in the multiview pipeline (`--views`) only |
 
 The postprocess matches the reference pipeline op for op (see
 `docs/spec/27-reference-postprocess.md` / `28-divergence-matrix.md`): the raw

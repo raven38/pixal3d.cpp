@@ -119,11 +119,20 @@ struct NafGgmlOpts {
     // Lower GroupNorm / reflect-pad / avg-pool to ops the backend has when it lacks
     // GGML_OP_GROUP_NORM / PAD_REFLECT_1D / POOL_2D (the ggml WebGPU backend):
     // norm over a [W*H*C/8, 8] reshape, concat of mirrored border rows/cols, and
-    // sum_rows over a [k, ...] reshape. Exact re-expressions, not approximations.
+    // sum_rows over a [k, ...] reshape. Mathematically the same ops (not approximations); the
+    // reduction order differs, so outputs are not bit-identical (Metal: L2rel ~1e-4 vs native).
     bool generic_lowering = false;
+    // GroupNorm only (the norm-over-reshape re-expression above), reflect pad and pool stay native.
+    // Diagnostic (--naf-ops --naf-generic-gn) to attribute the generic_lowering speed-up to the
+    // GroupNorm op alone; naf_ggml_opts_for() leaves it false.
+    bool generic_groupnorm = false;
     // ggml_conv_2d_direct (f32 activations, no [K*K*Ci, W*H] im2col buffer) instead
     // of ggml_conv_2d (im2col in the weight dtype + mul_mat).
     bool direct_conv = false;
+    // Diagnostic only (trellis-test-pixal3d-cond-tex --naf-ops): after the output has been read
+    // back, replay the graph node by node (trellis_graph_node_times, inputs re-uploaded) and print
+    // the op-kind table. Never set on a production path -- naf_ggml_opts_for() leaves it false.
+    bool profile_ops = false;
 };
 // Probes the backend's supports_op for the ops above and returns the opts for it.
 NafGgmlOpts naf_ggml_opts_for(const Model& naf);

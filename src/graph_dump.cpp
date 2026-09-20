@@ -2,11 +2,16 @@
 // TRELLIS_DUMP_OPS is set; zero-cost (a single getenv check) otherwise.
 #include "graph_dump.h"
 #include "ggml.h"
+#include "ggml-alloc.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -236,6 +241,78 @@ void trellis_graph_alloc_trace(const char* tag, ggml_cgraph* g, size_t gallocr_b
                  largest_t ? ggml_type_name(largest_t->type) : "-",
                  peak / 1e9, peak_at, pk ? ggml_op_name(pk->op) : "input", gallocr_bytes / 1e9);
     std::fflush(stderr);
+}
+
+// ---------------------------------------------------------------------------
+// op-level profiling primitive (see graph_dump.h for the contract)
+// ---------------------------------------------------------------------------
+
+std::vector<double> trellis_graph_node_times(ggml_backend_t backend, ggml_cgraph* g, int passes,
+                                             const std::function<void()>& reupload) {
+    using clock = std::chrono::steady_clock;
+    const int n = ggml_graph_n_nodes(g);
+    std::vector<double> dt((size_t)n, 0.0);
+    if (n == 0 || passes < 1) return dt;
+    // Scratch graph for one node at a time. ggml_graph_add_node appends without the DFS that
+    // ggml_build_forward_expand would do (which would pull every ancestor back in).
+    ggml_context* pctx = ggml_init({ ggml_graph_overhead_custom(1, false) + 4096, nullptr, true });
+    ggml_cgraph* gv = ggml_new_graph_custom(pctx, 1, false);
+    for (int pass = 0; pass < passes; ++pass) {
+        if (reupload) reupload();
+        for (int j = 0; j < n; ++j) {
+            ggml_graph_clear(gv);
+            ggml_graph_add_node(gv, ggml_graph_node(g, j));
+            const auto t = clock::now();
+            if (ggml_backend_graph_compute(backend, gv) != GGML_STATUS_SUCCESS) {
+                ggml_free(pctx);
+                throw std::runtime_error("trellis_graph_node_times: compute failed at node " + std::to_string(j));
+            }
+            dt[(size_t)j] = std::chrono::duration<double>(clock::now() - t).count();
+        }
+    }
+    ggml_free(pctx);
+    return dt;
+}
+
+std::string trellis_op_kind(const ggml_tensor* t) {
+    std::string k = ggml_op_name(t->op);
+    if (t->op == GGML_OP_MUL_MAT && t->src[0]) k += std::string("(") + ggml_type_name(t->src[0]->type) + ")";
+    if (t->op == GGML_OP_FLASH_ATTN_EXT && t->src[1]) k += std::string("(kv ") + ggml_type_name(t->src[1]->type) + ")";
+    return k;
+}
+
+void trellis_print_op_table(ggml_cgraph* g, const std::vector<double>& node_s, double whole_s,
+                            const char* label, int top_nodes) {
+    const int n = ggml_graph_n_nodes(g);
+    double total = 0.0;
+    std::map<std::string, std::pair<double, int>> op_s;
+    for (int j = 0; j < n && j < (int)node_s.size(); ++j) {
+        auto& e = op_s[trellis_op_kind(ggml_graph_node(g, j))];
+        e.first += node_s[(size_t)j]; e.second++; total += node_s[(size_t)j];
+    }
+    printf("      [prof] %s: %d nodes | whole graph %.2fs | node pass %.2fs (x%.2f, ISOLATED single-node times: light ops overstated by the per-submit cost)\n",
+           label, n, whole_s, total, whole_s > 0 ? total / whole_s : 0.0);
+    std::vector<std::pair<std::string, std::pair<double, int>>> ops(op_s.begin(), op_s.end());
+    std::sort(ops.begin(), ops.end(), [](const auto& a, const auto& b) { return a.second.first > b.second.first; });
+    printf("      [prof] %s by op:\n", label);
+    for (const auto& [k, v] : ops)
+        if (total > 0 && v.first >= 0.005 * total)
+            printf("      [prof]   %-24s %8.2fs  %5.1f%%  (n=%d, %.2f ms/op)\n", k.c_str(), v.first, 100.0 * v.first / total, v.second, 1e3 * v.first / v.second);
+    std::vector<int> order((size_t)n);
+    for (int j = 0; j < n; ++j) order[(size_t)j] = j;
+    std::sort(order.begin(), order.end(), [&](int a, int b) { return node_s[(size_t)a] > node_s[(size_t)b]; });
+    printf("      [prof] %s top %d nodes:\n", label, std::min(top_nodes, n));
+    for (int q = 0; q < std::min(top_nodes, n); ++q) {
+        const int j = order[(size_t)q];
+        const ggml_tensor* t = ggml_graph_node(g, j);
+        char shp[128];
+        snprintf(shp, sizeof shp, "[%lld,%lld,%lld,%lld]", (long long)t->ne[0], (long long)t->ne[1], (long long)t->ne[2], (long long)t->ne[3]);
+        char s0[96] = "";
+        if (t->src[0]) snprintf(s0, sizeof s0, " src0 %s[%lld,%lld,%lld]", ggml_type_name(t->src[0]->type),
+                                (long long)t->src[0]->ne[0], (long long)t->src[0]->ne[1], (long long)t->src[0]->ne[2]);
+        printf("      [prof]   #%-5d %-24s %8.3fs  %s%s  %s\n", j, trellis_op_kind(t).c_str(), node_s[(size_t)j], shp, s0, ggml_get_name(t));
+    }
+    fflush(stdout);
 }
 
 } // namespace trellis

@@ -2,12 +2,14 @@
 #include "sparse.h"
 #include "trellis_model.h"
 #include "graph_dump.h"
+#include "trellis_args.h"   // g_profile_cond
 #include "npy.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <string>
 #include <stdexcept>
@@ -137,14 +139,23 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
     // 段別ダンプを取るときは 64ch の中間そのものが見たいので融合しない。
     const C2SFinalHead head{ "output_layer", out_ch, true };
     const bool fuse_head = !coords_only && !getenv("TRELLIS_DBG_STAGE_DUMP") && !getenv("TRELLIS_NO_C2S_FUSE");
+    // --profile-cond: exclusive laps per decoder stage ([cond-v] lines; inside the CLI's coarse
+    // `[cond] shape_upsample / shape_decode / tex_decode` lap -- do not add across levels). The c2s
+    // lap is inclusive of sparse_c2s's own host work (second neighbor table, mask / coords build).
+    auto t_prev = std::chrono::steady_clock::now();
+    auto lap = [&]() { const auto n = std::chrono::steady_clock::now();
+                       const double dt = std::chrono::duration<double>(n - t_prev).count(); t_prev = n; return dt; };
     // from_latent [32,N] -> [1024,N]
     std::vector<float> h = linear_rows(m, latent, 32, N, "from_latent", 1024, false, kind);
     stage_dump(kind, "from_latent", h, 1024, coords);
+    if (g_profile_cond) { printf("      [cond-v] %s N=%d: from_latent %.2f\n", kind, N, lap()); fflush(stdout); }
     struct Stage { int C, nblk, Cout, c2si; const char* s; };
     const Stage stages[4] = { {1024,4,512,4,"0"}, {512,16,256,16,"1"}, {256,8,128,8,"2"}, {128,4,64,4,"3"} };
     for (int si = 0; si < 4; ++si) {
         const Stage& st = stages[si];
+        const int N_in = N;
         std::vector<int32_t> nbr = build_neighbor_table(coords);
+        const double t_nbr = lap();
         if (getenv("TRELLIS_DBG_MEM"))
             fprintf(stderr, "    == stage %d: C=%d nblk=%d N=%d | host h=%.2f GB nbr=%.2f GB\n",
                     si, st.C, st.nblk, N, (double)h.size() * 4 / 1e9, (double)nbr.size() * 4 / 1e9);
@@ -161,6 +172,7 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
         }
         mem_probe("after ConvNeXt stage");
         stage_dump(kind, "stage" + std::to_string(si) + "_convnext", h, st.C, coords);
+        const double t_conv = lap();
         const std::vector<uint8_t>* ext = guide_subs ? &(*guide_subs)[si] : nullptr;
         const bool fuse = fuse_head && si == 3;   // 最終段だけ head を融合する
         C2SResult r = sparse_c2s(m, std::string("blocks.") + st.s + "." + std::to_string(st.c2si), h, st.C, coords, st.Cout, ext,
@@ -170,12 +182,18 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
         h = std::move(r.feats); coords = std::move(r.coords); N = (int)coords.size();
         mem_probe("after c2s");
         stage_dump(kind, "stage" + std::to_string(si) + "_c2s", h, fuse ? out_ch : st.Cout, coords);
+        if (g_profile_cond) {
+            printf("      [cond-v] %s stage%d C=%d N=%d: neighbor_table %.2f | convnext x%d %.2f | c2s%s %.2f  -> N=%d\n",
+                   kind, si, st.C, N_in, t_nbr, st.nblk, t_conv, fuse ? "+head" : "", lap(), N);
+            fflush(stdout);
+        }
     }
     if (coords_only) return {};   // cascade upsample: just need the grown coords
     if (fuse_head) { stage_dump(kind, "output", h, out_ch, coords); return h; }   // 融合済み
     // final LN(no affine) + output_layer -> [out_ch, M]
     std::vector<float> out = linear_rows(m, h, 64, N, "output_layer", out_ch, true, kind);
     stage_dump(kind, "output", out, out_ch, coords);
+    if (g_profile_cond) { printf("      [cond-v] %s N=%d: output_layer %.2f\n", kind, N, lap()); fflush(stdout); }
     return out;
 }
 

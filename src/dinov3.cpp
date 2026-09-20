@@ -1,11 +1,14 @@
 #include "dinov3.h"
 #include "trellis_model.h"
 #include "graph_dump.h"
+#include "trellis_args.h"   // g_profile_cond
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <string>
 #include <stdexcept>
 #include "npy.h"
@@ -120,6 +123,10 @@ T* dinov3_build(ggml_context* c, const Model& m, int S, Dinov3Inputs& in) {
 }
 
 std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, int S) {
+    // --profile-cond: exclusive laps build+alloc / upload / compute / readback / free ([cond-v] line).
+    auto t_prev = std::chrono::steady_clock::now();
+    auto lap = [&]() { const auto n = std::chrono::steady_clock::now();
+                       const double dt = std::chrono::duration<double>(n - t_prev).count(); t_prev = n; return dt; };
     std::vector<float> rcos, rsin;
     dinov3_rope_tables(S, rcos, rsin);
 
@@ -140,11 +147,16 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
     check_graph_supported(m.backend, g, tag.c_str());
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("dinov3: alloc failed");
+    const double t_build = lap();
     ggml_backend_tensor_set(in.img, chw.data(), 0, chw.size() * 4);
     ggml_backend_tensor_set(in.cos, rcos.data(), 0, rcos.size() * 4);
     ggml_backend_tensor_set(in.sin, rsin.data(), 0, rsin.size() * 4);
+    const double t_upload = lap();
     if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("dinov3: compute failed");
+    ggml_backend_synchronize(m.backend);
+    const double t_compute = lap();
     std::vector<float> out = tensor_to_f32(x);   // [D, Ntok] ggml -> flat d + D*tok
+    const double t_read = lap();
     if (dbg_layers && *dbg_layers) {
         for (size_t i = 0; i < layer_heads.size(); ++i) {
             std::vector<float> h = tensor_to_f32(layer_heads[i]);   // [D, 5]
@@ -158,7 +170,14 @@ std::vector<float> dinov3_encode(const Model& m, const std::vector<float>& chw, 
         npy::save(path, out.data(), { 5, (int64_t)x->ne[0] });   // 先頭 5 トークンのみ
         fprintf(stderr, "[dinov3] dumped %zu layer heads + final to %s\n", layer_heads.size(), dbg_layers);
     }
+    const size_t alloc_bytes = ggml_gallocr_get_buffer_size(alloc, 0);
+    const long long ntok = (long long)x->ne[1];   // x lives in c; read before ggml_free
     ggml_gallocr_free(alloc); ggml_free(c);
+    if (g_profile_cond) {
+        printf("      [cond-v] dinov3 S=%d ntok=%lld: build+alloc %.2f | upload %.2f | compute %.2f | readback %.2f | free %.2f  (activations %.0f MB)\n",
+               S, ntok, t_build, t_upload, t_compute, t_read, lap(), alloc_bytes / 1048576.0);
+        fflush(stdout);
+    }
     return out;
 }
 

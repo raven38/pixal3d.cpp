@@ -26,6 +26,7 @@
 #include "naf.h"
 #include "trellis_model.h"
 #include "graph_dump.h"
+#include "trellis_args.h"   // g_profile_cond
 #include "ggml.h"
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
@@ -86,7 +87,7 @@ GT* conv_bias(ggml_context* c, const Model& m, const std::string& name, GT* x, c
 // the same statistic (biased variance over the group's channels x pixels).
 GT* group_norm_affine(ggml_context* c, const Model& m, const std::string& name, GT* x, const NafGgmlOpts& o) {
     GT* y;
-    if (!o.generic_lowering) {
+    if (!o.generic_lowering && !o.generic_groupnorm) {
         y = ggml_group_norm(c, x, 8, 1e-5f);
     } else {
         const int64_t n = ggml_nelements(x) / 8;
@@ -166,7 +167,8 @@ NafGgmlOpts naf_ggml_opts_for(const Model& naf) {
     GT* cd = ggml_conv_2d_direct(c, k3, x, 1, 1, 0, 0, 1, 1);
     o.generic_lowering = !(dev_supports(naf, gn) && dev_supports(naf, pr) && dev_supports(naf, pl));
     // 診断専用: WebGPU と同じ lowering を他 backend で再現してメモリを測るためのトグル
-    // (docs/PIXAL3D_WEBGPU_MEMORY.md §11)。値は計算内容を変えない厳密な再表現。
+    // (docs/PIXAL3D_WEBGPU_MEMORY.md §11)。計算内容は同じ再表現だが縮約順が変わるので出力は bit 一致しない
+    // （Metal: native 比 L2rel ~1e-4、docs/results/2026-09-20-conditioning-profile.md §4.1）。
     if (const char* e = getenv("TRELLIS_DBG_NAF_GENERIC")) o.generic_lowering = (*e != '0');
     // Direct conv only where the im2col path is the worse choice (WebGPU: no [K*K*Ci, W*H] f16
     // buffer, f32 activations into the GEMM); CUDA/CPU keep the validated im2col graph.
@@ -354,11 +356,19 @@ std::vector<float> naf_upsample_ggml(const Model& naf, const float* image, int S
     const auto t0 = std::chrono::steady_clock::now();
     const NafGgmlOpts o = opts_in ? *opts_in : naf_ggml_opts_for(naf);
     const size_t TT = (size_t)T * T, HW = (size_t)h * w;
-    const bool log_timing = std::getenv("TRELLIS_DBG_NAF") != nullptr;
+    // Timing laps: --profile-cond prints them on stdout as [cond-v] lines (exclusive per lap plus the
+    // cumulative "@"); the legacy TRELLIS_DBG_NAF env keeps its stderr form. Both set -> one print.
+    const bool log_prof = g_profile_cond;
+    const bool log_timing = log_prof || std::getenv("TRELLIS_DBG_NAF") != nullptr;
+    auto t_prev = t0;
     auto lap = [&](const char* stage) {
         if (!log_timing) return;
-        fprintf(stderr, "[naf_ggml] %-16s @ %8.1f ms\n", stage,
-                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        const auto n = std::chrono::steady_clock::now();
+        const double dms = std::chrono::duration<double, std::milli>(n - t_prev).count();
+        const double cms = std::chrono::duration<double, std::milli>(n - t0).count();
+        t_prev = n;
+        if (log_prof) { printf("      [cond-v] naf_ggml S=%d T=%d %-16s +%8.1f ms  @ %8.1f ms\n", S, T, stage, dms, cms); fflush(stdout); }
+        else fprintf(stderr, "[naf_ggml] %-16s +%8.1f ms  @ %8.1f ms\n", stage, dms, cms);
     };
 
     const size_t nodes = 4096;
@@ -380,10 +390,14 @@ std::vector<float> naf_upsample_ggml(const Model& naf, const float* image, int S
 
     ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(naf.backend));
     if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("naf_upsample_ggml: graph alloc failed");
-    if (log_timing)
-        fprintf(stderr, "[naf_ggml] S=%d T=%d h=%d w=%d nodes=%d generic=%d direct_conv=%d activations=%.1f MB output=%.1f MB\n",
+    if (log_timing) {
+        FILE* fo = log_prof ? stdout : stderr;
+        fprintf(fo, "%s S=%d T=%d h=%d w=%d nodes=%d generic=%d direct_conv=%d activations=%.1f MB output=%.1f MB\n",
+                log_prof ? "      [cond-v] naf_ggml" : "[naf_ggml]",
                 S, T, h, w, ggml_graph_n_nodes(g), (int)o.generic_lowering, (int)o.direct_conv,
                 ggml_gallocr_get_buffer_size(alloc, 0) / 1048576.0, ggml_nbytes(hr) / 1048576.0);
+        fflush(fo);
+    }
     lap("graph alloc");
 
     std::vector<float> periods = tensor_to_f32(naf.get("image_encoder.rope.periods"));
@@ -413,12 +427,14 @@ std::vector<float> naf_upsample_ggml(const Model& naf, const float* image, int S
 
     // [C, pix'] block-major pixel-major -> [C, T, T] channel-major raster (NafDebug/naf_upsample layout)
     std::vector<float> hr_bm = tensor_to_f32(hr);
+    lap("readback");
     std::vector<float> out((size_t)C * TT);
     for (size_t p = 0; p < TT; ++p) {
         const float* src = hr_bm.data() + p * (size_t)C;
         const size_t ras = (size_t)raster_of_bm[p];
         for (int ch = 0; ch < C; ++ch) out[(size_t)ch * TT + ras] = src[ch];
     }
+    lap("unpermute");
     if (dbg) {
         dbg->S_prime = S;
         dbg->enc_cat = tensor_to_f32(in.enc_cat);
@@ -442,9 +458,27 @@ std::vector<float> naf_upsample_ggml(const Model& naf, const float* image, int S
         stats->n_nodes = ggml_graph_n_nodes(g);
         stats->total_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     }
+    if (o.profile_ops) {
+        // Diagnostic op table. The output (and the debug intermediates) are already on the host, and
+        // this graph writes only into its own gallocr buffer, so the replay has no side effects on
+        // anything a caller reads (graph_dump.h contract). Inputs are re-uploaded per pass.
+        auto reupload = [&]() {
+            ggml_backend_tensor_set(in.img, image, 0, (size_t)3 * S * S * sizeof(float));
+            ggml_backend_tensor_set(in.rope_cos, rcos.data(), 0, rcos.size() * sizeof(float));
+            ggml_backend_tensor_set(in.rope_sin, rsin.data(), 0, rsin.size() * sizeof(float));
+            ggml_backend_tensor_set(in.win_idx, win_idx.data(), 0, win_idx.size() * sizeof(int32_t));
+            ggml_backend_tensor_set(in.blk_idx, raster_of_bm.data(), 0, raster_of_bm.size() * sizeof(int32_t));
+            ggml_backend_tensor_set(v_rows, vh.data(), 0, vh.size() * sizeof(float));
+        };
+        const std::vector<double> node_s = trellis_graph_node_times(naf.backend, g, 2, reupload);
+        const std::string label = "naf_ggml S=" + std::to_string(S) + " T=" + std::to_string(T)
+                                + (o.direct_conv ? " direct_conv" : " im2col") + (o.generic_lowering ? " generic" : "")
+                                + (o.generic_groupnorm && !o.generic_lowering ? " generic-gn" : "");
+        trellis_print_op_table(g, node_s, compute_ms / 1e3, label.c_str());
+    }
     ggml_gallocr_free(alloc);
     ggml_free(c);
-    lap("readback+free");
+    lap("free");
     return out;
 }
 

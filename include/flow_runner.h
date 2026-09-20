@@ -57,7 +57,7 @@ private:
     // lazy pipeline compiles on #0 are done) and the whole-graph time of every forward so far.
     int fwd_count_ = 0;
     std::vector<double> whole_s_;
-    void profile_forward();
+    void profile_forward(const std::function<void()>& reupload);   // --profile side passes (flow_runner.cpp)
 };
 
 // Dense factory: RoPE from R^3 grid (ij meshgrid, z fastest). N = R^3.

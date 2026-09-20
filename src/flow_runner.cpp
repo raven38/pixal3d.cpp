@@ -163,7 +163,18 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
         printf("      [prof] fwd #%d whole graph: %.2fs%s\n", fwd_count_, tc,
                fwd_count_ == 0 ? "  (cold: lazy pipeline compiles)" : "");
         fflush(stdout);
-        if (fwd_count_ == 1) profile_forward();
+        // Every profiling pass replays the graph from node 0, so it must start from the same input
+        // state as the whole run: gallocr reuses the input buffers inside the graph and the whole
+        // run has overwritten them by now (same reason rcos_/rsin_ are re-uploaded every forward).
+        auto reupload = [&]() {
+            ggml_backend_tensor_set(gh0_,  xt.data(), 0, xt.size() * 4);
+            ggml_backend_tensor_set(gtf_,  tf.data(), 0, tf.size() * 4);
+            ggml_backend_tensor_set(gcond_, cond,     0, (size_t)p_.d_cond * Lc_ * 4);
+            ggml_backend_tensor_set(gcos_, rcos_.data(), 0, rcos_.size() * 4);
+            ggml_backend_tensor_set(gsin_, rsin_.data(), 0, rsin_.size() * 4);
+            if (gproj_) ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
+        };
+        if (fwd_count_ == 1) profile_forward(reupload);
     }
     ++fwd_count_;
     size_t out_bad = 0; for (float x : outv) if (!std::isfinite(x)) out_bad++;
@@ -206,7 +217,7 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
 // or after it in graph order, which is the section that built it (ggml_build_forward_expand
 // appends in post-order). Known smear: the t_embedder/adaLN nodes and block 0's first layernorm
 // are first needed by block 0's modulation and land in its self_attn segment (a few small ops).
-void DitRunner::profile_forward() {
+void DitRunner::profile_forward(const std::function<void()>& reupload) {
     using clock = std::chrono::steady_clock;
     auto secs = [](clock::time_point a) { return std::chrono::duration<double>(clock::now() - a).count(); };
     const int n = ggml_graph_n_nodes(g_);
@@ -261,28 +272,25 @@ void DitRunner::profile_forward() {
         return secs(t);
     };
 
-    // 1. segment pass
+    // 1. segment pass (replays from node 0 -> restore the inputs first)
+    reupload();
     const auto t_seg0 = clock::now();
     for (Seg& sg : segs) sg.s = run_slice(sg.first, sg.last);
     const double t_seg = secs(t_seg0);
-    // 2. node passes (first = warm-up for the non-fused pipelines, second = reported)
-    std::vector<double> dt(n, 0.0);
+    ggml_free(pctx);
+    // 2. node passes via the shared primitive (graph_dump.h): first = warm-up for the non-fused
+    //    pipelines, second = reported. Two 1-pass calls so the warm-up time can still be printed.
+    std::vector<double> dt;
     double t_node = 0.0;
     for (int pass = 0; pass < 2; ++pass) {
         const auto t0 = clock::now();
-        for (int j = 0; j < n; ++j) dt[j] = run_slice(j, j);
+        dt = trellis_graph_node_times(m_.backend, g_, 1, reupload);
         t_node = secs(t0);
         if (pass == 0) printf("      [prof] node pass 1 (warm-up, includes pipeline compiles): %.2fs\n", t_node);
     }
-    ggml_free(pctx);
 
     // ---- aggregate ----
-    auto op_kind = [](const ggml_tensor* t) {   // MUL_MAT split by src0 type: weight GEMMs vs f32 x f32 activation GEMMs
-        std::string k = ggml_op_name(t->op);
-        if (t->op == GGML_OP_MUL_MAT && t->src[0]) k += std::string("(") + ggml_type_name(t->src[0]->type) + ")";
-        if (t->op == GGML_OP_FLASH_ATTN_EXT && t->src[1]) k += std::string("(kv ") + ggml_type_name(t->src[1]->type) + ")";
-        return k;
-    };
+    auto op_kind = [](const ggml_tensor* t) { return trellis_op_kind(t); };
     std::vector<double> role_s(R_COUNT, 0.0);
     std::vector<int>    role_n(R_COUNT, 0);
     std::vector<std::array<double, 3>> blk_s(std::max(n_blocks, 1), { 0.0, 0.0, 0.0 });   // msa / cross / mlp
