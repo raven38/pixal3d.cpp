@@ -145,7 +145,7 @@ Pixal3dCond pixal3d_cond_ss_gpu(const Model& dinov3, const std::vector<Pixal3dVi
     ggml_backend_buffer_free(pbuf);
     ggml_free(pc);
 
-    st.peak_bytes = st.weight_bytes + st.cond_bytes + st.view_alloc_bytes;
+    // peak_bytes is tracked at each graph using the persistent buffers resident at that point.
     st.total_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (stats) *stats = st;
     return out;
@@ -215,8 +215,10 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
     };
     ggml_context *cp = nullptr, *cq = nullptr, *cs = nullptr;
     T *P_pooled = nullptr, *Q_bm = nullptr;
-    ggml_backend_buffer_t bp = alloc_one(cp, P_pooled, TT, 256);   // pooled を [T*T, 256] として持つ
-    ggml_backend_buffer_t bq = alloc_one(cq, Q_bm, 256, TT);
+    // pooled / q_bm are 1 GiB each at T=1024. Allocate them only for the graph phases
+    // that need them instead of keeping both resident for the whole call.
+    ggml_backend_buffer_t bp = nullptr, bq = nullptr;
+    size_t resident_bytes = 0;
     cs = ggml_init({ ggml_tensor_overhead() * 8 + 256, nullptr, true });
     T* K_rows   = ggml_new_tensor_2d(cs, GGML_TYPE_F32, 256, nblk);
     T* V_rows   = ggml_new_tensor_2d(cs, GGML_TYPE_F32, D, NP);
@@ -231,8 +233,9 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
     st.views = V;
     st.weight_bytes = (dinov3.buffer ? ggml_backend_buffer_get_size(dinov3.buffer) : 0)
                     + (naf.buffer ? ggml_backend_buffer_get_size(naf.buffer) : 0);
-    st.cond_bytes = ggml_backend_buffer_get_size(bp) + ggml_backend_buffer_get_size(bq)
-                  + ggml_backend_buffer_get_size(bs);
+    const size_t bytes_p = (size_t)TT * 256 * 4, bytes_q = (size_t)256 * TT * 4;
+    st.cond_bytes = bytes_p + bytes_q + ggml_backend_buffer_get_size(bs);
+    resident_bytes = ggml_backend_buffer_get_size(bs);
 
     // --profile-cond: per-graph-kind exclusive laps (build+alloc / upload / compute / free) summed per
     // view, plus the host-side tap preparation. printf only; nothing here re-runs a graph (the
@@ -241,7 +244,7 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
     enum { K_DINO, K_ENC, K_QK, K_ATTN, K_COUNT };
     static const char* kind_name[K_COUNT] = { "dino", "naf_enc", "naf_qk", "naf_attn" };
     GKind gk[K_COUNT];
-    double t_host_taps = 0, t_host_chunk_prep = 0; int attn_skipped = 0;
+    double t_host_taps = 0, t_host_chunk_prep = 0, t_persistent = 0; int attn_skipped = 0;
     auto kind_of = [](const char* tag) {
         const std::string t = tag;
         if (t.find("_naf_enc") != std::string::npos) return (int)K_ENC;
@@ -305,7 +308,7 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
             }
         }
         for (GKind& k : gk) k = GKind{};
-        t_host_taps = secs(tv, clk::now()); t_host_chunk_prep = 0; attn_skipped = 0;
+        t_host_taps = secs(tv, clk::now()); t_host_chunk_prep = 0; t_persistent = 0; attn_skipped = 0;
 
         // ---- G1: DINOv3 -> global 累積, patch map を V_rows へ, lr tap 累積 ----
         {
@@ -337,6 +340,12 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
         }
 
         // ---- G2: NAF encoder -> pooled を永続バッファへ ----
+        {
+            const auto tp = clk::now();
+            bp = alloc_one(cp, P_pooled, TT, 256);
+            resident_bytes += bytes_p;
+            t_persistent += secs(tp, clk::now());
+        }
         // S == T（pool が恒等）なら 2 枝を別グラフにして pooled の前半/後半へ直接書く。
         // concat 用の 1 GiB と、片枝を保持したままもう片枝を回すぶんのピークが消える。
         if (S == Tn) {
@@ -364,6 +373,12 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
         }
 
         // ---- G3: block 行 stripe ごとに RoPE -> q_bm / k_rows ----
+        {
+            const auto tp = clk::now();
+            bq = alloc_one(cq, Q_bm, 256, TT);
+            resident_bytes += bytes_q;
+            t_persistent += secs(tp, clk::now());
+        }
         for (int b0 = 0; b0 < Hp; b0 += nbrow) {
             const int nrow = std::min(nbrow, Hp - b0);
             const int64_t sy = (int64_t)nrow * dy, Pp = sy * Tn;
@@ -395,6 +410,14 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
                 ggml_backend_tensor_set(bi, blk_local.data(), 0, blk_local.size() * sizeof(int32_t));
             });
             ggml_free(c);
+        }
+
+        {
+            const auto tp = clk::now();
+            ggml_backend_buffer_free(bp); ggml_free(cp);
+            bp = nullptr; cp = nullptr; P_pooled = nullptr;
+            resident_bytes -= bytes_p;
+            t_persistent += secs(tp, clk::now());
         }
 
         // ---- G4: block chunk ごとに attention -> その chunk の hr tap を累積 ----
@@ -434,11 +457,18 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
             });
             ggml_free(c);
         }
+        {
+            const auto tp = clk::now();
+            ggml_backend_buffer_free(bq); ggml_free(cq);
+            bq = nullptr; cq = nullptr; Q_bm = nullptr;
+            resident_bytes -= bytes_q;
+            t_persistent += secs(tp, clk::now());
+        }
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tv).count();
         if (ms > st.view_ms_max) st.view_ms_max = ms;
         if (g_profile_cond) {
-            double acc = t_host_taps + t_host_chunk_prep;
-            printf("      [cond-v] cond_slat_gpu S=%d R=%d T=%d view %d: host taps %.2f | chunk_prep %.2f", S, R, Tn, v, t_host_taps, t_host_chunk_prep);
+            double acc = t_host_taps + t_host_chunk_prep + t_persistent;
+            printf("      [cond-v] cond_slat_gpu S=%d R=%d T=%d view %d: host taps %.2f | chunk_prep %.2f | persistent alloc/free %.2f", S, R, Tn, v, t_host_taps, t_host_chunk_prep, t_persistent);
             for (int k = 0; k < K_COUNT; ++k) {
                 const GKind& g = gk[k];
                 if (!g.n) continue;
@@ -459,8 +489,8 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
         std::memcpy(dst, &hl[(size_t)k * D], D * sizeof(float));
         std::memcpy(dst + D, &hh[(size_t)k * D], D * sizeof(float));
     }
-    ggml_backend_buffer_free(bp); ggml_backend_buffer_free(bq); ggml_backend_buffer_free(bs);
-    ggml_free(cp); ggml_free(cq); ggml_free(cs);
+    ggml_backend_buffer_free(bs);
+    ggml_free(cs);
     if (g_profile_cond) { printf("      [cond-v] cond_slat_gpu: readback + interleave + free %.2f\n", secs(t_rb, clk::now())); fflush(stdout); }
 
     st.peak_bytes = st.weight_bytes + st.cond_bytes + st.view_alloc_bytes;
