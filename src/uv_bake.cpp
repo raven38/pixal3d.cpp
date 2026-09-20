@@ -3,6 +3,8 @@
 #include "meshoptimizer.h"
 #include "Simplify.h"
 #include "tri_bvh.h"
+#include "remesh_dc.h"
+#include "parallel_for.h"
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +22,20 @@
 #include <queue>
 #include <unordered_map>
 #include <array>
+#include <cstdarg>
+
+// TRELLIS_DBG_POST=1: per-phase wall times of the postprocess to stderr (debug logging only).
+static double post_now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+static void post_tick(const char* tag, double& t) {
+    static const bool on = std::getenv("TRELLIS_DBG_POST") != nullptr;
+    if (!on) return;
+    const double n = post_now();
+    fprintf(stderr, "    [post] %-28s %.2fs\n", tag, n - t);
+    t = n;
+}
+
+// TRELLIS_DBG_XATLAS=1: route xatlas's verbose log (and its XA_PROFILE timings when compiled in) to stderr.
+static int xatlas_print_stderr(const char* fmt, ...) { va_list ap; va_start(ap, fmt); int r = vfprintf(stderr, fmt, ap); va_end(ap); return r; }
 
 namespace trellis {
 
@@ -266,6 +282,50 @@ void decimate_cluster(const std::vector<float>& verts, int V, const std::vector<
     printf("  decimate(grid=%d): V %d->%d, F %d->%d\n", grid, V, M, F, (int)of.size()/3);
 }
 
+
+// Vertex -> incident faces (CSR, counting sort in face order). The mesh cleanup
+// passes below used one hash node per edge (60M nodes on a res-1024 remesh);
+// an undirected edge (a,b) is incident to exactly the faces of a that also
+// contain b, so edge multiplicity is a scan of a's short face list instead.
+struct VertFaces {
+    std::vector<int32_t> off, fac;   // faces of v: fac[off[v] .. off[v+1])
+    void build(const std::vector<int32_t>& faces, int V) {
+        off.assign((size_t)V + 1, 0);
+        for (int32_t v : faces) off[(size_t)v + 1]++;
+        for (int v = 0; v < V; ++v) off[(size_t)v + 1] += off[(size_t)v];
+        fac.resize(faces.size());
+        std::vector<int32_t> fill(off.begin(), off.end() - 1);
+        for (size_t i = 0; i < faces.size(); ++i) fac[(size_t)fill[faces[i]]++] = (int32_t)(i / 3);
+    }
+    // Faces containing both a and b; `other` receives the last one that is not `self`.
+    int edge_faces(const std::vector<int32_t>& faces, int a, int b, int self, int* other) const {
+        int n = 0;
+        for (int32_t i = off[(size_t)a]; i < off[(size_t)a + 1]; ++i) {
+            const int f = fac[(size_t)i];
+            const int32_t* t = &faces[3 * (size_t)f];
+            if (t[0] == b || t[1] == b || t[2] == b) { ++n; if (f != self && other) *other = f; }
+        }
+        return n;
+    }
+    // Faces traversing the directed edge a->b (`fwd`) and b->a (`rev`) in their winding.
+    void edge_dirs(const std::vector<int32_t>& faces, int a, int b, int* fwd, int* rev) const {
+        *fwd = 0; *rev = 0;
+        for (int32_t i = off[(size_t)a]; i < off[(size_t)a + 1]; ++i) {
+            const int32_t* t = &faces[3 * (size_t)fac[(size_t)i]];
+            for (int k = 0; k < 3; ++k) {
+                if (t[k] == a && t[(k + 1) % 3] == b) ++*fwd;
+                else if (t[k] == b && t[(k + 1) % 3] == a) ++*rev;
+            }
+        }
+    }
+};
+
+static int max_index_plus1(const std::vector<int32_t>& faces, int V) {
+    int m = V;
+    for (int32_t v : faces) m = std::max(m, v + 1);
+    return m;
+}
+
 int weld_vertices(std::vector<float>& verts, std::vector<int32_t>& faces, std::vector<float>* colors3,
                   float step) {
     const int V = (int)verts.size() / 3;
@@ -275,36 +335,82 @@ int weld_vertices(std::vector<float>& verts, std::vector<int32_t>& faces, std::v
         colors3 = nullptr;
     }
     const float eps2 = step * step;
-    auto ckey = [](int64_t x, int64_t y, int64_t z) {
-        return ((uint64_t)(uint32_t)(int32_t)x << 42) ^ ((uint64_t)(uint32_t)(int32_t)y << 21) ^ (uint64_t)(uint32_t)(int32_t)z;
+    // Greedy first-fit weld in vertex order: v joins the first already-kept vertex
+    // within `step`, searching the 27 surrounding cells in a fixed order. The
+    // candidate pairs are found up front with sorted cell keys instead of a hash
+    // per cell: the key packs the cell coordinate monotonically (21 biased bits
+    // per axis), so "cell + offset" is "key + constant" and every neighbouring
+    // cell pair falls out of one merge pass per offset.
+    constexpr int64_t BIAS = (int64_t)1 << 20;
+    auto pack = [](int64_t cx, int64_t cy, int64_t cz) -> uint64_t {
+        auto clampc = [](int64_t c) { return std::max<int64_t>(-BIAS + 1, std::min<int64_t>(BIAS - 2, c)); };
+        return ((uint64_t)(clampc(cx) + BIAS) << 42) | ((uint64_t)(clampc(cy) + BIAS) << 21) | (uint64_t)(clampc(cz) + BIAS);
     };
-    std::unordered_map<uint64_t, std::vector<int>> cells;
-    cells.reserve((size_t)V * 2);
-    std::vector<int> remap((size_t)V);
+    std::vector<std::pair<uint64_t, int32_t>> cells((size_t)V);
+    parallel_for(V, [&](int64_t b, int64_t e) {
+        for (int64_t v = b; v < e; ++v) {
+            const float* p = &verts[3*v];
+            cells[(size_t)v] = { pack((int64_t)std::floor(p[0] / step), (int64_t)std::floor(p[1] / step),
+                                      (int64_t)std::floor(p[2] / step)), (int32_t)v };
+        }
+    });
+    std::sort(cells.begin(), cells.end());
+    // (v, search order of u's cell, u) for every pair within `step`, u < v
+    struct Cand { int32_t v, order, u; bool operator<(const Cand& o) const {
+        return v != o.v ? v < o.v : (order != o.order ? order < o.order : u < o.u); } };
+    auto near = [&](int32_t a, int32_t b) {
+        const float* pa = &verts[3*a]; const float* pb = &verts[3*b];
+        const float ex = pa[0]-pb[0], ey = pa[1]-pb[1], ez = pa[2]-pb[2];
+        return ex*ex + ey*ey + ez*ez <= eps2;
+    };
+    std::vector<std::vector<Cand>> parts(27);
+    parallel_for(27, [&](int64_t ob, int64_t oe) {
+        for (int64_t o = ob; o < oe; ++o) {
+            const int dx = (int)(o % 3) - 1, dy = (int)((o / 3) % 3) - 1, dz = (int)(o / 9) - 1;
+            std::vector<Cand>& out = parts[(size_t)o];
+            if (dx == 0 && dy == 0 && dz == 0) {   // same cell: all pairs of a run
+                for (size_t i = 0; i < cells.size();) {
+                    size_t j = i;
+                    while (j < cells.size() && cells[j].first == cells[i].first) ++j;
+                    for (size_t a = i; a < j; ++a)
+                        for (size_t b = a + 1; b < j; ++b)
+                            if (near(cells[a].second, cells[b].second))
+                                out.push_back({cells[b].second, 13, cells[a].second});
+                    i = j;
+                }
+                continue;
+            }
+            // pairs (a, b) with cell(b) = cell(a) + d; emitted for v = b (u's cell is at -d from v's)
+            const int64_t delta = ((int64_t)dx << 42) + ((int64_t)dy << 21) + (int64_t)dz;
+            const int order = ((-dz + 1) * 3 + (-dy + 1)) * 3 + (-dx + 1);
+            size_t j = 0;
+            for (size_t i = 0; i < cells.size(); ++i) {
+                const uint64_t want = (uint64_t)((int64_t)cells[i].first + delta);
+                while (j < cells.size() && cells[j].first < want) ++j;
+                for (size_t k = j; k < cells.size() && cells[k].first == want; ++k)
+                    if (cells[i].second < cells[k].second && near(cells[i].second, cells[k].second))
+                        out.push_back({cells[k].second, order, cells[i].second});
+            }
+        }
+    });
+    std::vector<Cand> cand;
+    for (auto& p : parts) cand.insert(cand.end(), p.begin(), p.end());
+    std::sort(cand.begin(), cand.end());
+
+    std::vector<int> remap((size_t)V), kept_id((size_t)V, -1);
     std::vector<float> nv; nv.reserve(verts.size());
     std::vector<float> ncol; if (colors3) ncol.reserve(colors3->size());
     int keep = 0;
+    size_t ci = 0;
     for (int v = 0; v < V; ++v) {
-        const float* p = &verts[3*v];
-        const int64_t cx = (int64_t)std::floor(p[0] / step),
-                      cy = (int64_t)std::floor(p[1] / step),
-                      cz = (int64_t)std::floor(p[2] / step);
         int found = -1;
-        for (int dz = -1; dz <= 1 && found < 0; ++dz)
-        for (int dy = -1; dy <= 1 && found < 0; ++dy)
-        for (int dx = -1; dx <= 1 && found < 0; ++dx) {
-            auto it = cells.find(ckey(cx+dx, cy+dy, cz+dz));
-            if (it == cells.end()) continue;
-            for (int c : it->second) {
-                const float ex = nv[3*c]-p[0], ey = nv[3*c+1]-p[1], ez = nv[3*c+2]-p[2];
-                if (ex*ex + ey*ey + ez*ez <= eps2) { found = c; break; }
-            }
-        }
+        for (; ci < cand.size() && cand[ci].v == v; ++ci)
+            if (found < 0 && kept_id[(size_t)cand[ci].u] >= 0) found = kept_id[(size_t)cand[ci].u];
         if (found < 0) {
             found = keep++;
-            nv.insert(nv.end(), p, p + 3);
+            kept_id[(size_t)v] = found;
+            nv.insert(nv.end(), &verts[3*v], &verts[3*v] + 3);
             if (colors3) ncol.insert(ncol.end(), &(*colors3)[3*v], &(*colors3)[3*v] + 3);
-            cells[ckey(cx, cy, cz)].push_back(found);
         }
         remap[v] = found;
     }
@@ -317,7 +423,6 @@ int weld_vertices(std::vector<float>& verts, std::vector<int32_t>& faces, std::v
 }
 
 void clean_mesh(int V, std::vector<int32_t>& faces) {
-    (void)V;
     // 1. drop degenerate faces (a repeated vertex -> zero area, blocks collapse)
     {
         std::vector<int32_t> kept; kept.reserve(faces.size());
@@ -329,14 +434,10 @@ void clean_mesh(int V, std::vector<int32_t>& faces) {
     }
     const int F = (int)(faces.size() / 3);
     if (F == 0) return;
-    // 2. undirected edge -> incident faces
-    std::unordered_map<uint64_t, std::vector<int>> ef;
-    ef.reserve((size_t)F * 3);
-    auto ek = [](int a, int b) -> uint64_t {
-        return ((uint64_t)(uint32_t)std::min(a, b) << 32) | (uint32_t)std::max(a, b);
-    };
-    for (int f = 0; f < F; ++f)
-        for (int j = 0; j < 3; ++j) ef[ek(faces[3*f+j], faces[3*f+(j+1)%3])].push_back(f);
+    // 2. vertex -> incident faces; an edge's incident faces are the faces of one
+    // endpoint that also contain the other.
+    VertFaces vf;
+    vf.build(faces, max_index_plus1(faces, V));
     // 3. BFS flood; flip faces to a consistent winding across manifold (exactly-2-face) edges.
     // Non-manifold / boundary edges are not crossed, so orientation stays locally consistent.
     std::vector<char> vis(F, 0), flip(F, 0);
@@ -350,9 +451,8 @@ void clean_mesh(int V, std::vector<int32_t>& faces) {
             if (flip[f]) std::swap(v[1], v[2]);
             for (int j = 0; j < 3; ++j) {
                 int a = v[j], b = v[(j+1)%3];
-                auto it = ef.find(ek(a, b));
-                if (it == ef.end() || it->second.size() != 2) continue;
-                int g = it->second[0] == f ? it->second[1] : it->second[0];
+                int g = -1;
+                if (vf.edge_faces(faces, a, b, f, &g) != 2 || g < 0) continue;
                 if (vis[g]) continue;
                 bool same = false;   // g traverses this edge the SAME way as f's corrected winding?
                 for (int k = 0; k < 3; ++k)
@@ -468,22 +568,47 @@ int drop_small_components(std::vector<float>& verts, std::vector<int32_t>& faces
     const int V = (int)verts.size() / 3;
     const size_t F = faces.size() / 3;
     if (V == 0 || F == 0) return 0;
-    std::vector<int> par((size_t)V);
-    for (int i = 0; i < V; ++i) par[i] = i;
-    auto find = [&](int x) { while (par[x] != x) { par[x] = par[par[x]]; x = par[x]; } return x; };
-    auto uni  = [&](int a, int b) { int ra = find(a), rb = find(b); if (ra != rb) par[ra] = rb; };
-    for (size_t f = 0; f < F; ++f) { uni(faces[3*f], faces[3*f+1]); uni(faces[3*f+1], faces[3*f+2]); }
-    std::unordered_map<int,int> fc;
-    for (size_t f = 0; f < F; ++f) fc[find(faces[3*f])]++;
+    // Lock-free union-find (link the larger root under the smaller, CAS on roots
+    // only): threads union disjoint face ranges into one shared forest. The
+    // partition into components -- all that is used below -- does not depend on
+    // the interleaving.
+    std::vector<std::atomic<int>> par((size_t)V);
+    parallel_for(V, [&](int64_t b, int64_t e) { for (int64_t i = b; i < e; ++i) par[(size_t)i].store((int)i, std::memory_order_relaxed); });
+    auto find = [&](int x) {
+        for (;;) {
+            int p = par[(size_t)x].load(std::memory_order_relaxed);
+            if (p == x) return x;
+            int gp = par[(size_t)p].load(std::memory_order_relaxed);
+            if (gp == p) return p;
+            par[(size_t)x].compare_exchange_weak(p, gp, std::memory_order_relaxed);   // path halving
+            x = gp;
+        }
+    };
+    auto uni = [&](int a, int b) {
+        for (;;) {
+            a = find(a); b = find(b);
+            if (a == b) return;
+            if (a < b) std::swap(a, b);
+            int expected = a;
+            if (par[(size_t)a].compare_exchange_strong(expected, b, std::memory_order_relaxed)) return;
+        }
+    };
+    parallel_for((int64_t)F, [&](int64_t b, int64_t e) {
+        for (int64_t f = b; f < e; ++f) { uni(faces[3*f], faces[3*f+1]); uni(faces[3*f+1], faces[3*f+2]); }
+    });
+    std::vector<int32_t> root((size_t)F);   // component root per face
+    parallel_for((int64_t)F, [&](int64_t b, int64_t e) { for (int64_t f = b; f < e; ++f) root[(size_t)f] = find(faces[3*f]); });
+    std::vector<int> fc((size_t)V, 0);   // faces per component, indexed by root vertex
+    for (size_t f = 0; f < F; ++f) fc[(size_t)root[f]]++;
     int maxfc = 0;
-    for (auto& kv : fc) maxfc = std::max(maxfc, kv.second);
+    for (int i = 0; i < V; ++i) maxfc = std::max(maxfc, fc[i]);
     const int thresh = (int)(frac * maxfc);
     int dropped = 0;
-    for (auto& kv : fc) if (kv.second < thresh) ++dropped;
+    for (int i = 0; i < V; ++i) if (fc[i] > 0 && fc[i] < thresh) ++dropped;
     if (dropped == 0) return 0;
     std::vector<int32_t> kf; kf.reserve(faces.size());
     for (size_t f = 0; f < F; ++f)
-        if (fc[find(faces[3*f])] >= thresh)
+        if (fc[(size_t)root[f]] >= thresh)
             for (int k = 0; k < 3; ++k) kf.push_back(faces[3*f + k]);
     std::vector<int> remap((size_t)V, -1);
     std::vector<float> nv; nv.reserve(verts.size());
@@ -505,45 +630,38 @@ int drop_small_components(std::vector<float>& verts, std::vector<int32_t>& faces
 int fill_holes(std::vector<float>& verts, std::vector<int32_t>& faces, float max_perimeter) {
     const size_t F = faces.size() / 3;
     if (F == 0) return 0;
-    // count undirected edge uses; remember one directed representative
-    std::unordered_map<uint64_t, std::pair<int,uint64_t>> euse;   // key -> {count, directed (u<<32|v)}
-    euse.reserve(F * 3);
-    auto ekey = [](int a, int b) -> uint64_t { if (a > b) { int t = a; a = b; b = t; } return ((uint64_t)(uint32_t)a << 32) | (uint32_t)b; };
+    const int V = max_index_plus1(faces, (int)(verts.size() / 3));
+    VertFaces vf;
+    vf.build(faces, V);
+    // rim successor map: boundary edge (u,v) is traversed v->u, so nxt[v] = u;
+    // a boundary edge belongs to exactly one face, so scanning faces visits each once
+    std::vector<int> nxt((size_t)V, -1);
     for (size_t f = 0; f < F; ++f) {
         const int32_t* t = &faces[3*f];
         for (int k = 0; k < 3; ++k) {
             const int u = t[k], v = t[(k+1)%3];
-            auto& e = euse[ekey(u, v)];
-            ++e.first; e.second = ((uint64_t)(uint32_t)u << 32) | (uint32_t)v;
+            if (vf.edge_faces(faces, u, v, -1, nullptr) != 1) continue;
+            if (nxt[(size_t)v] == -1) nxt[(size_t)v] = u; else nxt[(size_t)v] = INT32_MIN;   // non-manifold junction: poison
         }
     }
-    // rim successor map: boundary edge (u,v) is traversed v->u, so nxt[v] = u
-    std::unordered_map<int,int> nxt;
-    for (auto& kv : euse)
-        if (kv.second.first == 1) {
-            const int u = (int)(kv.second.second >> 32), v = (int)(kv.second.second & 0xFFFFFFFF);
-            if (!nxt.emplace(v, u).second) nxt[v] = INT32_MIN;   // non-manifold junction: poison
-        }
     int filled = 0;
-    std::unordered_map<int,char> visited;
+    std::vector<char> visited((size_t)V, 0);
     std::vector<int> loop;
-    for (auto& kv : nxt) {
-        const int start = kv.first;
-        if (kv.second == INT32_MIN || visited.count(start)) continue;
+    for (int start = 0; start < V; ++start) {
+        if (nxt[(size_t)start] == -1 || nxt[(size_t)start] == INT32_MIN || visited[(size_t)start]) continue;
         loop.clear();
         int cur = start; bool ok = true;
         double perim = 0.0;
         while (true) {
             loop.push_back(cur);
-            auto it = nxt.find(cur);
-            if (it == nxt.end() || it->second == INT32_MIN || (int)loop.size() > (int)nxt.size()) { ok = false; break; }
-            const int n = it->second;
+            const int n = nxt[(size_t)cur];
+            if (n == -1 || n == INT32_MIN || (int)loop.size() > V) { ok = false; break; }
             const float* a = &verts[3*(size_t)cur]; const float* b = &verts[3*(size_t)n];
             perim += std::sqrt((double)(a[0]-b[0])*(a[0]-b[0]) + (double)(a[1]-b[1])*(a[1]-b[1]) + (double)(a[2]-b[2])*(a[2]-b[2]));
             cur = n;
             if (cur == start) break;
         }
-        for (int v : loop) visited[v] = 1;
+        for (int v : loop) visited[(size_t)v] = 1;
         if (!ok || loop.size() < 3 || perim >= max_perimeter) continue;
         // centroid = mean of rim edge midpoints (uniform over edges; each vertex is in 2 edges
         // of the cycle, so this equals the mean of the loop vertices)
@@ -612,41 +730,39 @@ void taubin_smooth(std::vector<float>& verts, const std::vector<int32_t>& faces,
 
 int fill_small_holes(std::vector<int32_t>& faces, int max_loop) {
     const size_t F = faces.size() / 3;
-    auto ekey = [](int a, int b){ return ((uint64_t)(uint32_t)a << 32) | (uint32_t)b; };
-    std::unordered_map<uint64_t, int> dir;
-    dir.reserve(F * 3 * 2);
-    for (size_t f = 0; f < F; ++f)
-        for (int j = 0; j < 3; ++j)
-            dir[ekey(faces[3*f+j], faces[3*f+(j+1)%3])]++;
+    const int V = max_index_plus1(faces, 0);
+    VertFaces vf;
+    vf.build(faces, V);
     // Boundary edges traversed opposite to face winding so fan fills keep
     // orientation consistent with their neighbors. Chains pass only through
     // unambiguous boundary vertices (out- and in-degree exactly 1): at
     // non-manifold junctions a single-successor map silently cross-links
     // fragments of different holes into bogus mesh-spanning "loops".
-    std::unordered_map<int, int> nxt, outd, ind;
-    for (const auto& [k, cnt] : dir) {
-        const int a = (int)(k >> 32), b = (int)(uint32_t)k;
-        if (cnt == 1 && dir.find(ekey(b, a)) == dir.end()) {
-            nxt[b] = a; outd[b]++; ind[a]++;
+    std::vector<int> nxt((size_t)V, -1), outd((size_t)V, 0), ind((size_t)V, 0);
+    for (size_t f = 0; f < F; ++f) {
+        for (int j = 0; j < 3; ++j) {
+            const int a = faces[3*f+j], b = faces[3*f+(j+1)%3];
+            int fwd, rev;
+            vf.edge_dirs(faces, a, b, &fwd, &rev);
+            if (fwd == 1 && rev == 0) { nxt[(size_t)b] = a; outd[(size_t)b]++; ind[(size_t)a]++; }
         }
     }
-    std::unordered_map<int, bool> used;
+    std::vector<char> used((size_t)V, 0);
     int filled = 0;
     size_t added = 0;
-    for (const auto& [start, first] : nxt) {
-        if (used[start] || outd[start] != 1 || ind[start] != 1) continue;
+    for (int start = 0; start < V; ++start) {
+        if (nxt[(size_t)start] < 0 || used[(size_t)start] || outd[(size_t)start] != 1 || ind[(size_t)start] != 1) continue;
         std::vector<int> loop = {start};
         int cur = start;
         bool cycle = false, clean = true;
         for (int steps = 0; steps <= max_loop; ++steps) {
-            auto it = nxt.find(cur);
-            if (it == nxt.end() || used[cur]) { clean = false; break; }
-            cur = it->second;
-            if (outd[cur] != 1 || ind[cur] != 1) { clean = false; break; }
+            if (nxt[(size_t)cur] < 0 || used[(size_t)cur]) { clean = false; break; }
+            cur = nxt[(size_t)cur];
+            if (outd[(size_t)cur] != 1 || ind[(size_t)cur] != 1) { clean = false; break; }
             if (cur == start) { cycle = true; break; }
             loop.push_back(cur);
         }
-        for (int v : loop) used[v] = true;
+        for (int v : loop) used[(size_t)v] = 1;
         if (!clean || !cycle || loop.size() < 3 || (int)loop.size() > max_loop) continue;
         for (size_t i = 1; i + 1 < loop.size(); ++i) {
             faces.push_back(loop[0]); faces.push_back(loop[i]); faces.push_back(loop[i+1]);
@@ -660,34 +776,34 @@ int fill_small_holes(std::vector<int32_t>& faces, int max_loop) {
     // restricted to unambiguous degree-2 vertices.
     {
         const size_t F2 = faces.size() / 3;
-        std::unordered_map<uint64_t, int> und;
-        und.reserve(F2 * 3 * 2);
+        vf.build(faces, V);
+        std::vector<std::pair<int,int>> adj;   // both directions of every boundary edge, sorted by vertex
         for (size_t f = 0; f < F2; ++f)
             for (int j = 0; j < 3; ++j) {
                 const int a = faces[3*f+j], b = faces[3*f+(j+1)%3];
-                und[ekey(std::min(a,b), std::max(a,b))]++;
+                if (vf.edge_faces(faces, a, b, -1, nullptr) != 1) continue;
+                adj.emplace_back(a, b); adj.emplace_back(b, a);
             }
-        std::unordered_map<int, std::vector<int>> adj;
-        for (const auto& [k, cnt] : und) {
-            if (cnt != 1) continue;
-            const int a = (int)(k >> 32), b = (int)(uint32_t)k;
-            adj[a].push_back(b); adj[b].push_back(a);
-        }
-        std::unordered_map<int, bool> used2;
-        for (const auto& [start, nbrs] : adj) {
-            if (used2[start] || nbrs.size() != 2) continue;
+        std::sort(adj.begin(), adj.end());
+        std::vector<int32_t> aoff((size_t)V + 1, 0);
+        for (const auto& e : adj) aoff[(size_t)e.first + 1]++;
+        for (int v = 0; v < V; ++v) aoff[(size_t)v + 1] += aoff[(size_t)v];
+        auto deg = [&](int v) { return aoff[(size_t)v + 1] - aoff[(size_t)v]; };
+        auto nb  = [&](int v, int i) { return adj[(size_t)aoff[(size_t)v] + i].second; };
+        std::vector<char> used2((size_t)V, 0);
+        for (int start = 0; start < V; ++start) {
+            if (deg(start) != 2 || used2[(size_t)start]) continue;
             std::vector<int> loop = {start};
-            int prev = start, cur = nbrs[0];
+            int prev = start, cur = nb(start, 0);
             bool cycle = false, clean = true;
             for (int steps = 0; steps <= max_loop; ++steps) {
-                auto it = adj.find(cur);
-                if (it == adj.end() || it->second.size() != 2 || used2[cur]) { clean = false; break; }
+                if (deg(cur) != 2 || used2[(size_t)cur]) { clean = false; break; }
                 if (cur == start) { cycle = true; break; }
                 loop.push_back(cur);
-                const int nx = it->second[0] == prev ? it->second[1] : it->second[0];
+                const int nx = nb(cur, 0) == prev ? nb(cur, 1) : nb(cur, 0);
                 prev = cur; cur = nx;
             }
-            for (int v : loop) used2[v] = true;
+            for (int v : loop) used2[(size_t)v] = 1;
             if (!clean || !cycle || loop.size() < 3 || (int)loop.size() > max_loop) continue;
             for (size_t i = 1; i + 1 < loop.size(); ++i) {
                 faces.push_back(loop[0]); faces.push_back(loop[i]); faces.push_back(loop[i+1]);
@@ -888,6 +1004,7 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
     std::unique_ptr<VoxSampler> vs;
     if (vox && vox->ok()) vs.reset(new VoxSampler(*vox));
     const int res = (vox && vox->ok()) ? vox->res : 1024;
+    double post_t = post_now();
 
     // --- L1 (soup only, see below): duplicate-face marking. On voxel soup,
     // coincident faces create false planar regions and z-fighting geometry. On
@@ -939,6 +1056,7 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
     // mesh has a few hundred components; the reference charts all of them, and
     // stripping them out both wastes atlas area and opens welded-boundary
     // cracks, so triage engages only on soup-scale component counts.
+    post_tick("bake: components", post_t);
     const bool soup = cstat.size() > 2000;
     if (soup) {   // L1 duplicate-face drop (see comment above): soup-scale meshes only
         std::unordered_map<uint64_t, uint8_t> seen;
@@ -1037,7 +1155,17 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
             }
         }
         const float kAreaW = 0.1f, kPerimW = 1e-4f, kMaxCost = 1.5707963f;
+        std::vector<float> flen((size_t)NB * 3);   // face-edge lengths, summed per chart every round
+        for (int i = 0; i < NB; ++i) {
+            const int f = big_faces[i];
+            for (int j = 0; j < 3; ++j) {
+                const int v0 = faces[3*f+j], v1 = faces[3*f+(j+1)%3];
+                const float dx = verts[3*v0]-verts[3*v1], dy = verts[3*v0+1]-verts[3*v1+1], dz = verts[3*v0+2]-verts[3*v1+2];
+                flen[(size_t)3*i+j] = std::sqrt(dx*dx + dy*dy + dz*dz);
+            }
+        }
         std::vector<int> remap((size_t)NB);
+        std::vector<std::pair<uint64_t, float>> plen;   // (chart pair, edge length), reused across rounds
         for (int round = 0; round < 256; ++round) {
             // compress chart ids
             std::fill(remap.begin(), remap.end(), -1);
@@ -1062,35 +1190,37 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
                 const float d = axis[3*c]*fn[3*i]+axis[3*c+1]*fn[3*i+1]+axis[3*c+2]*fn[3*i+2];
                 half[c] = std::max(half[c], std::acos(std::min(1.f, std::max(-1.f, d))));
             }
-            // chart-pair adjacency (shared boundary length) + perimeters
-            std::unordered_map<uint64_t, float> pair_len;
-            pair_len.reserve(fadj.size());
+            // chart-pair adjacency (shared boundary length) + perimeters. Pair
+            // lengths are gathered then stable-sorted by pair, so each pair's
+            // total is summed in adjacency order exactly as a per-pair
+            // accumulator would (same float rounding), without a hash table.
+            plen.clear();
             std::vector<float> shared_in((size_t)C, 0.f);
             for (const auto& ad : fadj) {
                 const int c0 = chart[ad.a], c1 = chart[ad.b];
                 if (c0 == c1) { shared_in[c0] += 2.f * ad.len; continue; }
                 const uint64_t k = ((uint64_t)(uint32_t)std::min(c0,c1) << 32) | (uint32_t)std::max(c0,c1);
-                pair_len[k] += ad.len;
+                plen.emplace_back(k, ad.len);
             }
+            std::stable_sort(plen.begin(), plen.end(),
+                             [](const std::pair<uint64_t,float>& x, const std::pair<uint64_t,float>& y) { return x.first < y.first; });
             // perimeter = total face-edge length − interior (same-chart manifold) edge length
             for (int i = 0; i < NB; ++i) {
-                const int f = big_faces[i], c = chart[i];
-                for (int j = 0; j < 3; ++j) {
-                    const int v0 = faces[3*f+j], v1 = faces[3*f+(j+1)%3];
-                    const float dx = verts[3*v0]-verts[3*v1], dy = verts[3*v0+1]-verts[3*v1+1], dz = verts[3*v0+2]-verts[3*v1+2];
-                    cperim[c] += std::sqrt(dx*dx + dy*dy + dz*dz);
-                }
+                const int c = chart[i];
+                for (int j = 0; j < 3; ++j) cperim[c] += flen[(size_t)3*i+j];
             }
             for (int c = 0; c < C; ++c) cperim[c] -= shared_in[c];
-            // pair costs; per-chart argmin
+            // pair costs; per-chart argmin (pairs come out sorted by (c0, c1))
             struct Pair { int c0, c1; float len, cost; };
             std::vector<Pair> pairs;
-            pairs.reserve(pair_len.size());
-            for (const auto& kv : pair_len)
-                pairs.push_back({(int)(kv.first >> 32), (int)(kv.first & 0xFFFFFFFFu), kv.second, 0.f});
-            std::sort(pairs.begin(), pairs.end(), [](const Pair& x, const Pair& y) {
-                return x.c0 != y.c0 ? x.c0 < y.c0 : x.c1 < y.c1;
-            });
+            pairs.reserve(plen.size());
+            for (size_t i = 0; i < plen.size();) {
+                float sum = 0.f;
+                size_t j = i;
+                for (; j < plen.size() && plen[j].first == plen[i].first; ++j) sum += plen[j].second;
+                pairs.push_back({(int)(plen[i].first >> 32), (int)(plen[i].first & 0xFFFFFFFFu), sum, 0.f});
+                i = j;
+            }
             for (auto& p : pairs) {
                 const float ca = axis[3*p.c0]*axis[3*p.c1]+axis[3*p.c0+1]*axis[3*p.c1+1]+axis[3*p.c0+2]*axis[3*p.c1+2];
                 const float aa = std::acos(std::min(1.f, std::max(-1.f, ca)));
@@ -1155,10 +1285,17 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
         }
     }
     printf("  uv_bake: %zu merge clusters\n", clusters.size());
+    if (std::getenv("TRELLIS_DBG_POST")) {
+        std::vector<size_t> cs; for (auto& c : clusters) cs.push_back(c.size());
+        std::sort(cs.rbegin(), cs.rend());
+        fprintf(stderr, "    [post] cluster sizes (top 8):"); for (size_t i = 0; i < std::min<size_t>(8, cs.size()); ++i) fprintf(stderr, " %zu", cs[i]); fprintf(stderr, "\n");
+    }
+    post_tick("bake: pre-clustering", post_t);
     fflush(stdout);
 
     // Reference add_mesh passes positions only — no normals, no custom epsilon
     // (cumesh.py:453-458).
+    if (std::getenv("TRELLIS_DBG_XATLAS")) xatlas::SetPrint(xatlas_print_stderr, true);
     xatlas::Atlas* atlas = xatlas::Create();
     for (auto& cm : cms) {
         xatlas::MeshDecl md;
@@ -1182,6 +1319,7 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
     // it is fast, re-entrant, and needed for the resolution cap below.
     auto* done = new std::atomic<bool>(false);
     xatlas::Atlas* atl = atlas;
+    post_tick("bake: xatlas AddMesh", post_t);
     std::thread worker([atl, co, done] { xatlas::ComputeCharts(atl, co); done->store(true); });
     const auto tw0 = std::chrono::steady_clock::now();
     while (!done->load() &&
@@ -1204,6 +1342,7 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
     // packing at the bake resolution; chart-to-chart bleed at 0 padding is
     // handled by the inpaint (as in the reference).
     xatlas::PackOptions po;
+    post_tick("bake: xatlas ComputeCharts", post_t);
     xatlas::PackCharts(atlas, po);
     if (atlas->meshCount == 0 || atlas->width == 0) { xatlas::Destroy(atlas); return out; }
 
@@ -1213,6 +1352,7 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
     const float uscale = (float)TX / (float)T;
     const float unorm = uscale / (float)W, vnorm = uscale / (float)H;
 
+    post_tick("bake: xatlas PackCharts", post_t);
     // --- big part: re-indexed atlas vertices per cluster mesh. Faces xatlas
     // ignored internally (degenerate/zero-area, uv(0,0), atlasIndex −1) and
     // faces of failed (Invalid) charts are KEPT — dropping them opens welded-
@@ -1279,6 +1419,7 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
     if (n_collapsed)
         printf("  uv_bake: %zu uncharted faces kept with point-collapsed UVs\n", n_collapsed);
 
+    post_tick("bake: reindex", post_t);
     // --- tiny components: one planar chart each, shelf-packed into the
     // reserved strip (bottom band + right band) at the big charts' density ---
     {
@@ -1381,19 +1522,25 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
     }
     const int FoAll = (int)out.faces.size() / 3;
 
+    post_tick("bake: tiny charts", post_t);
     // --- rasterize into the atlas ---
     out.T = T;
     out.base.assign((size_t)T * T * 4, 0);
     out.mr.assign((size_t)T * T * 4, 0);
     std::vector<uint8_t> mask((size_t)T * T, 0);
     auto u8 = [](float v){ v = v*255.f; return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); };
+    // Row bands in parallel: every band walks all faces in order and rasterizes
+    // its rows only, so each texel is written by one thread in the same face
+    // order as a serial pass (later faces still win overlapping texels).
+    parallel_for(T, [&](int64_t yb, int64_t ye) {
     for (int f = 0; f < FoAll; ++f) {
         int idx[3] = { (int)out.faces[3*f], (int)out.faces[3*f+1], (int)out.faces[3*f+2] };
         float px[3], py[3];
         for (int j = 0; j < 3; ++j) { px[j] = out.uv[2*idx[j]] * T; py[j] = out.uv[2*idx[j]+1] * T; }
         int x0 = (int)std::floor(std::min({px[0],px[1],px[2]})), x1 = (int)std::ceil(std::max({px[0],px[1],px[2]}));
         int y0 = (int)std::floor(std::min({py[0],py[1],py[2]})), y1 = (int)std::ceil(std::max({py[0],py[1],py[2]}));
-        x0 = std::max(0,x0); y0 = std::max(0,y0); x1 = std::min(T-1,x1); y1 = std::min(T-1,y1);
+        x0 = std::max(0,x0); y0 = std::max((int)yb,y0); x1 = std::min(T-1,x1); y1 = std::min((int)ye-1,y1);
+        if (y0 > y1) continue;
         float d = (py[1]-py[2])*(px[0]-px[2]) + (px[2]-px[1])*(py[0]-py[2]);
         if (std::fabs(d) < 1e-9f) continue;
         for (int y = y0; y <= y1; ++y) for (int x = x0; x <= x1; ++x) {
@@ -1422,9 +1569,12 @@ BakedMesh uv_bake(const std::vector<float>& verts, int V, const std::vector<int3
             }
         }
     }
+    });
+    post_tick("bake: rasterize", post_t);
     xatlas::Destroy(atlas);
 
     telea_inpaint(out.base, out.mr, mask, T, 3, 1);
+    post_tick("bake: telea inpaint", post_t);
     printf("  uv_bake: atlas %dx%d (xatlas %dx%d), Vo=%zu Fo=%d\n", T, T, W, H, out.verts.size()/3, FoAll);
     fflush(stdout);
     return out;
