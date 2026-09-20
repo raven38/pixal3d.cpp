@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <unordered_map>
 #include <stdexcept>
 
@@ -101,6 +102,32 @@ ggml_tensor* sparse_submconv(ggml_context* c, const Model& m, const std::string&
 // residual add, so the peak is one chunk, not the sum.
 static constexpr int64_t kBlockChunkBytes = 1500u * 1024 * 1024;   // budget per [4C, nr]
 
+// The chunk budget, scaled down on small devices. 1500 MiB was tuned on 24 GB cards; at that
+// size the res-1024 C2S stage-3 graph alone holds ~4 chunk-wide tensors (gallocr 5.98 GB,
+// measured 2026-09-19 on the 4090), which does not fit an 8 GB card next to the decoder weights.
+// total/16 keeps 24 GB devices at the tuned 1500 MiB and gives 8 GB devices 512 MiB; the
+// M-scaled buffers ([C,M] outputs, PAD seeds, neighbour tables) are unaffected by this knob.
+// `env_name` is the per-site A/B override and always wins. Desktop GPU backends only: the CPU
+// backend reports system RAM and ggml-webgpu reports maxBufferSize (not device memory), so both
+// keep the constant -- the browser path stays as gated in docs/PIXAL3D_WEBGPU_MEMORY.md.
+static int64_t chunk_budget_bytes(const Model& m, const char* env_name) {
+    if (const char* e = getenv(env_name)) return atoll(e) * 1024 * 1024;  // A/B override
+    int64_t budget = kBlockChunkBytes;
+    ggml_backend_dev_t dev = m.backend ? ggml_backend_get_device(m.backend) : nullptr;
+    if (!dev || ggml_backend_dev_type(dev) != GGML_BACKEND_DEVICE_TYPE_GPU) return budget;
+    const char* bname = ggml_backend_name(m.backend);
+    if (bname && strncmp(bname, "WebGPU", 6) == 0) return budget;
+    size_t free_b = 0, total_b = 0;
+    ggml_backend_dev_memory(dev, &free_b, &total_b);
+    int64_t total = (int64_t)total_b;
+    // Same simulated-device override as DitRunner::check_device_budget: lets a 24 GB card
+    // rehearse the chunking a smaller card would get.
+    if (const char* e = getenv("TRELLIS_DEVICE_BUDGET_MB")) total = std::max<int64_t>(0, atoll(e)) * 1024 * 1024;
+    if (total <= 0) return budget;
+    constexpr int64_t kMinChunkBytes = 256u * 1024 * 1024;
+    return std::min<int64_t>(budget, std::max<int64_t>(total / 16, kMinChunkBytes));
+}
+
 ggml_tensor* sparse_convnext(ggml_context* c, const Model& m, const std::string& prefix,
                              T* feats, T* nbr, int N) {
     T* Wc = w32(c, m.get(prefix + ".conv.weight"));
@@ -108,8 +135,7 @@ ggml_tensor* sparse_convnext(ggml_context* c, const Model& m, const std::string&
     T* fz = submconv_pad(c, feats, Wc->ne[0]);          // built once, shared by every chunk
 
     const int64_t per_vox = 4 * C * 4;                  // widest intermediate, bytes/voxel
-    int64_t budget = kBlockChunkBytes;
-    if (const char* e = getenv("TRELLIS_BLOCK_CHUNK_MB")) budget = atoll(e) * 1024 * 1024;  // A/B override
+    const int64_t budget = chunk_budget_bytes(m, "TRELLIS_BLOCK_CHUNK_MB");
     int64_t chunk = std::max<int64_t>(1, budget / std::max<int64_t>(per_vox, 1));
     // Floor on the chunk size: every chunk adds ~145 graph nodes and decode_unet builds a
     // whole stage (up to 16 blocks) as ONE graph, so an unbounded chunk count exhausts the
@@ -262,8 +288,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     // conv2's working set -- measured 10.1 GB for the stage. Chunking conv1 over input voxels
     // and gathering each chunk on the spot bounds it to [Cout*8, nr] instead.
     const int64_t per_vox = (int64_t)Cout * 8 * 4;
-    int64_t budget = kBlockChunkBytes;
-    if (const char* e = getenv("TRELLIS_C2S_CHUNK_MB")) budget = atoll(e) * 1024 * 1024;
+    const int64_t budget = chunk_budget_bytes(m, "TRELLIS_C2S_CHUNK_MB");
     int64_t chunk = std::max<int64_t>(1, budget / std::max<int64_t>(per_vox, 1));
     constexpr int64_t kMaxChunks = 24;         // node-budget floor, as in sparse_convnext
     if (chunk * kMaxChunks < N) chunk = (N + kMaxChunks - 1) / kMaxChunks;
@@ -320,7 +345,9 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
         roots.push_back(ggml_cpy(c, hc, ggml_view_2d(c, hraw, Cout, m1 - m0,
                                                      hraw->nb[1], (size_t)m0 * hraw->nb[1])));
     }
-    T* hn = ggml_silu(c, ggml_norm(c, hraw, 1e-6f));                  // norm2, no affine
+    // norm2 (no affine) + silu in place: hraw is [Cout, M+1] (1.15 GB at M=4.7M) and nothing
+    // else reads it, so the out-of-place pair would hold a second full copy live next to it.
+    T* hn = ggml_silu_inplace(c, ggml_norm_inplace(c, hraw, 1e-6f));
 
     // conv2 runs at the POST-subdivision count M, which is where a dense object lives: the
     // cottage hits M=32.7M, and unchunked each of the 27 taps builds full [Cout, M] gather /

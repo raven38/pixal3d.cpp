@@ -170,10 +170,16 @@ NafGgmlOpts naf_ggml_opts_for(const Model& naf) {
     // (docs/PIXAL3D_WEBGPU_MEMORY.md §11)。計算内容は同じ再表現だが縮約順が変わるので出力は bit 一致しない
     // （Metal: native 比 L2rel ~1e-4、docs/results/2026-09-20-conditioning-profile.md §4.1）。
     if (const char* e = getenv("TRELLIS_DBG_NAF_GENERIC")) o.generic_lowering = (*e != '0');
-    // Direct conv only where the im2col path is the worse choice (WebGPU: no [K*K*Ci, W*H] f16
-    // buffer, f32 activations into the GEMM); CUDA/CPU keep the validated im2col graph.
-    const bool is_webgpu = naf.backend && strncmp(ggml_backend_name(naf.backend), "WebGPU", 6) == 0;
-    o.direct_conv = is_webgpu && dev_supports(naf, cd);
+    // Direct conv where the im2col path is the worse choice: WebGPU and CUDA. On CUDA the
+    // S=1024 sem_encoder graph drops from ~3332 MB to ~1541 MB; numerical parity against the
+    // CPU reference is L2rel ~1e-6 on the #34 fixture. Other native backends keep im2col.
+    const char* bname = naf.backend ? ggml_backend_name(naf.backend) : "";
+    const bool is_webgpu = strncmp(bname, "WebGPU", 6) == 0;
+    const bool is_cuda   = strncmp(bname, "CUDA", 4) == 0;
+    o.direct_conv = (is_webgpu || is_cuda) && dev_supports(naf, cd);
+    // Diagnostic A/B override, matching the other NAF debug switches.
+    if (const char* e = getenv("TRELLIS_DBG_NAF_DIRECT"))
+        o.direct_conv = (*e != '0') && dev_supports(naf, cd);
     ggml_free(c);
     return o;
 }
