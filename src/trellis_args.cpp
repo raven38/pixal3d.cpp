@@ -102,6 +102,8 @@ void print_usage(const char* argv0, bool server) {
         "      --bg-only           background removal only: write the cutout and skip the rest\n"
         "      --f32               f32 sparse-conv compute\n"
         "      --no-fa             disable FlashAttention\n"
+        "      --profile           time one forward of every flow DiT node by node and print\n"
+        "                          the per-role / per-op / per-block breakdown\n"
         "      --require-gpu       refuse CPU fallback\n"
         "      --threads N         CPU backend threads      (default all cores)\n"
         "      --gss F  --gsh F    guidance strengths\n"
@@ -179,6 +181,7 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "--bg-only")              { p.bg_only = true; p.dump_bg = true; }
         else if (a == "--f32")                  { p.f32 = true; }
         else if (a == "--no-fa")                { p.no_fa = true; }
+        else if (a == "--profile")              { p.profile = true; }
         else if (a == "--require-gpu")          { p.require_gpu = true; }
         else if (a == "--threads")              { const char* v = need(a.c_str()); if (!v) return false; p.threads = atoi(v); }
         else if (a == "--gss")                  { const char* v = need(a.c_str()); if (!v) return false; p.gss = (float)atof(v); }

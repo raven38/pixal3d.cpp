@@ -9,6 +9,7 @@ namespace trellis {
 // binaries (which don't parse args) keep their historical TRELLIS_* behavior.
 extern bool g_sparse_cast_f32;  // defined in sparse.cpp        (TRELLIS_F32)
 extern bool g_no_fa;            // defined in dit.cpp           (TRELLIS_NOFA)
+extern bool g_profile;          // defined in dit.cpp; --profile (per-op flow DiT timing)
 extern bool g_require_gpu;      // defined in trellis_model.cpp (TRELLIS_REQUIRE_GPU)
 extern bool g_gpu_auto;         // defined in trellis_model.cpp; true when --gpu was not specified
 extern int  g_cpu_threads;      // defined in trellis_model.cpp (TRELLIS_THREADS)
@@ -82,6 +83,7 @@ struct TrellisParams {
     int  webp     = -1;         // GLB texture encoding: -1 auto (WebP if built with it), 1 on, 0 off (PNG)
     bool f32      = false;      // f32 sparse-conv compute
     bool no_fa    = false;      // disable FlashAttention (manual softmax)
+    bool profile  = false;      // per-op / per-block timing of one forward per flow DiT
     bool require_gpu = false;   // refuse CPU fallback if no GPU is usable
     int  threads  = 0;          // CPU backend thread count; 0 = all cores
     float gss = 7.5f;           // sparse-structure guidance strength
