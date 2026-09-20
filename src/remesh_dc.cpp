@@ -8,8 +8,6 @@
 #endif
 #include <cmath>
 #include <cstdio>
-#include <functional>
-#include <thread>
 #include <vector>
 #include <chrono>
 #include <cstdlib>
@@ -70,19 +68,6 @@ struct RankBitset {
 };
 
 }  // namespace
-
-void parallel_for(int64_t n, const std::function<void(int64_t, int64_t)>& fn) {
-    const int nt = remesh_threads();
-    if (nt <= 1) { if (n > 0) fn(0, n); return; }   // 直列（pthread 無しの wasm ビルド）
-    std::vector<std::thread> ts;
-    const int64_t chunk = (n + nt - 1) / nt;
-    for (int t = 0; t < nt; ++t) {
-        const int64_t b = t * chunk, e = std::min(n, b + chunk);
-        if (b >= e) break;
-        ts.emplace_back(fn, b, e);
-    }
-    for (auto& t : ts) t.join();
-}
 
 Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* ifaces, int64_t iF,
                            const TriBvh& bvh, int res, int band, float project_back) {
