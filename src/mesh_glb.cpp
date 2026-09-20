@@ -6,6 +6,7 @@
 #include <cfloat>
 #include <ctime>
 #include <string>
+#include <thread>
 #include <vector>
 #include <algorithm>
 #include <array>
@@ -337,12 +338,12 @@ bool write_glb_textured(const char* path, const float* verts, int64_t V, const f
     if (use_webp) {
         uint8_t* ob = nullptr; uint8_t* om = nullptr;
         size_t nb = 0, nm = 0;
-        parallel_for(2, [&](int64_t b, int64_t e) {   // the two encodes are independent
-            for (int64_t i = b; i < e; ++i) {
-                if (i == 0) nb = WebPEncodeRGBA(base_rgba, T, T, T*4, 80.f, &ob);
-                else        nm = WebPEncodeRGBA(mr_rgba, T, T, T*4, 80.f, &om);
-            }
-        });
+        // Exactly two large independent jobs: do not use the shared parallel_for here,
+        // because it intentionally serializes tiny task counts (n < 4096).
+        std::thread t_base([&] { nb = WebPEncodeRGBA(base_rgba, T, T, T*4, 80.f, &ob); });
+        std::thread t_mr  ([&] { nm = WebPEncodeRGBA(mr_rgba,   T, T, T*4, 80.f, &om); });
+        t_base.join();
+        t_mr.join();
         if (nb && nm) {
             pngB.assign(ob, ob + nb);
             pngM.assign(om, om + nm);
