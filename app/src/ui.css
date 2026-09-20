@@ -100,12 +100,22 @@ body {
 /* ---- controls ---- */
 .controls { display: flex; flex-direction: column; gap: 10px; }
 .ctl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
-.ctl select, .ctl input {
+.ctl input {
   background: var(--panel-2); color: var(--text);
   border: 1px solid var(--border); border-radius: 7px; padding: 7px 8px; font-size: 13px;
 }
-.ctl select:focus, .ctl input:focus { outline: none; border-color: var(--accent); }
-.ctl select option { background: var(--panel-2); color: var(--text); }
+/* WebKitGTK paints <select> with the (light) native GTK theme and ignores the author
+   background, so the light text was unreadable on Linux (#37). Opt out of the native
+   look on every select (also the SV / MV panel ones) and draw the chevron ourselves. */
+select {
+  -webkit-appearance: none; appearance: none;
+  background: var(--panel-2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238b93a7' stroke-width='1.5'/></svg>") no-repeat right 9px center;
+  color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px; padding: 3px 24px 3px 6px; font-size: 13px;
+}
+.ctl select { padding: 7px 26px 7px 8px; }
+select:focus, .ctl input:focus { outline: none; border-color: var(--accent); }
+select option { background: var(--panel-2); color: var(--text); }
 
 .primary {
   background: var(--accent); color: #fff; border: none; border-radius: 8px;

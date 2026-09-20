@@ -68,7 +68,15 @@ static ggml_backend* make_backend(int gpu) {
 #ifdef TRELLIS_USE_CUDA
     {
         ggml_backend* b = ggml_backend_cuda_init(gpu);
-        if (b) return b;
+        if (b) {
+            char desc[256] = {0};
+            ggml_backend_cuda_get_device_description(gpu, desc, sizeof(desc));
+            size_t mem_free = 0, mem_total = 0;
+            ggml_backend_cuda_get_device_memory(gpu, &mem_free, &mem_total);
+            fprintf(stderr, "[trellis] using %s: %s (%zu MB)%s\n", ggml_backend_name(b), desc,
+                    mem_total / (1024 * 1024), g_gpu_auto ? " [auto]" : "");
+            return b;
+        }
         fprintf(stderr, "[trellis] CUDA init failed on device %d\n", gpu);
     }
 #endif

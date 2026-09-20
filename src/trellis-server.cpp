@@ -615,9 +615,11 @@ int main(int argc, char** argv) {
         res.set_content(glb.data(), glb.size(), "model/gltf-binary");
     });
 
-    fprintf(stderr, "[trellis-server] models=%s models-sv=%s gpu=%d listening on http://%s:%d\n",
+    // gpu=auto when --gpu was omitted: the device is chosen at load time (Vulkan: discrete over
+    // UMA, #23) and logged by make_backend as "[trellis] using ... [auto]".
+    fprintf(stderr, "[trellis-server] models=%s models-sv=%s gpu=%s listening on http://%s:%d\n",
             base.models.c_str(), base.models_sv.empty() ? "(none)" : base.models_sv.c_str(),
-            base.gpu, base.host.c_str(), base.port);
+            base.gpu_set ? std::to_string(base.gpu).c_str() : "auto", base.host.c_str(), base.port);
     if (!svr.listen(base.host, base.port)) {
         fprintf(stderr, "[trellis-server] failed to bind %s:%d\n", base.host.c_str(), base.port);
         return 1;

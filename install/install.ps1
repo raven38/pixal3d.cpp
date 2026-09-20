@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Trellis Studio — one-command setup for Windows (x64).
+  Trellis Studio - one-command setup for Windows (x64).
 
 .DESCRIPTION
   Detects the GPU runtime (CUDA / ROCm / Vulkan), downloads the matching
@@ -94,7 +94,7 @@ function Detect-Backend {
               [System.Globalization.NumberStyles]::Float,
               [System.Globalization.CultureInfo]::InvariantCulture,
               [ref]$cap) -and $cap -ge 6.0 -and $cap -lt 7.5) {
-          Info "detected NVIDIA compute capability $capText — selecting the CUDA 12 legacy runtime"
+          Info "detected NVIDIA compute capability $capText - selecting the CUDA 12 legacy runtime"
           return "cuda12"
         }
         return "cuda"
@@ -106,7 +106,7 @@ function Detect-Backend {
     if ($gpus | Where-Object { $_.Name -match "AMD|Radeon" }) {
       # ROCm is possible on AMD, but the published bundle needs a matching TheRock
       # runtime; Vulkan is self-contained and robust, so it's the safe auto default.
-      Info "detected an AMD GPU — ROCm-capable (use -Backend rocm to force it)"
+      Info "detected an AMD GPU - ROCm-capable (use -Backend rocm to force it)"
     }
   } catch {}
   return "vulkan"
@@ -160,7 +160,7 @@ $script:RequestedTag = $Tag
 $script:ReleaseCommit = ""
 
 # A tag goes into a URL path, so anything that could change which resource is
-# addressed ('#', '?', '/', '..') is rejected rather than encoded — release tags
+# addressed ('#', '?', '/', '..') is rejected rather than encoded - release tags
 # never need those characters.
 function Check-TagSyntax($t) {
   if (-not $t -or $t -notmatch '^[A-Za-z0-9._+-]+$' -or $t -eq '.' -or $t -eq '..') {
@@ -211,7 +211,7 @@ could not resolve a release for $Repo ($why): $($_.Exception.Message)
   # request addressed a different resource than intended.
   if ($Tag -cne "latest" -and $Tag -cne "latest-prerelease" -and
       -not [string]::Equals($script:Release.tag_name, $Tag, [System.StringComparison]::Ordinal)) {
-    Die "requested tag '$Tag' but the API returned '$($script:Release.tag_name)' — refusing to install"
+    Die "requested tag '$Tag' but the API returned '$($script:Release.tag_name)' - refusing to install"
   }
 
   # target_commitish may be a branch name, so resolve the tag to a real SHA for
@@ -427,7 +427,7 @@ model file does not match the manifest: $($f.name)
   }
   if ($ok -ne @($m.files).Count) { Die "only $ok of $(@($m.files).Count) model files verified" }
   # The manifest lands in the models dir only after every file verified, so its
-  # presence means "complete, verified model set" — which is how the Studio model
+  # presence means "complete, verified model set" - which is how the Studio model
   # cache, trellis-server /capabilities and the Web store read it.
   if (-not $VerifyModels) { Copy-Item $manifestPath (Join-Path $dir "pixal3d-models.json") -Force }
   $script:ModelSet = [ordered]@{
@@ -612,4 +612,4 @@ Info "release receipt: $(Join-Path $ConfigDir 'release.json')"
 Info "config: $(Join-Path $ConfigDir 'config.json')"
 
 Write-Host ""
-Log "done — launch Trellis Studio from the Start menu."
+Log "done - launch Trellis Studio from the Start menu."
