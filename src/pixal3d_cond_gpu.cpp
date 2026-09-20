@@ -118,7 +118,6 @@ Pixal3dCond pixal3d_cond_ss_gpu(const Model& dinov3, const std::vector<Pixal3dVi
         if (!ggml_gallocr_alloc_graph(alloc, g)) throw std::runtime_error("pixal3d_cond_ss_gpu: alloc failed");
         const size_t ab = ggml_gallocr_get_buffer_size(alloc, 0);
         if (ab > st.view_alloc_bytes) st.view_alloc_bytes = ab;
-        st.peak_bytes = std::max(st.peak_bytes, st.weight_bytes + resident_bytes + ab);
 
         ggml_backend_tensor_set(in.img, normed.data(), 0, normed.size() * 4);
         ggml_backend_tensor_set(in.cos, rcos.data(), 0, rcos.size() * 4);
