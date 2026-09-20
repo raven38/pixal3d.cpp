@@ -1,0 +1,21 @@
+
+=== q2 start 2026-09-20T07:01:04.243396 fixture=/private/tmp/claude-111520707/-Users-<redacted-user>-Downloads-pixal3d-cpp-feat-browser-partial-e2e-integrate/e96f3506-199c-4d9f-b18e-9b59c0018259/scratchpad/bench/e2e_bf16/dump
+[07:01:04] waiting: 38818       00:04 /Users/<redacted-user>/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/<redacted-user>/nfs/weights/pixal3d/gguf-q8_0/dinov3.ggu
+[07:06:10] bf16_seed101       rc=0 256s kv=bf16 nofa=False contaminated=0
+[07:11:01] f16_seed101        rc=0 271s kv=f16 nofa=False contaminated=0
+[07:17:18] nofa_seed101       rc=0 356s kv=- nofa=True contaminated=0
+[07:21:47] bf16_seed102       rc=0 249s kv=bf16 nofa=False contaminated=0
+[07:26:33] f16_seed102        rc=0 266s kv=f16 nofa=False contaminated=0
+[07:32:52] nofa_seed102       rc=0 358s kv=- nofa=True contaminated=0
+[07:37:21] bf16_seed103       rc=0 249s kv=bf16 nofa=False contaminated=0
+[07:42:07] f16_seed103        rc=0 266s kv=f16 nofa=False contaminated=0
+[07:48:25] nofa_seed103       rc=0 357s kv=- nofa=True contaminated=0
+[07:52:53] bf16_seed104       rc=0 247s kv=bf16 nofa=False contaminated=0
+[07:57:38] f16_seed104        rc=0 265s kv=f16 nofa=False contaminated=0
+[08:03:54] nofa_seed104       rc=0 356s kv=- nofa=True contaminated=0
+[08:08:21] bf16_seed105       rc=0 246s kv=bf16 nofa=False contaminated=0
+[08:13:05] f16_seed105        rc=0 264s kv=f16 nofa=False contaminated=0
+[08:19:22] nofa_seed105       rc=0 357s kv=- nofa=True contaminated=0
+[08:24:20] bf16_seed101_rep1  rc=0 278s kv=bf16 nofa=False contaminated=0
+[08:29:05] f16_seed101_rep1   rc=0 265s kv=f16 nofa=False contaminated=0
+=== q2 done 2026-09-20T08:29:05.800042
