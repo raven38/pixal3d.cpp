@@ -291,10 +291,11 @@ static T* sdpa(ggml_context* c, T* q, T* k, T* v, int d_model, T* mask = nullptr
     // reads only -0.0019 vs -0.00014 (its oracle is -0.00010). MMA already accumulated KQ in
     // FP32, so only the VKQ sum stagnated there -- same bug, ~9x milder.
     // --no-fa falls back to the exact chunked path (correct on any backend, ~2.7x slower).
-    // "Exact" means exact softmax, not F32 arithmetic everywhere: on Metal the F32 mul_mat
-    // (kernel_mul_mm_f32_f32) stages both operands as half (simdgroup_half8x8), so there the
-    // --no-fa path sits at the same ~4e-4 rel_rms from float64 as f16 K/V FlashAttention
-    // (trellis-test-fa-oracle, 2026-09-20) -- it is a softmax oracle, not an F32 one.
+    // "Exact" means a materialized (non-online) softmax, not F32 arithmetic everywhere: on
+    // Metal (pre-M5, tensor API off, ne11 > 8) the F32 mul_mat (kernel_mul_mm_f32_f32) stages
+    // both operands as half (simdgroup_half8x8), so Q, K, V AND the softmax probabilities P are
+    // rounded to half and the --no-fa path sits at the same ~4e-4 rel_rms from float64 as f16
+    // K/V FlashAttention (trellis-test-fa-oracle, 2026-09-20) -- a softmax oracle, not an F32 one.
     const bool no_fa = g_no_fa;
     if (!no_fa) {
         const ggml_type kv_type = s_fa_kv_build == FA_KV_F16 ? GGML_TYPE_F16
