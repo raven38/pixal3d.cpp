@@ -91,6 +91,13 @@ Examples:
 ## Backend detection
 
 - **NVIDIA** → CUDA (the bundle ships the CUDA runtime; nothing else needed).
+  On **WSL2** the installer reads the user-mode driver version from `nvidia-smi`
+  (the `NVIDIA-SMI` field, which comes from the Windows driver package and can lag
+  the Windows driver itself) and picks `cuda12` when it is older than the R590
+  branch the CUDA 13.1 runtime corresponds to — the 13.1 runtime segfaults in
+  `libnvidia-ptxjitcompiler` on a 580.x user-mode stack (#35). An explicit
+  `--backend cuda` stops with the same explanation; update the Windows NVIDIA driver
+  to use the `cuda` runtime.
 - **AMD / Intel / everything else** → **Vulkan**, which is self-contained and, on
   the validated Strix Halo iGPU, actually the fastest backend. The installer
   notes when an AMD card is ROCm-capable.
