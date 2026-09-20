@@ -52,6 +52,14 @@ void decimate_simplify(const std::vector<float>& verts, int V, const std::vector
 // low-sliver triangulation from a dense dual-contour mesh, unlike the meshopt/FQMS path.
 void decimate_qem(const std::vector<float>& verts, int V, const std::vector<int32_t>& faces, int F,
                   int target_faces, std::vector<float>& ov, std::vector<int32_t>& of);
+// The CPU implementation behind decimate_qem (also its fallback when the CUDA/HIP/Vulkan port
+// is unavailable at run time). Multithreaded (std::thread; serial under Emscripten), deterministic
+// for a given input regardless of the thread count. Both entry points drop out-of-range /
+// degenerate input faces first (also on the F <= target pass-through, which otherwise returns
+// the input positions and the cleaned faces unchanged). Exposed so tests can pin the CPU path
+// on GPU builds.
+void decimate_qem_cpu(const std::vector<float>& verts, int V, const std::vector<int32_t>& faces, int F,
+                      int target_faces, std::vector<float>& ov, std::vector<int32_t>& of);
 
 // Drop connected components (shared-vertex face adjacency) whose face count is below
 // frac*(largest component's). Removes decode floaters + spurious ground fragments (which

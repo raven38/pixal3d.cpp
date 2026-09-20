@@ -4,7 +4,11 @@
 // post-processing.
 //
 //   post-replay <dump.bin> <out.glb> [--box-uv] [--faces N] [--atlas T]
-//               [--decim GRID] [--no-weld] [--no-fill]
+//               [--decim GRID] [--no-weld] [--no-fill] [--no-remesh] [--no-bake]
+//               [--band N] [--no-snap] [--decimated MESH.bin]
+//   --decimated: decimate_qem を走らせず、既に間引いたメッシュ（i32 V,F; f32 verts; i32 faces、
+//                trellis-test-decimate-bench の出力）を読んで weld/fill/drop → bake へ進む。
+//                同じ dump から作った 2 つの間引き結果を、同じ bake で GLB にして比べるため。
 #include "uv_bake.h"
 #include "tri_bvh.h"
 #include "remesh_dc.h"
@@ -43,6 +47,7 @@ int main(int argc, char** argv) {
     bool boxuv = false, do_weld = true, do_fill = true, do_bake = true, do_remesh = true, do_snap = true;
     int band = 1;
     int faces_target = 300000, atlas = 2048, decim = -1;
+    const char* decimated = nullptr;
     for (int i = 3; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--box-uv") boxuv = true;
@@ -55,6 +60,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-remesh") do_remesh = false;
         else if (a == "--band" && i+1 < argc) band = atoi(argv[++i]);
         else if (a == "--no-snap") do_snap = false;
+        else if (a == "--decimated" && i+1 < argc) decimated = argv[++i];
     }
 
     FILE* f = fopen(dump, "rb");
@@ -105,8 +111,20 @@ int main(int argc, char** argv) {
     if (decim > 0) trellis::decimate_cluster(sverts, (int)sverts.size()/3, sfaces, (int)sfaces.size()/3, {}, decim, dv, df, dp);
     else if (decim == 0) { dv = sverts; df = sfaces; }
     else {
-        // match the CLI: faithful QEM port (not the old meshopt/FQMS decimate_simplify)
-        trellis::decimate_qem(sverts, (int)sverts.size()/3, sfaces, (int)sfaces.size()/3, faces_target, dv, df);
+        if (decimated) {
+            FILE* fm = fopen(decimated, "rb");
+            if (!fm) { fprintf(stderr, "cannot open %s\n", decimated); return 1; }
+            int dV = 0, dF = 0;
+            if (fread(&dV,4,1,fm) != 1 || fread(&dF,4,1,fm) != 1) return 1;
+            dv.resize((size_t)dV*3); df.resize((size_t)dF*3);
+            if (fread(dv.data(),4,dv.size(),fm) != dv.size()) return 1;
+            if (fread(df.data(),4,df.size(),fm) != df.size()) return 1;
+            fclose(fm);
+            printf("  loaded decimated mesh %s: V=%d F=%d\n", decimated, dV, dF);
+        } else {
+            // match the CLI: faithful QEM port (not the old meshopt/FQMS decimate_simplify)
+            trellis::decimate_qem(sverts, (int)sverts.size()/3, sfaces, (int)sfaces.size()/3, faces_target, dv, df);
+        }
         audit("decimate_qem", df);
         trellis::weld_vertices(dv, df, nullptr, 1.0f / ((float)res * 8.0f));
         audit("weld2", df);

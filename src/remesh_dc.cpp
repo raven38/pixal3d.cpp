@@ -1,4 +1,5 @@
 #include "remesh_dc.h"
+#include "parallel_for.h"
 #include "tri_bvh.h"
 #include <algorithm>
 #include <atomic>
@@ -7,7 +8,6 @@
 #endif
 #include <cmath>
 #include <cstdio>
-#include <functional>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -34,26 +34,8 @@ inline uint64_t key3(int x, int y, int z) {
 // "thread constructor failed: Not supported" で throw する。さらに下の候補ビットセットは
 // スレッドごとに res^3/8 バイト（res=1024 で 134 MB）を確保するため、wasm32 の 4 GiB
 // ヒープでは並列度がそのままメモリ消費になる。ブラウザでは直列にする。
-inline int remesh_threads() {
-#ifdef __EMSCRIPTEN__
-    return 1;
-#else
-    return (int)std::max(1u, std::thread::hardware_concurrency());
-#endif
-}
-
-void parallel_for(int64_t n, const std::function<void(int64_t, int64_t)>& fn) {
-    const int nt = remesh_threads();
-    if (nt <= 1) { if (n > 0) fn(0, n); return; }   // 直列（pthread 無しの wasm ビルド）
-    std::vector<std::thread> ts;
-    const int64_t chunk = (n + nt - 1) / nt;
-    for (int t = 0; t < nt; ++t) {
-        const int64_t b = t * chunk, e = std::min(n, b + chunk);
-        if (b >= e) break;
-        ts.emplace_back(fn, b, e);
-    }
-    for (auto& t : ts) t.join();
-}
+// parallel_for 本体は include/parallel_for.h（decimate_qem.cpp と共用）。
+inline int remesh_threads() { return parallel_threads(); }
 
 }  // namespace
 
