@@ -463,14 +463,17 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
           trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
           cond_lap("load dinov3 + naf");
           trellis::Pixal3dSlatCondParams prm{1024, grid, 512, mesh_scale};
-          c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
+          // Sparse/device-resident conditioning: return proj directly in shc order and avoid
+          // materialising dense R^3 / the full NAF map on the host. T=512 would otherwise choose
+          // the single-graph path; force the measured split-graph chunk size.
+          prm.naf_block_chunk = 1024;
+          c = trellis::pixal3d_cond_slat_gpu(dino, naf, views1024, prm, nullptr, &shc);
           dino.free(); naf.free(); }
-        cond_lap("cond_slat S=1024 R=grid T=512 (host path, dense R^3)");
-        vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
-        c.proj.clear(); c.proj.shrink_to_fit();
+        cond_lap("cond_slat S=1024 R=grid T=512 (device sparse)");
+        vector<float> proj_sp = std::move(c.proj);
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * shc.size());
-        cond_lap("gather_proj + noise");
+        cond_lap("noise");
         slat_norm = mv_shape_flow(W.shape1024, cfg, F32, gpu, shc,
                                   c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
         if (slat_norm.empty()) return 1;
@@ -523,13 +526,13 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
               trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
               cond_lap("load dinov3 + naf");
               trellis::Pixal3dSlatCondParams prm{1024, grid, 1024, mesh_scale};
-              c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
+              // Split-graph sparse/device conditioning consumes NAF@1024 in chunks and returns
+              // only the active shc rows; the 4 GiB dense NAF map is never materialised.
+              c = trellis::pixal3d_cond_slat_gpu(dino, naf, views1024, prm, nullptr, &shc);
               dino.free(); naf.free(); }
-            cond_lap("cond_slat S=1024 R=grid T=1024 (host path, dense R^3)");
-            vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
-            c.proj.clear(); c.proj.shrink_to_fit();
+            cond_lap("cond_slat S=1024 R=grid T=1024 (device sparse)");
+            vector<float> proj_sp = std::move(c.proj);
             vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
-            cond_lap("gather_proj");
 
             trellis::Model m = trellis::Model::load(W.tex, gpu);
             trellis::DiTParams p; p.in_ch = 64; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
