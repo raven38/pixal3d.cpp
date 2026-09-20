@@ -11,6 +11,8 @@
 #   4. --asset-base-url の実インストール経路: config.json に modelsDirSv が書かれる、
 #      SV のインストール失敗で MV ディレクトリが無傷のまま・config は書かれない・.part が残らない、
 #      空き容量不足はダウンロード前に落ちる
+#   5. WSL2 のユーザーモード CUDA ドライバ判定（#35、nvidia-smi / uname をスタブ）:
+#      580 系 → cuda12、590 以上 → cuda、非 WSL の 580 → cuda、--backend cuda 明示 + 580 → 停止
 # を確認する。最後に INSTALLER_MANIFEST_OK を出す。
 set -euo pipefail
 
@@ -220,5 +222,70 @@ run 1 "not enough free space" "${COMMON[@]}" --model-manifest-sv "$WORK/huge.jso
 [ -z "$(find "$DEST" -name '*.part')" ] || fail ".part left after the free-space refusal"
 [ ! -e "$DEST/models-sv/pixal3d_naf.gguf" ] || fail "a download happened despite the free-space refusal"
 pass "free-space precheck refuses before downloading"
+
+# --- 5. WSL2 user-mode CUDA driver (#35) ---------------------------------------
+# uname / nvidia-smi を PATH の先頭でスタブする。uname は -s/-r/-m だけ差し替え、他は本物へ。
+STUB="$WORK/stubbin"; mkdir -p "$STUB"
+REAL_UNAME="$(command -v uname)"
+cat > "$STUB/uname" <<EOF
+#!/bin/sh
+case "\$1" in
+  -s) echo Linux;;
+  -r) echo "\${STUB_KERNEL:-6.6.87.1-microsoft-standard-WSL2}";;
+  -m) echo x86_64;;
+  *) exec "$REAL_UNAME" "\$@";;
+esac
+EOF
+cat > "$STUB/nvidia-smi" <<'EOF'
+#!/bin/sh
+case "$1" in
+  -L) echo "GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-stub)";;
+  --query-gpu=*) echo "8.9";;
+  *) printf '%s\n' "Sun Sep 20 13:35:50 2026" \
+       "+-----------------------------------------------------------------------------------------+" \
+       "| NVIDIA-SMI ${STUB_SMI:-580.178.04}             Driver Version: 591.86         CUDA Version: 13.1     |";;
+esac
+EOF
+chmod +x "$STUB/uname" "$STUB/nvidia-smi"
+# cuda / cuda12 の Linux バンドル（スタブ）を asset サーバに置く
+for b in trellis-cuda-linux-x64.tar.gz trellis-cuda12-linux-x64.tar.gz; do
+  tar -C "$ASSETS/bundle" -czf "$ASSETS/$b" trellis-server
+done
+run_stub() {  # 期待 rc、grep パターン、STUB_SMI、STUB_KERNEL、引数...
+  local want_rc="$1" pattern="$2" smi="$3" kernel="$4"; shift 4
+  local out rc=0
+  out="$(PATH="$STUB:$PATH" STUB_SMI="$smi" STUB_KERNEL="$kernel" "$BASH_BIN" "$INSTALL" "$@" 2>&1)" || rc=$?
+  if [ "$rc" != "$want_rc" ]; then echo "$out" >&2; fail "rc=$rc want=$want_rc: [smi=$smi kernel=$kernel] install.sh $*"; fi
+  if [ -n "$pattern" ] && ! grep -q -- "$pattern" <<<"$out"; then echo "$out" >&2; fail "output lacks '$pattern': [smi=$smi] install.sh $*"; fi
+  LAST_OUT="$out"
+}
+WSL_KERNEL="6.6.87.1-microsoft-standard-WSL2"; NATIVE_KERNEL="6.8.0-45-generic"
+WSL_COMMON=(--asset-base-url "$BASE" --skip-app --skip-models -y --dest "$WORK/wsl-dest" --config-dir "$WORK/wsl-cfg")
+backend_in_config() { python3 -c "import json; print(json.load(open('$WORK/wsl-cfg/config.json'))['backend'])"; }
+
+rm -rf "$WORK/wsl-dest" "$WORK/wsl-cfg"
+run_stub 0 "auto-detected backend: .*cuda12" 580.178.04 "$WSL_KERNEL" "${WSL_COMMON[@]}"
+grep -q "R590" <<<"$LAST_OUT" || fail "cuda12 fallback must name the required driver branch"
+[ "$(backend_in_config)" = cuda12 ] || fail "config.json backend should be cuda12, got $(backend_in_config)"
+pass "WSL2 + user-mode driver 580.x auto-selects cuda12 (with the reason)"
+
+rm -rf "$WORK/wsl-dest" "$WORK/wsl-cfg"
+run_stub 0 "auto-detected backend: .*cuda" 590.44.01 "$WSL_KERNEL" "${WSL_COMMON[@]}"
+[ "$(backend_in_config)" = cuda ] || fail "config.json backend should be cuda for a 590 driver, got $(backend_in_config)"
+pass "WSL2 + user-mode driver 590.x keeps cuda"
+
+rm -rf "$WORK/wsl-dest" "$WORK/wsl-cfg"
+run_stub 0 "auto-detected backend: .*cuda" 580.178.04 "$NATIVE_KERNEL" "${WSL_COMMON[@]}"
+[ "$(backend_in_config)" = cuda ] || fail "a non-WSL 580 driver must not be downgraded, got $(backend_in_config)"
+pass "native Linux + 580.x is left on cuda (WSL2-only rule)"
+
+rm -rf "$WORK/wsl-dest" "$WORK/wsl-cfg"
+run_stub 1 "Use --backend cuda12" 580.178.04 "$WSL_KERNEL" "${WSL_COMMON[@]}" --backend cuda
+[ ! -e "$WORK/wsl-cfg/config.json" ] || fail "config.json must not be written when --backend cuda is refused"
+pass "WSL2 + 580.x + explicit --backend cuda stops before installing"
+
+rm -rf "$WORK/wsl-dest" "$WORK/wsl-cfg"
+run_stub 0 "backend (forced): .*cuda12" 580.178.04 "$WSL_KERNEL" "${WSL_COMMON[@]}" --backend cuda12
+pass "WSL2 + 580.x + explicit --backend cuda12 installs"
 
 echo INSTALLER_MANIFEST_OK
