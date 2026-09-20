@@ -848,7 +848,7 @@ neutral and both now used by every backend:
 
 | item | change | why |
 |---|---|---|
-| DiT 3D RoPE index build | `ggml_arange`+cast (122 nodes/graph) → one host-built I32 `[head_dim]` input (`dit_rope_index`, views for even/odd), `ggml_arange` kept as the fallback when no index tensor is passed | WebGPU has no `ARANGE` kernel (op-gap C2); identical integers |
+| DiT 3D RoPE (was: index build) | **PR #48 以降**: 回転を de-interleaved レイアウトで行い、`RESHAPE`/`PERMUTE`/`CONT`/`MUL`×4/`SUB`/`ADD`/`CONCAT` だけで組む。`ggml_arange`・`ggml_set_rows`・`rope_idx` 入力はいずれも不要になった（使われなくなった `dit_rope_index` API と `rope_idx` 引数は PR #52 で削除済み。DiT に残る `ggml_arange` は `build_pad_mask` の 2 本だけ） | 旧: `ggml_arange`+cast (122 nodes/graph) が WebGPU に ARANGE 実装が無く動かないため、ホスト構築の I32 `[head_dim]` 入力に 置き換えていた。現在はインデックス自体が不要 |
 | silent-skip guard | `check_graph_supported(backend, graph, tag)` after every graph build (DINOv3, cond, DiT); throws on WebGPU, warns elsewhere | `ggml_webgpu_encode` returns `nullopt` for unsupported nodes and the compute loop just moves on -- outputs would be uninitialized memory, not an error |
 | FlashAttention | not used on WebGPU: the tests/wasm entry set the existing `--no-fa` exact chunked SDPA (`g_no_fa`) | the default path casts K/V to BF16, which the backend has no kernels for (C1) |
 | SS conditioning | new device-resident variant `pixal3d_cond_ss_gpu` (`src/pixal3d_cond_gpu.cpp`): DINOv3 graph + `get_rows`×4 + weighted sum + running average, one graph per view, persistent accumulators; host path `pixal3d_cond_ss` unchanged and still the CLI's | task requirement: no GPU→CPU→GPU round trip of the feature map; no custom WGSL was needed -- at R=16 the four `[1024,4096]` tap intermediates are 16.8 MB each |

@@ -119,7 +119,7 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     }
     dbg_nan_ = std::getenv("TRELLIS_DBG_NAN") != nullptr;
     gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_,
-                            dbg_nan_ ? &inter_ : nullptr, gproj_, nullptr);
+                            dbg_nan_ ? &inter_ : nullptr, gproj_);
     g_ = ggml_new_graph_custom(ctx_, 262144, false);
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);

@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
     // silently skip the fallback's nodes -- same input DitRunner supplies).
 
     std::map<string, ggml_tensor*> inter;
-    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj, nullptr);   // rope_idx unused since the de-interleaved RoPE
+    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj);
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 262144, false);
     ggml_build_forward_expand(g, out);
