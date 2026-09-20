@@ -430,6 +430,16 @@ add_executable(trellis-test-shape-dec src/test_shape_dec.cpp)
 target_link_libraries(trellis-test-shape-dec PRIVATE trellis_core)
 set_target_properties(trellis-test-shape-dec PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# decimate_qem のベンチ / A-B ハーネス（issue #29）: torus か --dump-post を読んで時間と V/F/開放辺/成分を印字
+add_executable(trellis-test-decimate-bench src/test_decimate_bench.cpp)
+target_link_libraries(trellis-test-decimate-bench PRIVATE trellis_core)
+set_target_properties(trellis-test-decimate-bench PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# CPU decimate_qem の回帰テスト: 変更前実装（エッジ順固定）との bit 一致と幾何の健全性
+add_executable(trellis-test-decimate-cpu src/test_decimate_cpu.cpp)
+target_link_libraries(trellis-test-decimate-cpu PRIVATE trellis_core)
+set_target_properties(trellis-test-decimate-cpu PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-cli src/trellis_cli_main.cpp src/trellis_cli.cpp src/trellis_args.cpp)
 target_link_libraries(trellis-cli PRIVATE trellis_core)
 set_target_properties(trellis-cli PROPERTIES BUILD_RPATH "${GGML_RPATH}")
