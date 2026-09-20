@@ -4,7 +4,7 @@ Status baseline: `main` after PR #24/#25/#26/#27/#28/#29/#31/#33. This file is t
 
 ## Planned prerelease tags
 
-- Desktop: `v0.9.0-desktop-alpha` (tagged) → **`v0.10.0-desktop-alpha`** (this branch; see "Desktop 0.10.0 — SV parity" below)
+- Desktop: `v0.9.0-desktop-alpha` (tagged) → `v0.10.0-desktop-alpha` (tagged 2026-09-20 on `main` `d54de75`, release run 35453640055; see "Desktop 0.10.0 — SV parity" below)
 - Web: `v0.9.0-web-alpha` (tagged)
 - Model set: Desktop `pixal3d-f16` / `v1`, Web `pixal3d-q8_0` / `v1` (see "Fixed initial release model sets" below)
 
@@ -272,8 +272,8 @@ Supported target: Trellis Studio, Windows x64 + Linux x86-64, resident native `t
 | Real Tauri/WebKitGTK window + Studio-spawned server lifecycle | ✅ #17 / PR #26 | Xvfb CI |
 | MV metadata/image/alpha/mesh_scale preflight | ✅ #19 / PR #27 | headless UI CI |
 | CUDA `ss_decode` graph-support path exercised on NVIDIA hardware | ✅ #11 | NVIDIA L4 validation |
-| Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ✅ installer / CLI / server / Studio MV generate + auto-save; ⬜ viewer (MV results bypass it, see below) | **real machine** (RTX 4090, 2026-09-19, below) |
-| Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ✅ headless (see below) / ⬜ viewer | **real machine** |
+| Clean-install Windows: installer → models → MV → textured GLB → viewer/save | ✅ 0.9.0: installer / CLI / server / Studio MV generate + auto-save (viewer gap = #25); ✅ **0.10.0: viewer / gallery / `Save GLB…` / output folder** for MV, SV and the canonical rig (see "Clean-install Windows 0.10.0" below) | **real machine** (RTX 4090, 2026-09-19 and 2026-09-20) |
+| Clean-install Linux: installer → models → MV → textured GLB → viewer/save | ✅ headless runtime + CLI (L4, below); ✅ **Studio GUI on WSL2/WSLg with the `cuda12` runtime** (see "Clean-install Linux on WSL2" below); ⬜ native Linux desktop and the `cuda` (13.1) runtime through a GUI | **real machine** / WSL2 |
 | Installer resolves the exact prerelease tag and fails closed on missing assets | ✅ | #36: tag resolution + asset preflight + receipt. Verified against the live GitHub API for tag/`latest`/`latest-prerelease` resolution, tag-injection rejection, missing-asset and unknown-tag exit 1, and compact-JSON parsing. `install.ps1` verify-only path is now executed in Windows CI by PR #44; full clean-install remains #18 |
 | Installer downloads/verifies the exact model set against its manifest | ✅ | `--model-manifest` / `--verify-models` (see below); verified against the real `pixal3d-q8_0 v1` set and fail-closed cases, plus Linux/Windows tiny-set CI in PR #44 |
 | Package/Tauri version matches `v0.9.0-desktop-alpha` | ✅ | #35: metadata `0.9.0` in all four files; tag carries `-desktop-alpha` (see above) |
@@ -342,6 +342,57 @@ Not covered: the single-image (TRELLIS.2) Studio path, Settings, gallery persist
 Vulkan through Studio/server, the CUDA 12 and ROCm archives. The box already had the VC++ 2022
 runtime installed. Logs, receipt, screenshots and renders are kept outside the repo
 (`win-desktop-alpha-20260919/`); GLBs on the machine under `D:\pixal3d\out\`.
+
+### Clean-install Windows 0.10.0 — CUDA 13 Studio (MV / SV / canonical rig) and Vulkan auto device (2026-09-20, RTX 4090 / Windows 11 Home, Ryzen 9 7950X)
+
+The published `v0.10.0-desktop-alpha` assets (release run 35453640055, 15 assets incl. the first
+`trellis-rocm-linux-x64.tar.gz`), installed clean: the 0.9.0 Studio uninstalled (`uninstall.exe /S`),
+`%APPDATA%\trellis-studio` and the WebView2 profile (`%LOCALAPPDATA%\cpp.trellis.studio`, i.e. the
+0.9.0 gallery) moved aside. `install.ps1 -Backend cuda -Tag v0.10.0-desktop-alpha -Dest D:\pixal3d\trellis-studio-0.10.0
+-ModelsDir <0.9.0 MV dir> -ModelManifest <HF q8_0> -ModelsDirSv D:\pixal3d\models-sv -ModelManifestSv <HF sv-q8_0> -Yes`
+through WSL→`powershell.exe` interop; Studio driven by SendInput + screenshots (WebView2 remote
+debugging cannot be enabled). Input: `assets/mv_images/example` cyclops (4 views) for MV and the
+canonical rig, its front view as the SV image. Driver 591.86, display 3840×2160 @150 %.
+
+| step | result |
+|---|:---:|
+| installer | rc 0, **272 s**: `backend/gpu : cuda / auto`; runtime zip + Studio setup (0.10.0, silent, per-user) from the release; MV set `pixal3d-q8_0 v1` 9/9 "already present, verified"; **SV set `pixal3d-sv-q8_0 v1` 9/9 newly downloaded and verified** (the `install.ps1` SV download path the branch had left uncovered); `release.json` with both sets `verified: true`; `config.json` has `"gpu": null` and `modelsDirSv` |
+| Studio launch | `CUDA ● ready`; the spawned command line is `trellis-server.exe --models … --models-sv … --host 127.0.0.1 --port 8080` — **no `--gpu`**; `/capabilities` → `mv.available` and `sv.available` true, `completed` 0 → 1 → 2 → 3 across the three runs, `busy` true while each ran |
+| MV + `transforms.json` (1024, seed 42, `mesh_scale` 1.0 from the file) | `Preflight passed`, `complete 4:41` (server `done in 281.2s`, Vo=638,337 Fo=973,750, atlas 4096); **viewer shows the textured head, caption `Pixal3D MV · 1024 · seed 42 · 34.2 MB · mesh_scale 1.000`, gallery `MV 1024` with thumbnail, `Save GLB…` enabled**; auto-saved `output\multiview_1024_seed42_scale1.000_<id>.glb` (34,175,080 B); `Save GLB…` proposes `multiview_1024_seed42_scale1.000` and the saved file is byte-identical to the auto-saved one; **nothing new in `Downloads`** (#25 closed) |
+| SV (front view, FOV 20°, seed 42) | `Preflight passed · real alpha matte · FOV 20°`, `Single-view model set ready: pixal3d-sv-q8_0 v1`; server `done in 224.0s` (Vo=652,200 Fo=972,454); viewer + caption `Pixal3D SV · 1024 · seed 42 · 34.6 MB`, gallery `SV 1024`; auto-saved `cyclops_front_sv_1024_seed42_<id>.glb` (34,573,024 B) |
+| canonical 4-view (no `transforms.json`) | four cards, `2 error(s)` until the order checkbox is ticked and `mesh_scale` 1.0 is typed (the slider stays disabled, nothing is guessed), then `Preflight passed`; server `generate-mv: 4 staged views (canonical rig)`, `done in 286.7s` (Vo=649,325 Fo=973,982); viewer + `mesh_scale 1.000` caption, gallery 3 items; auto-saved `canonical4_1024_seed42_scale1.000_<id>.glb` (34,527,192 B) |
+| gallery re-open | clicking the MV item while the SV panel is shown loads it (`Pixal3D MV · multiview · 1024 · seed 42 · mesh_scale 1.000`) and leaves the SV panel's input untouched |
+| lifecycle | `CloseMainWindow()` → Studio and `trellis-server` both gone within 2 s |
+| **Vulkan device selection without any workaround** (0.10.0 `trellis-vulkan-windows-x64.zip`, CLI, cyclops MV 1024 seed 1, no `--gpu`, no `GGML_VK_VISIBLE_DEVICES`) | `ggml_vulkan: 0 = NVIDIA GeForce RTX 4090 (uma: 0) … 1 = AMD Radeon(TM) Graphics (uma: 1)` → **`[trellis] using Vulkan0 (24138 MB) [auto]`**; rc 0, **658.2 s**, GLB 34,262,112 B (Vo=670,713 Fo=988,046) — the 0.9.0 row above needed `GGML_VK_VISIBLE_DEVICES=0` for the same result (#23 confirmed on the affected machine; through Studio the flag is now omitted, see #24) |
+
+Not covered on Windows: the TRELLIS.2 single-image Studio path, Settings, 1536, Vulkan through
+Studio (the Studio install is CUDA), CUDA 12 / ROCm archives, silhouette-IoU gates (the GUI runs are
+functional checks; the IoU gate for these inputs is the macOS 0.10.0 acceptance above). The CUDA
+server log prints `gpu=0` in its own banner even under auto-selection (cosmetic; the `[studio]`
+line says `gpu=auto` and the command line has no `--gpu`). Screenshots, logs and GLBs are kept on
+the machine under `D:\pixal3d\out-0.10.0\`.
+
+### Clean-install Linux on WSL2 — Studio GUI under WSLg (2026-09-20, Ubuntu 22.04 on WSL2 / RTX 4090)
+
+The same box, in its WSL2 Ubuntu 22.04 (kernel 6.6.87, WSLg, `nvidia-smi` shows the 4090 via
+`/usr/lib/wsl/lib/libcuda.so`). `install.sh --backend cuda --tag v0.10.0-desktop-alpha --dest /mnt/hdd1/… --models-dir /mnt/d/<0.9.0 MV dir>
+--model-manifest <HF q8_0> --models-dir-sv /mnt/hdd1/pixal3d/models-sv --model-manifest-sv <HF sv-q8_0> -y`
+with no prior `~/.config/trellis-studio`.
+
+| step | result |
+|---|:---:|
+| installer (`cuda`) | rc 0, **415 s**: runtime tarball + AppImage from the release, MV set verified in place (drvfs), SV set 9/9 newly downloaded to ext4 and verified; `config.json` (`"gpu": null`, `modelsDirSv`) + `release.json` written. Cosmetic: the final line still says "add your models dir in Settings" although both dirs were configured |
+| AppImage prerequisites | no FUSE → `--appimage-extract-and-run`; the AppImage bundles WebKitGTK 2.4x but **not `libEGL.so.1`**, which this WSL lacks (`libegl1` not installed, no sudo). Supplied from the jammy `libegl1` / `libegl-mesa0` / `libgles2` packages extracted into a user directory (`LD_LIBRARY_PATH` + `__EGL_VENDOR_LIBRARY_DIRS`); nothing else changed. On a stock Ubuntu desktop `libegl1` is present |
+| Studio window | GTK window on the Windows desktop (WSLg RAIL, "COPY MODE"), `CUDA ● ready`, spawned `trellis-server --models … --models-sv … --host … --port …` (no `--gpu`), `/capabilities` both sets available. Cosmetic: the `<select>` texts render near-invisible (light-on-light) in WebKitGTK; `import`/X screenshots work, input driven from the Windows side |
+| **`cuda` (13.1) runtime** | **`trellis-server` dies with SIGSEGV** at `[2/6] SS proj conditioning + flow` — `segfault … in libnvidia-ptxjitcompiler.so.580.178.04`; reproduced with `trellis-cli` (rc 139). The WSL user-mode CUDA libraries are **580.178.04** (`nvidia-smi`: `NVIDIA-SMI 580.178.04 / Driver 591.86 / CUDA 13.1`, `C:\Windows\System32\lxss\lib` dated 2026-02-17) while the runtime is built with CUDA 13.1; the fatbin carries sm_89 SASS (checked with `cuobjdump`), so this is the WSL driver stack, not a missing architecture. Studio shows the request as stuck (`busy` stays true; the child is a zombie) — a `trellis-server` crash is not surfaced in the UI (#36); installer detection of this WSL driver state is #35 |
+| **`cuda12` runtime** (`install.sh --backend cuda12`, same dirs, rc 0 in 140 s, model sets re-verified) | `CUDA12 ● ready`; MV + `transforms.json` through the GUI (cyclops, 1024, seed 42): GTK file chooser → `4 image(s) · 4/4 matched`, `Preflight passed`, server `done in 551.1s` (flows 11.0 / 11.6 / 136.7 / 82.1 s, Vo=664,884 Fo=967,880, atlas 4096); **viewer renders the textured head under WSLg, caption `Pixal3D MV · 1024 · seed 42 · 33.8 MB · mesh_scale 1.000`, gallery `MV 1024` with thumbnail, `Save GLB…` enabled**; auto-saved `output/multiview_1024_seed42_scale1.000_<id>.glb` (33,790,392 B) |
+| SV through the GUI (front view, FOV 20°, seed 42) | `Preflight passed · real alpha matte · FOV 20°`, server `done in 493.6s` (flows 10.8 / 10.9 / 132.8 / 86.6 s, Vo=642,333 Fo=963,194); viewer + caption `Pixal3D SV · 1024 · seed 42 · 33.0 MB`, gallery `SV 1024` + `MV 1024`; auto-saved `output/cyclops_front_sv_1024_seed42_<id>.glb` (33,028,876 B); SIGTERM to the Studio process takes the server down with it |
+
+The `cuda12` archive is built for sm_60/61/70 only, so on the 4090 its kernels run from JIT-compiled
+`compute_70` PTX — correct but slower than the sm_89 build (Shape-1024 flow 137 s vs 55 s on the
+native CUDA 13 CLI). Advertise: **Linux Studio GUI verified on WSL2/WSLg with the `cuda12` runtime;
+the `cuda` (13.1) runtime needs a WSL user-mode driver newer than 580.x; native Linux desktop and
+Vulkan GUI not verified.**
 
 ## macOS Desktop alpha (2026-09-10)
 
@@ -697,10 +748,9 @@ the spawned `trellis-server` running (re-parented to launchd, killed by hand). T
 path (`CloseRequested`) is what the Xvfb CI and the Windows run verify; the macOS quit-event path
 was not re-tested here and is tracked as a follow-up, not a 0.10.0 change.
 
-Not covered by this branch (advertise accordingly): Windows/Linux real-machine E2E for the new
-modes (the Windows RTX 4090 clean-install of 2026-09-19 above covers 0.9.0 MV with
-`transforms.json`, not SV or the canonical rig; the 0.10.0 real-machine gate is macOS only); `install.ps1` download path for the SV set (only `-VerifyModels`,
-conformance and the free-space function are executed in CI); `--model-manifest[-sv] release` (the
+Not covered by this branch at merge time (advertise accordingly): Windows/Linux real-machine E2E for the new
+modes and the `install.ps1` download path for the SV set — **both covered after the tag** by the
+2026-09-20 runs above ("Clean-install Windows 0.10.0", "Clean-install Linux on WSL2"); `--model-manifest[-sv] release` (the
 release workflow publishes no manifest asset, so both manifests are URL/path arguments in this
 alpha); code signing stays ad-hoc; `trellis-server` binds loopback by default and exposing it beyond
 loopback is not recommended (no auth, `/generate-sv` accepts 64 MiB uploads).
@@ -711,6 +761,9 @@ loopback is not recommended (no auth, `/generate-sv` accepts 64 MiB uploads).
 - #12 MLP chunking exists as opt-in and reduces FA-path memory, but measured WebGPU/NOFA peak did not improve; it is not an initial release blocker.
 - PR #5 auto `mesh_scale`: not release-ready; explicit/manual scale remains the supported contract.
 - Browser 1536: unsupported for initial Web alpha.
+- #35 WSL2 + CUDA 13.1 runtime: `trellis-server` segfaults in `libnvidia-ptxjitcompiler.so.580.x` when the WSL user-mode CUDA libraries are older than the CUDA 13.1 toolkit requires; use the `cuda12` archive there (or a newer Windows driver). The installer does not detect this yet.
+- #36 A `trellis-server` crash mid-request leaves Studio waiting (`busy` never clears, the panel keeps counting); only the log shows it.
+- #37 Cosmetic: WebKitGTK renders Studio's `<select>` text light-on-light; the SV dropzone shows a broken-image glyph before an image is chosen (WebView2); the CUDA server banner prints `gpu=0` under auto-selection; `install.sh` ends with "add your models dir in Settings" even when the dirs were configured.
 
 ## Release note template
 
