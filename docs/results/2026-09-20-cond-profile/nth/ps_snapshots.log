@@ -1,0 +1,80 @@
+== 06:13:47 before nth1024 T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  92.4 02-20:43:14 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   8.3 02-20:44:37 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+59065   5.9    13:41:41 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  418   5.3 02-20:44:38 /usr/libexec/trustd
+  338   4.7 02-20:44:38 /usr/libexec/smd
+  523   3.6 02-20:44:37 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 2085   3.1 02-20:42:42 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+-- trellis:
+== 06:14:04 after nth1024 T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 02-20:43:31 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926  10.3 02-20:43:32 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  465  10.0 02-20:44:54 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   7.3 02-20:44:55 /usr/libexec/smd
+  418   6.7 02-20:44:55 /usr/libexec/trustd
+  686   5.5 02-20:44:37 /usr/libexec/sysmond
+  523   3.4 02-20:44:54 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 06:17:16 before nth1024 T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  89.4 02-20:46:43 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   8.4 02-20:47:49 /usr/libexec/sysmond
+  465   7.4 02-20:48:06 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   4.8 02-20:48:07 /usr/libexec/trustd
+  338   3.8 02-20:48:07 /usr/libexec/smd
+ 6222   3.1 02-20:39:13 claude --resume d2d9b1b4-5da4-40a3-937c-1d3119f2d87a
+  530   3.0 02-20:48:06 /usr/libexec/airportd
+-- trellis:
+== 06:17:32 after nth1024 T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  97.9 02-20:46:59 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  16.0 02-20:48:05 /usr/libexec/sysmond
+59383   4.5    04:09:12 claude
+  523   2.6 02-20:48:22 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   2.2 02-20:48:22 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  926   2.0 02-20:47:00 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  338   1.6 02-20:48:23 /usr/libexec/smd
+-- trellis:
+== 06:21:24 before nth1024 T1024 gn cmp
+  PID  %CPU     ELAPSED ARGS
+  953  88.9 02-20:50:51 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   4.3 02-20:52:14 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   4.1 02-20:52:14 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  338   3.0 02-20:52:15 /usr/libexec/smd
+  418   2.9 02-20:52:15 /usr/libexec/trustd
+  560   2.8 02-20:52:13 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN com.apple.bc
+99880   2.7       00:00 trustevaluationagent
+-- trellis:
+== 06:21:51 after nth1024 T1024 gn cmp
+  PID  %CPU     ELAPSED ARGS
+  953  96.9 02-20:51:18 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6167   2.9 02-20:43:48 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+ 2085   2.5 02-20:50:46 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  686   2.2 02-20:52:24 /usr/libexec/sysmond
+  523   2.2 02-20:52:41 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  560   1.9 02-20:52:40 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN com.apple.bc
+  465   1.9 02-20:52:41 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 06:24:53 before nth1024 T512 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  96.3 02-20:54:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6183   3.4 02-20:46:50 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  523   2.9 02-20:55:43 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 5074   2.5 02-20:46:52 /Users/s25705/.local/bin/herdr server
+16286   2.5    06:34:38 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+95222   1.5 01-16:25:16 /Applications/Blender.app/Contents/MacOS/Blender
+ 6032   1.5 02-20:46:50 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+-- trellis:
+== 06:25:03 after nth1024 T512 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  98.5 02-20:54:30 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749   4.5 02-13:21:17 claude
+ 6276   2.9 02-20:47:00 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+  686   2.4 02-20:55:36 /usr/libexec/sysmond
+  926   1.8 02-20:54:31 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+95222   1.3 01-16:25:26 /Applications/Blender.app/Contents/MacOS/Blender
+  970   1.2 02-20:54:30 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+-- trellis:

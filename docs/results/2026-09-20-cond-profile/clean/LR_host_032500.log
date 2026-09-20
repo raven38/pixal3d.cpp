@@ -1,0 +1,126 @@
+views: 4  S=512 R=32 naf_T=512 mesh_scale=1.0000  chunk=0
+coords: sparse N=3872 (gather 対象 3872)
+ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
+ggml_metal_library_init: using embedded metal library
+ggml_metal_library_init: loaded in 0.007 sec
+ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
+ggml_metal_device_init: GPU name:   MTL0 (Apple M4 Max)
+ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
+ggml_metal_device_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_device_init: GPU family: MTLGPUFamilyMetal4  (5002)
+ggml_metal_device_init: simdgroup reduction   = true
+ggml_metal_device_init: simdgroup matrix mul. = true
+ggml_metal_device_init: has unified memory    = true
+ggml_metal_device_init: has bfloat            = true
+ggml_metal_device_init: has tensor            = false
+ggml_metal_device_init: use residency sets    = true
+ggml_metal_device_init: use shared buffers    = true
+ggml_metal_device_init: recommendedMaxWorkingSetSize  = 55662.79 MB
+ggml_metal_init: allocating
+ggml_metal_init: found device: Apple M4 Max
+ggml_metal_init: picking default device: Apple M4 Max
+ggml_metal_init: use fusion         = true
+ggml_metal_init: use concurrency    = true
+ggml_metal_init: use graph optimize = true
+[trellis] using MTL0 (53084 MB)
+ggml_metal_init: allocating
+ggml_metal_init: found device: Apple M4 Max
+ggml_metal_init: picking default device: Apple M4 Max
+ggml_metal_init: use fusion         = true
+ggml_metal_init: use concurrency    = true
+ggml_metal_init: use graph optimize = true
+[trellis] using MTL0 (53084 MB)
+backend: MTL0
+      [cond-v] cond_slat S=512 R=32 T=512: alloc out.proj 256 MB + calc_mats (0.00s)
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_cpy_f16_f32', name = 'kernel_cpy_f16_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_cpy_f16_f32                            0x1037996d0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_concat', name = 'kernel_concat'
+ggml_metal_library_compile_pipeline: loaded kernel_concat                                 0x103799f50 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_im2col_f16', name = 'kernel_im2col_f16'
+ggml_metal_library_compile_pipeline: loaded kernel_im2col_f16                             0x10379a7d0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_f16_f16', name = 'kernel_mul_mm_f16_f16_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1'
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f16_f16_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1      0x10379b050 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_cpy_f32_f32', name = 'kernel_cpy_f32_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_cpy_f32_f32                            0x10379b8d0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_bin_fuse_f32_f32_f32_4', name = 'kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=0_cb=0'
+ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=0_cb=0      0x10379bc50 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_norm_mul_add_f32_4', name = 'kernel_norm_mul_add_f32_4'
+ggml_metal_library_compile_pipeline: loaded kernel_norm_mul_add_f32_4                     0x10379bfd0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_q8_0_f32', name = 'kernel_mul_mm_q8_0_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1'
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_q8_0_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1      0x10379c350 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_bin_fuse_f32_f32_f32_4', name = 'kernel_bin_fuse_f32_f32_f32_4_op=2_nf=1_rb=0_cb=0'
+ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_4_op=2_nf=1_rb=0_cb=0      0x742f5c000 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_unary_f32_f32_4', name = 'kernel_unary_f32_f32_4_op=10_cnt=0'
+ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=10_cnt=0            0x742f5c380 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_f32_f32', name = 'kernel_mul_mm_f32_f32_bci=0_bco=1_ne12=16_ne13=1_r2=1_r3=1'
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f32_f32_bci=0_bco=1_ne12=16_ne13=1_r2=1_r3=1      0x742f5c700 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_soft_max_f32', name = 'kernel_soft_max_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_soft_max_f32                           0x742f5ca80 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_f32_f32', name = 'kernel_mul_mm_f32_f32_bci=1_bco=1_ne12=16_ne13=1_r2=1_r3=1'
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f32_f32_bci=1_bco=1_ne12=16_ne13=1_r2=1_r3=1      0x742f5ce00 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_unary_f32_f32_4', name = 'kernel_unary_f32_f32_4_op=104_cnt=0'
+ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=104_cnt=0           0x742f5d180 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_norm_f32_4', name = 'kernel_norm_f32_4'
+ggml_metal_library_compile_pipeline: loaded kernel_norm_f32_4                             0x742f5d880 | th_max = 1024 | th_width =   32
+      [cond-v] dinov3 S=512 ntok=1029: build+alloc 0.00 | upload 0.00 | compute 0.12 | readback 0.00 | free 0.00  (activations 88 MB)
+      [cond-v] naf_ggml S=512 T=512 h=32 w=32 nodes=208 generic=0 direct_conv=0 activations=2832.3 MB output=1024.0 MB
+      [cond-v] naf_ggml S=512 T=512 graph alloc      +    53.8 ms  @     53.8 ms
+      [cond-v] naf_ggml S=512 T=512 inputs           +   148.5 ms  @    202.3 ms
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_get_rows_f32', name = 'kernel_get_rows_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_get_rows_f32                           0x742f5df80 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mv_f16_f16_short', name = 'kernel_mul_mv_f16_f16_short_nsg=1_ne12=1_r2=1_r3=1'
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mv_f16_f16_short_nsg=1_ne12=1_r2=1_r3=1      0x742f5e300 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_bin_fuse_f32_f32_f32', name = 'kernel_bin_fuse_f32_f32_f32_op=0_nf=1_rb=0_cb=1'
+ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_op=0_nf=1_rb=0_cb=1      0x742f5e680 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_group_norm_f32', name = 'kernel_group_norm_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_group_norm_f32                         0x742f5ea00 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_bin_fuse_f32_f32_f32', name = 'kernel_bin_fuse_f32_f32_f32_op=2_nf=1_rb=0_cb=1'
+ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_op=2_nf=1_rb=0_cb=1      0x742f5ed80 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_unary_f32_f32_4', name = 'kernel_unary_f32_f32_4_op=106_cnt=0'
+ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=106_cnt=0           0x742f5f100 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_pad_reflect_1d_f32', name = 'kernel_pad_reflect_1d_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_pad_reflect_1d_f32                     0x742f5f800 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_unary_f32_f32_4', name = 'kernel_unary_f32_f32_4_op=108_cnt=0'
+ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=108_cnt=0           0x742f5fb80 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_sum_rows_f32_f32_4', name = 'kernel_sum_rows_f32_f32_4_op=10'
+ggml_metal_library_compile_pipeline: loaded kernel_sum_rows_f32_f32_4_op=10               0x742fb0000 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_f32_f32', name = 'kernel_mul_mm_f32_f32_bci=0_bco=1_ne12=4_ne13=1024_r2=1_r3=1'
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f32_f32_bci=0_bco=1_ne12=4_ne13=1024_r2=1_r3=1      0x742fb0380 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_f32_f32', name = 'kernel_mul_mm_f32_f32_bci=1_bco=0_ne12=4_ne13=1024_r2=1_r3=1'
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f32_f32_bci=1_bco=0_ne12=4_ne13=1024_r2=1_r3=1      0x742fb0700 | th_max = 1024 | th_width =   32
+      [cond-v] naf_ggml S=512 T=512 graph compute    +  1543.4 ms  @   1745.7 ms
+      [cond-v] naf_ggml S=512 T=512 readback         +   132.3 ms  @   1878.0 ms
+      [cond-v] naf_ggml S=512 T=512 unpermute        +  1251.5 ms  @   3129.4 ms
+      [cond-v] naf_ggml S=512 T=512 free             +     3.1 ms  @   3132.5 ms
+      [cond-v] cond_slat view 0: normalize 0.00 | dino 0.12 | chw 0.00 | lr_proj 0.06 | naf 3.13 | hr_proj 0.22 | accum 0.01  (view 3.54s)
+      [cond-v] dinov3 S=512 ntok=1029: build+alloc 0.00 | upload 0.00 | compute 0.12 | readback 0.00 | free 0.00  (activations 88 MB)
+      [cond-v] naf_ggml S=512 T=512 h=32 w=32 nodes=208 generic=0 direct_conv=0 activations=2832.3 MB output=1024.0 MB
+      [cond-v] naf_ggml S=512 T=512 graph alloc      +    53.4 ms  @     53.4 ms
+      [cond-v] naf_ggml S=512 T=512 inputs           +   144.4 ms  @    197.8 ms
+      [cond-v] naf_ggml S=512 T=512 graph compute    +  1542.2 ms  @   1740.0 ms
+      [cond-v] naf_ggml S=512 T=512 readback         +    68.9 ms  @   1808.9 ms
+      [cond-v] naf_ggml S=512 T=512 unpermute        +  1177.7 ms  @   2986.6 ms
+      [cond-v] naf_ggml S=512 T=512 free             +     3.3 ms  @   2989.9 ms
+      [cond-v] cond_slat view 1: normalize 0.00 | dino 0.12 | chw 0.00 | lr_proj 0.05 | naf 2.99 | hr_proj 0.23 | accum 0.01  (view 3.40s)
+      [cond-v] dinov3 S=512 ntok=1029: build+alloc 0.00 | upload 0.00 | compute 0.12 | readback 0.00 | free 0.00  (activations 88 MB)
+      [cond-v] naf_ggml S=512 T=512 h=32 w=32 nodes=208 generic=0 direct_conv=0 activations=2832.3 MB output=1024.0 MB
+      [cond-v] naf_ggml S=512 T=512 graph alloc      +    54.0 ms  @     54.0 ms
+      [cond-v] naf_ggml S=512 T=512 inputs           +   147.0 ms  @    201.0 ms
+      [cond-v] naf_ggml S=512 T=512 graph compute    +  1545.1 ms  @   1746.1 ms
+      [cond-v] naf_ggml S=512 T=512 readback         +    74.3 ms  @   1820.4 ms
+      [cond-v] naf_ggml S=512 T=512 unpermute        +  1237.1 ms  @   3057.5 ms
+      [cond-v] naf_ggml S=512 T=512 free             +     3.4 ms  @   3060.9 ms
+      [cond-v] cond_slat view 2: normalize 0.00 | dino 0.12 | chw 0.00 | lr_proj 0.05 | naf 3.06 | hr_proj 0.22 | accum 0.01  (view 3.46s)
+      [cond-v] dinov3 S=512 ntok=1029: build+alloc 0.00 | upload 0.00 | compute 0.12 | readback 0.00 | free 0.00  (activations 88 MB)
+      [cond-v] naf_ggml S=512 T=512 h=32 w=32 nodes=208 generic=0 direct_conv=0 activations=2832.3 MB output=1024.0 MB
+      [cond-v] naf_ggml S=512 T=512 graph alloc      +    55.0 ms  @     55.0 ms
+      [cond-v] naf_ggml S=512 T=512 inputs           +   154.7 ms  @    209.7 ms
+      [cond-v] naf_ggml S=512 T=512 graph compute    +  1547.4 ms  @   1757.2 ms
+      [cond-v] naf_ggml S=512 T=512 readback         +    68.8 ms  @   1825.9 ms
+      [cond-v] naf_ggml S=512 T=512 unpermute        +  1151.7 ms  @   2977.6 ms
+      [cond-v] naf_ggml S=512 T=512 free             +     3.3 ms  @   2980.9 ms
+      [cond-v] cond_slat view 3: normalize 0.00 | dino 0.12 | chw 0.00 | lr_proj 0.05 | naf 2.98 | hr_proj 0.23 | accum 0.01  (view 3.39s)
+host path: 13.8 s
+ggml_metal_free: deallocating
+ggml_metal_free: deallocating
+COND_TEX: PASS

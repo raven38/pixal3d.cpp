@@ -1,0 +1,6 @@
+[1/6] Building CXX object thirdparty/ggml/src/ggml-metal/CMakeFiles/ggml-metal.dir/ggml-metal-ops.cpp.o
+[2/6] Linking CXX shared library libggml-metal.0.15.1.dylib
+[3/6] Creating library symlink libggml-metal.0.dylib libggml-metal.dylib
+[4/6] Linking CXX shared library libggml.0.15.1.dylib
+[5/6] Creating library symlink libggml.0.dylib libggml.dylib
+[6/6] Linking CXX executable trellis-test-pixal3d-cond-tex

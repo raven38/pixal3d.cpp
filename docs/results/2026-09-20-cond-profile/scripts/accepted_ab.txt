@@ -1,0 +1,26 @@
+# 事前基準（他 trellis 無し・CPU 50% 超の継続無し・前窓 90 s に他 trellis 無し。suggestd は共通背景として除外）で
+# clean と判定した A/B ログ（scripts/classify_runs.py の出力から機械的に選択）
+# clean/（1 回目、実行ごとのゲート無し）
+T1024_gpu_030138.log
+T1024_host_030310.log
+T1024_host_030525.log
+T512_gpu_031256.log
+T512_host_031430.log
+T512_host_031613.log
+LR_host_032346.log
+LR_host_032500.log
+LR_gpu_043855.log
+# clean2/（再計測、実行ごとに 90 s ゲート）
+T1024 gpu_050625.log
+T1024 gpu_051742.log
+T1024 gpu_052514.log
+T512 gpu_051412.log
+T512 gpu_052104.log
+T512 host_050958.log
+T512 host_053307.log
+LR gpu_052847.log
+# clean3/（前窓に他 trellis が居た 1 回目の 4 本の置き換え。T512 gpu 07:01 と T1024 host 08:50 は実行中に他 trellis が入り除外）
+T1024 host_063239.log
+LR host_065737.log
+LR gpu_065922.log
+LR host_091657.log

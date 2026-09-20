@@ -1,0 +1,12 @@
+[1/12] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond.cpp.o
+[2/12] Building CXX object CMakeFiles/trellis_core.dir/src/naf_gpu.cpp.o
+[3/12] Building CXX object CMakeFiles/trellis-test-pixal3d-cond-tex.dir/src/test_pixal3d_cond_tex.cpp.o
+[4/12] Building CXX object thirdparty/ggml/src/ggml-metal/CMakeFiles/ggml-metal.dir/ggml-metal-ops.cpp.o
+[5/12] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond_gpu.cpp.o
+[6/12] Linking CXX shared library libggml-metal.0.15.1.dylib
+[7/12] Creating library symlink libggml-metal.0.dylib libggml-metal.dylib
+[8/12] Linking CXX shared library libggml.0.15.1.dylib
+[9/12] Creating library symlink libggml.0.dylib libggml.dylib
+[10/12] Building CXX object CMakeFiles/trellis_core.dir/src/naf.cpp.o
+[11/12] Linking CXX static library libtrellis_core.a
+[12/12] Linking CXX executable trellis-test-pixal3d-cond-tex
