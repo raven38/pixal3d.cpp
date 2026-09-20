@@ -313,6 +313,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;
     trellis::g_no_fa = cfg.no_fa;
     trellis::g_profile = cfg.profile;
+    trellis::g_profile_cond = cfg.profile_cond;
     trellis::g_require_gpu = cfg.require_gpu;
     trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;
@@ -342,15 +343,30 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     if (!mv_check_weights(W, cfg.pixal3d_weights, do_tex)) return 1;
     printf("      flow weights: %s  (load %.1fs)\n", cfg.pixal3d_weights.c_str(), now() - t0);
     double t_stage = now();
+    // [cond] laps: exclusive, gap-free splits of each stage's wall time (load / conditioning /
+    // gather / upsample / flow / decode ...), printed always like the [post] laps. Every lap
+    // restarts the clock, so the per-stage "accounted" line equals the stage total by
+    // construction (the `[flow]` line the sampler prints sits inside the `flow` lap; do not add
+    // the two). Finer per-view / per-decoder-stage laps are behind --profile-cond ([cond-v]).
+    double t_lap = t_stage, cond_acc = 0.0;
+    auto cond_lap = [&](const char* what) {
+        const double t = now(), dt = t - t_lap;
+        printf("      [cond] %s (%.1fs)\n", what, dt);
+        cond_acc += dt; t_lap = t;
+    };
+    auto cond_stage_begin = [&]() { t_stage = now(); t_lap = t_stage; cond_acc = 0.0; };
+    auto cond_stage_end = [&](const char* stage) { printf("      [cond] %s accounted (%.1fs)\n", stage, cond_acc); };
 
     printf("[2/6] SS proj conditioning + flow\n");
     vector<std::array<int,3>> coords;
     {
         trellis::Pixal3dCond c;
         { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
+          cond_lap("load dinov3");
           c = trellis::pixal3d_cond_ss(dino, views512, 512, 16, mesh_scale);
           dino.free(); }
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(c.proj.size(), 0.0f);
+        cond_lap("cond_ss S=512 R=16 (host path)");
 
         trellis::Model m = trellis::Model::load(W.ss, gpu);
         trellis::DiTParams p; p.in_ch = 8; p.out_ch = 8; p.d_cond = 1024; p.cast_f32 = F32;
@@ -360,16 +376,19 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
         vector<float> z = trellis::sample_flow(fwd, noise(8*4096), c.global.data(), neg_g.data(), c.proj.data(), neg_p.data(), sp);
         delete run; m.free();
+        cond_lap("flow (load + runner + sampler)");
         vector<float> zdec(8*4096);
         for (int cc = 0; cc < 8; ++cc) for (int spx = 0; spx < 4096; ++spx) zdec[(size_t)cc*4096 + spx] = z[cc + 8*spx];
         trellis::Model d = trellis::Model::load(M + "/ss_dec.gguf", gpu);
         vector<float> logits = trellis::ss_decode(d, zdec); d.free();
         coords = trellis::ss_coords(logits, 64, 32);
+        cond_lap("ss_decode (load + decode + coords)");
     }
     if (cfg.voxply) { FILE*f=fopen("out/myvox.ply","wb"); fprintf(f,"ply\nformat binary_little_endian 1.0\nelement vertex %zu\nproperty float x\nproperty float y\nproperty float z\nelement face 0\nproperty list uchar int vertex_indices\nend_header\n",coords.size()); for(auto&c:coords){float pp[3]={(c[0]+0.5f)/32-0.5f,(c[1]+0.5f)/32-0.5f,(c[2]+0.5f)/32-0.5f}; fwrite(pp,4,3,f);} fclose(f); }
+    cond_stage_end("SS");
     printf("      active voxels @res32 = %d  (%.1fs)\n", (int)coords.size(), now() - t_stage);
     if (coords.empty()) { fprintf(stderr, "no voxels produced\n"); return 1; }
-    t_stage = now();
+    cond_stage_begin();
 
     printf("[3/6] shape SLAT flow (LR 512 -> upsample -> HR %d cascade, max_tok=%d)\n", cfg.hr_res, cfg.max_tokens);
     vector<float> lr_norm, lr_dn;
@@ -377,26 +396,34 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         trellis::Pixal3dCond c;
         { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
           trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
+          cond_lap("load dinov3 + naf");
           trellis::Pixal3dSlatCondParams prm{512, 32, 512, mesh_scale};
           c = trellis::pixal3d_cond_slat(dino, naf, views512, prm);
           dino.free(); naf.free(); }
+        cond_lap("cond_slat S=512 R=32 T=512 (host path, dense R^3)");
         vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, 32, c.d_proj, coords);
         c.proj.clear(); c.proj.shrink_to_fit();
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * coords.size());
+        cond_lap("gather_proj + noise");
         lr_norm = mv_shape_flow(W.shape512, cfg, F32, gpu, coords,
                                 c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
         if (lr_norm.empty()) return 1;
+        cond_lap("flow (load + runner + sampler)");
     }
     lr_dn.resize(lr_norm.size());
     for (size_t n = 0; n < coords.size(); ++n) for (int c = 0; c < 32; ++c)
         lr_dn[(size_t)c + 32*n] = lr_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
     slat_stats("LR slat (res32, MV)", lr_dn);
-    printf("      LR shape SLAT (%.1fs)\n", now() - t_stage); t_stage = now();
+    cond_lap("denorm + stats");
+    cond_stage_end("LR shape SLAT");
+    printf("      LR shape SLAT (%.1fs)\n", now() - t_stage); cond_stage_begin();
 
     vector<std::array<int,3>> hr_coords;
     { trellis::Model m = trellis::Model::load(M + "/shape_dec.gguf", gpu);
+      cond_lap("load shape_dec");
       hr_coords = trellis::shape_upsample(m, lr_dn, coords); m.free(); }
+    cond_lap("shape_upsample (decoder stages, coords only)");
     int hr_res = cfg.hr_res;
     vector<std::array<int,3>> shc;
     for (;;) {
@@ -427,22 +454,27 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     }
     const int grid = hr_res / 16;
     const int RES = hr_res;
+    cond_lap("quantize res512 -> grid (std::set)");
 
     vector<float> slat_norm;
     {
         trellis::Pixal3dCond c;
         { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
           trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
+          cond_lap("load dinov3 + naf");
           trellis::Pixal3dSlatCondParams prm{1024, grid, 512, mesh_scale};
           c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
           dino.free(); naf.free(); }
+        cond_lap("cond_slat S=1024 R=grid T=512 (host path, dense R^3)");
         vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
         c.proj.clear(); c.proj.shrink_to_fit();
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * shc.size());
+        cond_lap("gather_proj + noise");
         slat_norm = mv_shape_flow(W.shape1024, cfg, F32, gpu, shc,
                                   c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
         if (slat_norm.empty()) return 1;
+        cond_lap("flow (load + runner + sampler)");
     }
     const int N = (int)shc.size();
     vector<float> slat_dn(slat_norm.size());
@@ -456,21 +488,28 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             fwrite(slat_dn.data(),4,slat_dn.size(),f); fclose(f);
             printf("      [dump] /tmp/hr_slat.bin: N=%d res=%d feats=%zu\n", n, res, slat_dn.size()); }
     }
-    printf("      HR shape SLAT (%.1fs)\n", now() - t_stage); t_stage = now();
+    cond_lap("denorm + stats (+ dump)");
+    cond_stage_end("HR shape SLAT");
+    printf("      HR shape SLAT (%.1fs)\n", now() - t_stage); cond_stage_begin();
 
     printf("[4/6] FlexiDualGrid shape decode -> mesh @res%d\n", RES);
     trellis::Mesh mesh;
     trellis::ShapeOut so;
     {
         trellis::Model m = trellis::Model::load(M + "/shape_dec.gguf", gpu);
+        cond_lap("load shape_dec");
         so = trellis::shape_decode(m, slat_dn, shc, RES); m.free();
+        cond_lap("shape_decode (decoder stages)");
         printf("      decoded voxels @res%d = %d\n", so.res, (int)so.coords.size());
         mesh = trellis::dual_grid_to_mesh(so);
+        cond_lap("dual_grid_to_mesh");
     }
     printf("      mesh V=%d F=%d\n", mesh.V(), mesh.F());
     { const int nh = trellis::fill_holes(mesh.verts, mesh.faces, 3e-2f);
       if (nh) printf("      filled %d small holes -> V=%d F=%d\n", nh, mesh.V(), mesh.F()); }
-    printf("      shape decode (%.1fs)\n", now() - t_stage); t_stage = now();
+    cond_lap("fill_holes");
+    cond_stage_end("shape decode");
+    printf("      shape decode (%.1fs)\n", now() - t_stage); cond_stage_begin();
 
     vector<float> colors, pbr6;
     const vector<std::array<int,3>>* pbr_coords = &so.coords;
@@ -482,12 +521,15 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             trellis::Pixal3dCond c;
             { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
               trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
+              cond_lap("load dinov3 + naf");
               trellis::Pixal3dSlatCondParams prm{1024, grid, 1024, mesh_scale};
               c = trellis::pixal3d_cond_slat(dino, naf, views1024, prm);
               dino.free(); naf.free(); }
+            cond_lap("cond_slat S=1024 R=grid T=1024 (host path, dense R^3)");
             vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, grid, c.d_proj, shc);
             c.proj.clear(); c.proj.shrink_to_fit();
             vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
+            cond_lap("gather_proj");
 
             trellis::Model m = trellis::Model::load(W.tex, gpu);
             trellis::DiTParams p; p.in_ch = 64; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
@@ -506,10 +548,13 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             texlat = trellis::sample_flow(fwdp, noise((size_t)32*N), c.global.data(), neg_g.data(), proj_sp.data(), neg_p.data(), sp);
             delete run; m.free();
             for (int n = 0; n < N; ++n) for (int cc = 0; cc < 32; ++cc) texlat[(size_t)cc + 32*n] = texlat[(size_t)cc + 32*n]*TEX_STD[cc] + TEX_MEAN[cc];
+            cond_lap("flow (load + runner + sampler + denorm)");
         }
         {
             trellis::Model m = trellis::Model::load(M + "/tex_dec.gguf", gpu);
+            cond_lap("load tex_dec");
             vector<float> pbr = trellis::tex_decode(m, texlat, shc, so.subs); m.free();
+            cond_lap("tex_decode (decoder stages)");
             const int Mv = (int)pbr_coords->size();
             colors.resize((size_t)Mv * 3); pbr6.resize((size_t)Mv * 6);
             auto cl = [](float v){ return v < 0 ? 0.f : (v > 1 ? 1.f : v); };
@@ -523,6 +568,8 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
             if (colors.size() < (size_t)mesh.V() * 3) colors.resize((size_t)mesh.V() * 3, 0.5f);
             else colors.clear();
         }
+        cond_lap("pbr unpack");
+        cond_stage_end("texture SLAT + decode");
         printf("      texture SLAT + decode (%.1fs)\n", now() - t_stage); t_stage = now();
     }
 
@@ -694,6 +741,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
     const bool F32 = cfg.f32; trellis::g_sparse_cast_f32 = F32;  // f16 default (rope bug was the real issue)
     trellis::g_no_fa = cfg.no_fa;
     trellis::g_profile = cfg.profile;
+    trellis::g_profile_cond = cfg.profile_cond;
     trellis::g_require_gpu = cfg.require_gpu;
     trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;

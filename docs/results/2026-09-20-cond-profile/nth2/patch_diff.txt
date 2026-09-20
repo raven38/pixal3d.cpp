@@ -1,0 +1,16 @@
+diff --git a/src/ggml-metal/ggml-metal-ops.cpp b/src/ggml-metal/ggml-metal-ops.cpp
+index e2ce56e9..da302b0c 100644
+--- a/src/ggml-metal/ggml-metal-ops.cpp
++++ b/src/ggml-metal/ggml-metal-ops.cpp
+@@ -3324,6 +3324,9 @@ int ggml_metal_op_group_norm(ggml_metal_op_t ctx, int idx) {
+     auto pipeline = ggml_metal_library_get_pipeline_group_norm(lib, op);
+ 
+     int nth = 32; // SIMD width
++    // DIAGNOSTIC (pixal3d #33, group_norm only): scale the threadgroup up to the pipeline max; the kernel
++    // already reduces across SIMD groups through the 32-float smem buffer.
++    while (nth < 1024 && nth < ggml_metal_pipeline_max_theads_per_threadgroup(pipeline)) nth *= 2;
+     //while (nth < ne00/4 && nth < ggml_metal_pipeline_max_theads_per_threadgroup(pipeline)) {
+     //    nth *= 2;
+     //}
+
+hunks: 1

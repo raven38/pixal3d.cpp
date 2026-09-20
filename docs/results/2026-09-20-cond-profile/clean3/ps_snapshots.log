@@ -1,0 +1,204 @@
+== 06:32:39 before T1024 host
+  PID  %CPU     ELAPSED ARGS
+  953  96.4 02-21:02:06 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926  10.9 02-21:02:07 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 6053   8.3 02-20:54:36 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+59065   3.9    14:00:33 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  465   3.5 02-21:03:29 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6167   3.5 02-20:54:36 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+  338   2.6 02-21:03:30 /usr/libexec/smd
+-- trellis:
+== 06:33:10 periodic
+  PID  %CPU     ELAPSED ARGS
+11132  99.7       00:31 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+  953  85.8 02-21:02:37 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+62128  76.9 01-18:29:11 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523  14.2 02-21:04:00 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 2531   9.4 02-21:01:17 Raycast Helper (Extensions)         
+  465   7.6 02-21:04:00 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1464   7.4 02-21:02:20 /Applications/Raycast.app/Contents/MacOS/Raycast
+-- trellis:
+11132  99.0       00:31 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+== 06:33:40 periodic
+  PID  %CPU     ELAPSED ARGS
+  953  97.5 02-21:03:07 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   7.0 02-21:04:30 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   4.7 02-21:04:31 /usr/libexec/smd
+  418   4.5 02-21:04:31 /usr/libexec/trustd
+  926   3.7 02-21:03:08 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 2085   2.0 02-21:02:35 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+95222   1.7 01-16:34:03 /Applications/Blender.app/Contents/MacOS/Blender
+-- trellis:
+11132   0.1       01:01 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+== 06:33:48 after T1024 host
+  PID  %CPU     ELAPSED ARGS
+  953  98.7 02-21:03:15 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  40.1 02-21:04:21 /usr/libexec/sysmond
+  465   1.9 02-21:04:38 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1193   1.8 02-21:03:11 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+16286   1.7    06:43:33 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+95222   1.3 01-16:34:11 /Applications/Blender.app/Contents/MacOS/Blender
+59383   1.3    04:25:28 claude
+-- trellis:
+== 06:57:37 before LR host
+  PID  %CPU     ELAPSED ARGS
+  953  96.3 02-21:27:04 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+    1  27.0 02-21:31:11 /sbin/launchd
+ 6183   8.2 02-21:19:34 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  686   8.1 02-21:28:10 /usr/libexec/sysmond
+ 2085   4.5 02-21:26:32 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+59383   3.6    04:49:17 claude
+58284   3.3    04:49:27 claude
+-- trellis:
+== 06:57:51 after LR host
+  PID  %CPU     ELAPSED ARGS
+  953  97.9 02-21:27:18 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 2085   1.5 02-21:26:46 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+59383   1.3    04:49:31 claude
+95222   1.3 01-16:58:14 /Applications/Blender.app/Contents/MacOS/Blender
+29954   1.2    05:02:38 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+ 6053   0.8 02-21:19:48 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+  465   0.7 02-21:28:41 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 06:59:22 before LR gpu
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 02-21:28:49 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+16286   7.6    07:09:07 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  465   6.0 02-21:30:12 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+29954   5.5    05:04:09 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+59383   5.0    04:51:02 claude
+ 6069   4.9 02-21:21:19 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+ 1193   4.8 02-21:28:45 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+== 06:59:29 after LR gpu
+  PID  %CPU     ELAPSED ARGS
+  953  96.9 02-21:28:56 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   8.0 02-21:30:02 /usr/libexec/sysmond
+  523   5.1 02-21:30:19 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+29954   4.7    05:04:16 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+  926   4.7 02-21:28:57 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+16286   2.6    07:09:14 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  924   2.5 02-21:28:57 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+== 07:01:00 before T512 gpu
+  PID  %CPU     ELAPSED ARGS
+  953  89.8 02-21:30:27 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+38316  55.3       00:09 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-test-fa-oracle 17612 0
+  523  29.6 02-21:31:50 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924  17.4 02-21:30:28 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  970  12.9 02-21:30:27 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  414  12.3 02-21:31:51 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow console
+  465   5.1 02-21:31:50 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+38316  55.3       00:09 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-test-fa-oracle 17612 0
+== 07:01:30 periodic
+  PID  %CPU     ELAPSED ARGS
+  998   4.2 02-21:30:57 /System/Library/PrivateFrameworks/AMPDevices.framework/Versions/A/Support/AMPDeviceDiscoveryAgent --launchd
+  465   3.1 02-21:32:20 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   2.7 02-21:32:21 /usr/libexec/smd
+  418   2.6 02-21:32:21 /usr/libexec/trustd
+  560   2.1 02-21:32:19 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN com.apple.bc
+  419   1.7 02-21:32:21 /usr/libexec/runningboardd
+16286   1.4    07:11:15 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+38818   0.1       00:30 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+== 07:01:30 after T512 gpu
+  PID  %CPU     ELAPSED ARGS
+  686   5.5 02-21:32:04 /usr/libexec/sysmond
+57872   4.3    06:43:07 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+  523   2.9 02-21:32:21 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   2.5 02-21:30:59 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   2.1 02-21:32:21 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+59383   2.0    04:53:11 claude
+  338   1.4 02-21:32:22 /usr/libexec/smd
+-- trellis:
+== 08:50:53 before T1024 host
+  PID  %CPU     ELAPSED ARGS
+  953  98.7 02-23:20:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+59383   4.4    06:42:33 claude
+ 2085   3.0 02-23:19:48 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  686   2.2 02-23:21:26 /usr/libexec/sysmond
+95222   1.8 01-18:51:16 /Applications/Blender.app/Contents/MacOS/Blender
+  924   1.8 02-23:20:21 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   1.4 02-23:21:43 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+16426   0.2       00:04 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+== 08:51:23 periodic
+  PID  %CPU     ELAPSED ARGS
+16502  99.1       00:30 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+16508  98.1       00:30 .venv/bin/python tools/render_glb.py /private/tmp/claude-111520707/-Users-s25705-Downloads-pixal3d-cpp-feat-browser-
+  953  94.4 02-23:20:50 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  944   4.2 02-23:20:50 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+  523   2.1 02-23:22:13 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57915   1.7    06:43:40 claude
+ 5923   1.7 02-23:13:20 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+-- trellis:
+16502  99.1       00:30 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+16426   0.0       00:34 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+== 08:51:53 periodic
+  PID  %CPU     ELAPSED ARGS
+  953  93.9 02-23:21:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+16502  75.8       01:00 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+16426   8.4       01:04 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+59383   6.8    06:43:33 claude
+  523   6.4 02-23:22:43 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1193   5.4 02-23:21:16 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+57872   4.5    08:33:29 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+-- trellis:
+16502  84.4       01:00 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+16426   5.2       01:04 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+== 08:52:23 periodic
+  PID  %CPU     ELAPSED ARGS
+16502  99.0       01:30 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+  953  98.3 02-23:21:50 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6053   6.0 02-23:14:20 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+  419   2.0 02-23:23:14 /usr/libexec/runningboardd
+95222   1.6 01-18:52:46 /Applications/Blender.app/Contents/MacOS/Blender
+  944   1.6 02-23:21:50 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+59383   1.4    06:44:03 claude
+-- trellis:
+16502  99.0       01:30 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+16426   0.1       01:34 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+== 08:52:53 periodic
+  PID  %CPU     ELAPSED ARGS
+16502  97.9       02:00 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+  953  97.5 02-23:22:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+16426  82.0       02:04 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+  970  11.4 02-23:22:20 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  686   5.2 02-23:23:26 /usr/libexec/sysmond
+ 5887   4.3 02-23:14:50 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+ 5809   3.5 02-23:14:50 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+-- trellis:
+16502  98.8       02:00 /Users/s25705/Downloads/pixal3d-cond-profile/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pi
+16426  87.3       02:04 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+== 08:52:58 after T1024 host
+  PID  %CPU     ELAPSED ARGS
+  953  95.3 02-23:22:25 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   7.0 02-23:23:31 /usr/libexec/sysmond
+  523   4.0 02-23:23:48 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  926   3.6 02-23:22:26 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+16286   3.2    09:02:43 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+59383   3.2    06:44:38 claude
+  924   2.5 02-23:22:26 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+16426   0.1       02:09 /Users/s25705/Downloads/pixal3d.cpp-feat-browser-partial-e2e-integrate/build-metal-fa/trellis-cli --views /Users/s25
+== 09:16:57 before LR host
+  PID  %CPU     ELAPSED ARGS
+  953  96.2 02-23:46:24 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+57872  11.8    08:58:33 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+59383   4.4    07:08:37 claude
+  465   2.3 02-23:47:47 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   2.0 02-23:47:47 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  517   2.0 02-23:47:47 /Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-D
+90749   1.9 02-16:13:11 claude
+-- trellis:
+== 09:17:11 after LR host
+  PID  %CPU     ELAPSED ARGS
+  953  94.7 02-23:46:38 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+29954   3.0    07:21:58 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+ 6069   2.3 02-23:39:08 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+ 6276   2.3 02-23:39:08 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+  523   2.0 02-23:48:01 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  419   1.6 02-23:48:02 /usr/libexec/runningboardd
+59383   1.4    07:08:51 claude
+-- trellis:

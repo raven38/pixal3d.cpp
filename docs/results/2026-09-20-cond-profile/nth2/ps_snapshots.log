@@ -1,0 +1,60 @@
+== 09:28:33 before nth1024gn T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  96.7 02-23:58:00 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+59383  14.0    07:20:13 claude
+ 5809  10.8 02-23:50:30 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+58284   3.6    07:20:23 claude
+  924   2.5 02-23:58:01 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   1.8 02-23:59:23 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  926   1.8 02-23:58:01 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+== 09:28:49 after nth1024gn T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  97.4 02-23:58:16 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926   7.7 02-23:58:17 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  465   4.5 02-23:59:39 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   3.0 02-23:59:40 /usr/libexec/smd
+  418   2.7 02-23:59:40 /usr/libexec/trustd
+  380   2.0 02-23:59:40 /System/Library/CoreServices/launchservicesd
+59383   1.9    07:20:29 claude
+-- trellis:
+== 09:30:20 before nth1024gn T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  96.4 02-23:59:47 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 1464  10.4 02-23:59:30 /Applications/Raycast.app/Contents/MacOS/Raycast
+ 6227   6.2 02-23:52:17 claude --resume 73f40f78-86d4-4e55-b7b0-d5f1b6d058d5
+  380   3.0 03-00:01:11 /System/Library/CoreServices/launchservicesd
+59383   2.5    07:22:00 claude
+  523   2.4 03-00:01:10 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   1.6 02-16:26:34 claude
+-- trellis:
+== 09:30:36 after nth1024gn T1024 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  98.2 03-00:00:03 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6032   5.0 02-23:52:33 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+  686   2.3 03-00:01:09 /usr/libexec/sysmond
+  465   1.9 03-00:01:26 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+95222   1.5 01-19:30:59 /Applications/Blender.app/Contents/MacOS/Blender
+  418   1.3 03-00:01:27 /usr/libexec/trustd
+  338   1.2 03-00:01:27 /usr/libexec/smd
+-- trellis:
+== 09:32:07 before nth1024gn T512 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  93.4 03-00:01:34 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   9.1 03-00:02:57 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   6.2 03-00:02:58 /usr/libexec/trustd
+  338   5.0 03-00:02:58 /usr/libexec/smd
+59383   4.7    07:23:47 claude
+16286   3.5    09:41:52 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 1193   3.0 03-00:01:30 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+== 09:32:17 after nth1024gn T512 im2col
+  PID  %CPU     ELAPSED ARGS
+  953  96.7 03-00:01:44 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  530  11.6 03-00:03:07 /usr/libexec/airportd
+  963   6.0 03-00:01:44 /System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter
+90749   5.0 02-16:28:31 claude
+  905   4.7 03-00:01:45 /System/Library/CoreServices/WiFiAgent.app/Contents/MacOS/WiFiAgent
+  944   3.5 03-00:01:44 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+16286   3.4    09:42:02 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
