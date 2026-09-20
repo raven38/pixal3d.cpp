@@ -179,9 +179,12 @@ struct GraphRun {
     ~GraphRun() { if (alloc) ggml_gallocr_free(alloc); ggml_free(c); }
     // `roots` are extra nodes to expand: writes into a preallocated `out` via ggml_cpy are
     // not reachable from `out` itself (nothing produces it), so they must be rooted explicitly.
+    // readback=false: `out` is only the last node to expand (e.g. an in-place op on a persistent
+    // tensor); nothing is copied back.
     std::vector<float> run(ggml_tensor* out, const std::vector<std::pair<ggml_tensor*, const void*>>& inputs,
-                           const std::vector<ggml_tensor*>& roots = {}, const char* tag = "c2s") {
-        ggml_set_output(out);
+                           const std::vector<ggml_tensor*>& roots = {}, const char* tag = "c2s",
+                           bool readback = true) {
+        if (readback) ggml_set_output(out);
         ggml_cgraph* g = ggml_new_graph_custom(c, kGraphNodes, false);
         for (ggml_tensor* r : roots) ggml_build_forward_expand(g, r);
         ggml_build_forward_expand(g, out);
@@ -195,6 +198,7 @@ struct GraphRun {
         trellis_graph_alloc_trace(tag, g, ggml_gallocr_get_buffer_size(alloc, 0));   // TRELLIS_DBG_ALLOC_TRACE only
         for (auto& [t, data] : inputs) ggml_backend_tensor_set(t, data, 0, ggml_nbytes(t));
         if (ggml_backend_graph_compute(m.backend, g) != GGML_STATUS_SUCCESS) throw std::runtime_error("c2s: compute failed");
+        if (!readback) { ggml_backend_synchronize(m.backend); return {}; }
         return tensor_to_f32(out);
     }
 };
@@ -287,7 +291,11 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     // res-1024 stage 3). Materialising it whole and gathering afterwards keeps it live next to
     // conv2's working set -- measured 10.1 GB for the stage. Chunking conv1 over input voxels
     // and gathering each chunk on the spot bounds it to [Cout*8, nr] instead.
-    const int64_t per_vox = (int64_t)Cout * 8 * 4;
+    // Per chunk two [Cout*8, nr] tensors are live at once (the running accumulator, which gallocr
+    // reuses in place across the 27 adds, and the current tap's matmul output) plus the tap's
+    // [Cin, nr] gather -- the alloc trace shows exactly that set, so the budget is spread over
+    // all three rather than one (at the 1500 MiB budget: 4 chunks instead of 2 at res-1024).
+    const int64_t per_vox = 2 * (int64_t)Cout * 8 * 4 + (int64_t)Cin * 4;
     const int64_t budget = chunk_budget_bytes(m, "TRELLIS_C2S_CHUNK_MB");
     int64_t chunk = std::max<int64_t>(1, budget / std::max<int64_t>(per_vox, 1));
     constexpr int64_t kMaxChunks = 24;         // node-budget floor, as in sparse_convnext
@@ -302,52 +310,82 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
         for (int32_t mm = mstart[r0]; mm < mstart[r1]; ++mm) gloc[mm] = gidx[mm] - (int32_t)(8 * r0);
     }
 
-    // ---- graph 2: conv1 -> SparseChannel2Spatial -> conv2 + skip, entirely on device ----
+    // ---- graph 2a: conv1 -> SparseChannel2Spatial -> hn (persistent) ----
+    // conv1 and conv2 used to share ONE graph. gallocr allocates every input up front and
+    // keeps each tensor until its last consumer, so at res-1024 stage 3 the conv1 input, its
+    // sentinel pad, both neighbour tables and the whole [Cout, M+1] hn were live together
+    // (gallocr 4.76 GB at 512 MiB chunks, M = 4.7M; docs/PIXAL3D_DESKTOP_VRAM.md). Only hn has
+    // to exist whole -- conv2's gather reads arbitrary rows of it -- so it is the one tensor
+    // bridged between two graphs, in its own backend buffer: 2a fills it chunk by chunk and
+    // normalises it in place, 2b reads it. Same ops, same chunk boundaries; only lifetimes change.
+    struct Persistent {
+        ggml_context* ctx = nullptr; ggml_backend_buffer_t buf = nullptr; T* t = nullptr;
+        Persistent(const Model& m, int64_t n0, int64_t n1) {
+            ctx = ggml_init({ ggml_tensor_overhead() + 256, nullptr, true });
+            t = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n0, n1);
+            buf = ggml_backend_alloc_ctx_tensors(ctx, m.backend);
+            if (!buf) { ggml_free(ctx); throw std::runtime_error("c2s: hn alloc failed"); }
+            ggml_backend_buffer_clear(buf, 0);   // column M (sentinel row) must be zero
+        }
+        ~Persistent() { if (buf) ggml_backend_buffer_free(buf); if (ctx) ggml_free(ctx); }
+    };
+    Persistent HN(m, Cout, M + 1);                      // [Cout, M+1]
+    {
+        GraphRun gr2a(m);
+        ggml_context* c = gr2a.c;
+        T* gf = ggml_new_tensor_2d(c, GGML_TYPE_F32, Cin, N); ggml_set_input(gf);
+        T* gn = ggml_new_tensor_2d(c, GGML_TYPE_I32, N, 27);  ggml_set_input(gn);
+        T* gl = ggml_new_tensor_1d(c, GGML_TYPE_I32, M);      ggml_set_input(gl);
+
+        T* h = ggml_norm(c, gf, 1e-6f);
+        h = ggml_add(c, ggml_mul(c, h, m.get(prefix + ".norm1.weight")), m.get(prefix + ".norm1.bias"));
+        h = ggml_silu(c, h);
+
+        // SparseChannel2Spatial(2). [Cout*8, nr] is contiguous, so octant o's slice of voxel i --
+        // channels (o*Cout .. o*Cout+Cout), at offset k + Cout*(o + 8*i) -- is exactly column
+        // (o + 8*i) of the free [Cout, 8*nr] reshape. The subdivision is then just a gather of the
+        // surviving columns: no host copy, no re-upload.
+        // Chunks are written straight into HN rather than concat-chained: every ggml_concat
+        // allocates a new full-size tensor beside the old one, so a chain peaks at ~2x its
+        // result -- 16.7 GB for the cottage's [64, 32.7M]. The buffer is zero-cleared, so column
+        // M -- conv2's sentinel row, which absent neighbours index -- stays zero; norm2/silu map
+        // an all-zero column to zero (norm is (0-0)/sqrt(0+eps)=0, silu(0)=0), so it survives.
+        // ggml_cpy, not ggml_set_2d_inplace: SET keeps its byte offset in int32 op_params and
+        // asserts offset < 1<<30, which these multi-GB tensors blow past. A view carries a 64-bit
+        // pointer instead. Nothing reads the writes inside this graph, so they are rooted
+        // explicitly via run()'s `roots`, expanded ahead of the in-place norm that follows them.
+        T* W1 = w32(c, m.get(prefix + ".conv1.weight"));
+        T* fz = submconv_pad(c, h, W1->ne[0]);          // built once, shared by every chunk
+        std::vector<T*> roots;
+        for (int64_t r0 = 0; r0 < N; r0 += chunk) {
+            const int64_t r1 = std::min<int64_t>(r0 + chunk, N);
+            const int32_t m0 = mstart[r0], m1 = mstart[r1];
+            if (m1 == m0) continue;                     // no octant of this chunk survived
+            T* cvc = submconv_range(c, m, prefix + ".conv1", fz, W1, gn, N, (int)r0, (int)(r1 - r0));
+            T* idx = ggml_cont(c, ggml_view_1d(c, gl, m1 - m0, (size_t)m0 * ggml_element_size(gl)));
+            T* hc  = ggml_get_rows(c, ggml_reshape_2d(c, cvc, Cout, 8 * (r1 - r0)), idx);   // [Cout, m1-m0]
+            roots.push_back(ggml_cpy(c, hc, ggml_view_2d(c, HN.t, Cout, m1 - m0,
+                                                         HN.t->nb[1], (size_t)m0 * HN.t->nb[1])));
+        }
+        // norm2 (no affine) + silu in place on HN, after every chunk has landed (node order).
+        T* hn = ggml_silu_inplace(c, ggml_norm_inplace(c, HN.t, 1e-6f));
+        gr2a.run(hn, { {gf, feats_in.data()}, {gn, nbr.data()}, {gl, gloc.data()} }, roots,
+                 (std::string(tag) + "_conv1_N" + std::to_string(N) + "_M" + std::to_string(M)).c_str(),
+                 /*readback=*/false);
+    }   // gr2a's gallocr (input, pad, conv1 working set) is released here; HN stays
+
+    // skip = x channel2spatial'd by the same gather ([Cin,N] -> [K,M]): a host memcpy per
+    // voxel, uploaded to 2b as its own input -- cheaper than keeping the [Cin,N] input alive
+    // or a second persistent buffer. Column m of the [K, 8N] reshape is feats_in[K*gidx[m] ..].
+    std::vector<float> xs_h((size_t)K * M);
+    for (int64_t mm = 0; mm < M; ++mm)
+        std::memcpy(&xs_h[(size_t)K * mm], &feats_in[(size_t)K * gidx[mm]], (size_t)K * sizeof(float));
+
+    // ---- graph 2b: conv2 + skip (+ fused head) over hn, chunked by output voxel ----
     GraphRun gr2(m);
     ggml_context* c = gr2.c;
-    T* gf  = ggml_new_tensor_2d(c, GGML_TYPE_F32, Cin, N); ggml_set_input(gf);
-    T* gn  = ggml_new_tensor_2d(c, GGML_TYPE_I32, N, 27);  ggml_set_input(gn);
-    T* gi  = ggml_new_tensor_1d(c, GGML_TYPE_I32, M);      ggml_set_input(gi);
-    T* gl  = ggml_new_tensor_1d(c, GGML_TYPE_I32, M);      ggml_set_input(gl);
     T* gn2 = ggml_new_tensor_2d(c, GGML_TYPE_I32, M, 27);  ggml_set_input(gn2);
-
-    T* h = ggml_norm(c, gf, 1e-6f);
-    h = ggml_add(c, ggml_mul(c, h, m.get(prefix + ".norm1.weight")), m.get(prefix + ".norm1.bias"));
-    h = ggml_silu(c, h);
-
-    // SparseChannel2Spatial(2). [Cout*8, nr] is contiguous, so octant o's slice of voxel i --
-    // channels (o*Cout .. o*Cout+Cout), at offset k + Cout*(o + 8*i) -- is exactly column
-    // (o + 8*i) of the free [Cout, 8*nr] reshape. The subdivision is then just a gather of the
-    // surviving columns: no host copy, no re-upload.
-    // Chunks are written into ONE [Cout, M+1] buffer rather than concat-chained: every
-    // ggml_concat allocates a new full-size tensor beside the old one, so a chain peaks at
-    // ~2x its result -- 16.7 GB for the cottage's [64, 32.7M]. ggml_pad seeds the buffer from
-    // chunk 0 and zero-fills the rest, so column M -- conv2's sentinel row, which absent
-    // neighbours index -- is already zero; norm2/silu map an all-zero column to zero
-    // (norm is (0-0)/sqrt(0+eps)=0, silu(0)=0), so it survives and submconv_pad's extra full
-    // copy of hn is gone too.
-    // ggml_cpy, not ggml_set_2d_inplace: SET keeps its byte offset in int32 op_params and
-    // asserts offset < 1<<30, which these multi-GB tensors blow past. A view carries a 64-bit
-    // pointer instead. Nothing reads the writes, so they are rooted explicitly via run()'s
-    // `roots`, expanded ahead of the consumers that follow them in the node array.
-    T* W1 = w32(c, m.get(prefix + ".conv1.weight"));
-    T* fz = submconv_pad(c, h, W1->ne[0]);          // built once, shared by every chunk
-    std::vector<T*> roots;
-    T* hraw = nullptr;
-    for (int64_t r0 = 0; r0 < N; r0 += chunk) {
-        const int64_t r1 = std::min<int64_t>(r0 + chunk, N);
-        const int32_t m0 = mstart[r0], m1 = mstart[r1];
-        if (m1 == m0) continue;                     // no octant of this chunk survived
-        T* cvc = submconv_range(c, m, prefix + ".conv1", fz, W1, gn, N, (int)r0, (int)(r1 - r0));
-        T* idx = ggml_cont(c, ggml_view_1d(c, gl, m1 - m0, (size_t)m0 * ggml_element_size(gl)));
-        T* hc  = ggml_get_rows(c, ggml_reshape_2d(c, cvc, Cout, 8 * (r1 - r0)), idx);   // [Cout, m1-m0]
-        if (!hraw) { hraw = ggml_pad(c, hc, 0, (int)(M + 1 - (m1 - m0)), 0, 0); continue; }  // [Cout, M+1]
-        roots.push_back(ggml_cpy(c, hc, ggml_view_2d(c, hraw, Cout, m1 - m0,
-                                                     hraw->nb[1], (size_t)m0 * hraw->nb[1])));
-    }
-    // norm2 (no affine) + silu in place: hraw is [Cout, M+1] (1.15 GB at M=4.7M) and nothing
-    // else reads it, so the out-of-place pair would hold a second full copy live next to it.
-    T* hn = ggml_silu_inplace(c, ggml_norm_inplace(c, hraw, 1e-6f));
+    T* xs  = ggml_new_tensor_2d(c, GGML_TYPE_F32, K, M);   ggml_set_input(xs);    // [K, M]
 
     // conv2 runs at the POST-subdivision count M, which is where a dense object lives: the
     // cottage hits M=32.7M, and unchunked each of the 27 taps builds full [Cout, M] gather /
@@ -356,12 +394,11 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     // the gather still reads the whole (padded) hn, since a neighbour can be any voxel, but
     // the output is per-voxel so a range needs no halo. Keeping chunks <= mul_mat_rows'
     // 1M-row threshold also stops it splitting internally, removing that concat chain.
-    // skip rides along per chunk: x channel2spatial'd by the same gather ([Cin,N] -> [K,M]),
-    // then repeat_interleave(R). [1,K,nr] -> repeat -> [R,K,nr] lays element (r,k,m) at
-    // r + R*k + R*K*m, so the [Cout,nr] reshape maps channel k*R+r -> k: interleave, not tile.
+    // skip rides along per chunk: repeat_interleave(R) of the xs range. [1,K,nr] -> repeat ->
+    // [R,K,nr] lays element (r,k,m) at r + R*k + R*K*m, so the [Cout,nr] reshape maps channel
+    // k*R+r -> k: interleave, not tile.
     T* W2  = w32(c, m.get(prefix + ".conv2.weight"));
-    T* fz2 = hn;                                  // already [Cout, M+1]: pre-padded above
-    T* xs  = ggml_get_rows(c, ggml_reshape_2d(c, gf, K, (int64_t)8 * N), gi);     // [K, M]
+    T* fz2 = HN.t;                                // already [Cout, M+1]: normalised in place by 2a
 
     const int64_t per_vox2 = 3 * (int64_t)Cout * 4;   // acc + gather + matmul, live per tap
     int64_t chunk2 = std::max<int64_t>(1, budget / std::max<int64_t>(per_vox2, 1));
@@ -377,6 +414,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     T* Wh = head ? m.get(head->prefix + ".weight") : nullptr;
     T* bh = head ? m.get(head->prefix + ".bias") : nullptr;
     T* out = nullptr;
+    std::vector<T*> roots;
     for (int64_t m0 = 0; m0 < M; m0 += chunk2) {
         const int64_t nr2 = std::min<int64_t>(chunk2, M - m0);
         T* o = submconv_range(c, m, prefix + ".conv2", fz2, W2, gn2, M, (int)m0, (int)nr2);
@@ -388,7 +426,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
             T* y = head->pre_norm ? ggml_norm(c, o, 1e-5f) : o;
             o = ggml_add(c, ggml_mul_mat(c, Wh, y), bh);                        // [out_ch, nr2]
         }
-        // written into one [out_c, M] buffer, as for hraw above -- a concat chain here would
+        // written into one [out_c, M] buffer, as for HN above -- a concat chain here would
         // again peak at 2x the output. Every column is covered by some chunk, so the
         // pad's zero fill is overwritten and only sizes the buffer.
         if (!out) { out = ggml_pad(c, o, 0, (int)(M - nr2), 0, 0); continue; }   // [out_c, M]
@@ -396,9 +434,8 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                                                     out->nb[1], (size_t)m0 * out->nb[1])));
     }
 
-    std::vector<float> outv = gr2.run(out, { {gf, feats_in.data()}, {gn, nbr.data()},
-                                             {gi, gidx.data()}, {gl, gloc.data()}, {gn2, nnbr.data()} },
-                                      roots, (std::string(tag) + "_conv_N" + std::to_string(N) + "_M" + std::to_string(M)).c_str());
+    std::vector<float> outv = gr2.run(out, { {gn2, nnbr.data()}, {xs, xs_h.data()} },
+                                      roots, (std::string(tag) + "_conv2_N" + std::to_string(N) + "_M" + std::to_string(M)).c_str());
     return { std::move(outv), std::move(nc), Cout, std::move(mask_used) };
 }
 

@@ -74,3 +74,41 @@ Output drift vs main on this input: HR SLAT mean −0.1065 → −0.1066 (std 5.
 decoded voxels 4,722,792 → 4,725,304 (+0.05 %), final GLB 970,092 → 964,238 faces. The
 Windows-native release build of the same main differs from the WSL build by 2 % voxels on the
 same seed, so this is within build-to-build variation.
+
+## Round 2 (#38: B9 split, cond buffer scoping, conv1 estimate, one cond path), 2026-09-20
+
+Branch `feat/vram-b9-c2s-split` (stacked on PR #34). Same input, same harness, clean windows
+(`wsl_b9all_8g_s2` / `wsl_b9all_24g_s2`, baseline 2432 MiB, no other compute process).
+
+| change | what | effect (4090) |
+|---|---|---|
+| #39 `sparse_c2s` graph 2 → 2a (conv1 → persistent `hn`) + 2b (conv2 + skip + head) | only `hn [Cout, M+1]` is bridged between graphs, in its own backend buffer; the conv1 input, its pad and both neighbour tables no longer co-reside with it; the skip input is gathered on the host | stage-3 C2S gallocr 4.71 → 2a 2.46 + 2b 1.53 GB (+ `hn` 1.15 GB) at 512 MiB chunks; outputs byte-identical (shape verts/faces/coords, tex attrs/coords) |
+| #43 conv1 chunk estimate `Cout*8*4` → `2*Cout*8*4 + Cin*4` | matches the live set the trace shows (accumulator + tap output + gather) | 2a 2.46 → 1.92 GB at 512 MiB; 3.32 GB at the 1500 MiB default (4 chunks instead of 2); byte-identical at both budgets |
+| #40 cond `pooled` / `q_bm` (1 GiB each at T=1024) allocated per view around their producer/consumer | not resident during the encoder graph (G2) or the attention graphs (G4) | cond-tex stats peak 5838 → 3023 MB (T=1024), 3035 → 2779 (T=512); unchanged numerics (im2col A/B: 7.3e-8 vs the host path) |
+| #43 LR-512 cond → `pixal3d_cond_slat_gpu` split graph (`naf_block_chunk = 256`) | one cond path in the CLI | per-view peak 1199 MB (single graph 3210, host path ~2.1 GB), 2.5 s vs 9.4 s |
+
+| stage | main | PR #34 (8 GB sim) | round 2, 8 GB sim | round 2, 24 GB default |
+|---|---:|---:|---:|---:|
+| LR-512 cond + flow | +2.14 GB | +2.07 GB | +1.80 GB | +1.80 GB |
+| HR-1024 cond | +4.78 GB | +3.76 GB | +3.76 GB | +3.76 GB |
+| HR-1024 shape flow | +3.35 GB | +3.5 GB | +3.5 GB | +3.5 GB |
+| shape decode | +7.36 GB | +6.23 GB | **+4.73 GB** | +6.03 GB |
+| texture cond | +5.66 GB | +4.42 GB | **+3.42 GB** | +3.42 GB |
+| texture flow | +3.35 GB | +3.76 GB | +3.77 GB | +3.77 GB |
+| texture decode | +7.36 GB | +6.07 GB | **+4.36 GB** | +5.97 GB |
+| whole run | +7.36 GB | +6.23 GB | **+4.73 GB** | +6.03 GB |
+| shape decode / texture stage wall (WSL) | 24.2 s / 116 s | 27.2 s / 55 s | 27.2 s / 56.5 s | 24.0 s / 53.2 s |
+
+The 24 GB default keeps its speed (shape decode 24.0 s vs main 24.2 s) and drops 1.3 GB from
+the B9 split alone. Under the 8 GB simulation the whole run stays under 5 GB; the decoder's
+remaining max is the stage-3 ConvNeXt graph (gallocr 2.80 GB, of which ~0.57 GB is the per-block
+`ggml_concat` output chain -- the next lever if more headroom is needed) and the C2S 2a graph
+(1.95 GB + the 1.15 GB `hn`).
+
+Output drift from switching the LR-512 cond to the device path (direct conv; the CUDA host
+path pins im2col, L2rel 8e-5 between them): LR SLAT mean −0.2133 → −0.2146, HR tokens
+17,582 → 17,585, decoded voxels 4,725,304 → 4,706,509 (−0.4 %), final GLB 964k → 972k faces --
+the same class of drift as the HR cond switch in PR #34, all parity tests PASS.
+
+Still not done (#41, #42): no real 8 GB card, no Metal/Vulkan run (the three files
+syntax-compile with the Metal flags), `hn` is still one 1.15 GB buffer.

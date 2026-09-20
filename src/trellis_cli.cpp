@@ -398,14 +398,16 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
           trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
           cond_lap("load dinov3 + naf");
           trellis::Pixal3dSlatCondParams prm{512, 32, 512, mesh_scale};
-          c = trellis::pixal3d_cond_slat(dino, naf, views512, prm);
+          // Use the same sparse/device-resident conditioning path as HR/texture. For T=512
+          // force the measured split-graph chunk size so the large single graph is avoided.
+          prm.naf_block_chunk = 256;
+          c = trellis::pixal3d_cond_slat_gpu(dino, naf, views512, prm, nullptr, &coords);
           dino.free(); naf.free(); }
-        cond_lap("cond_slat S=512 R=32 T=512 (host path, dense R^3)");
-        vector<float> proj_sp = trellis::pixal3d_gather_proj(c.proj, 32, c.d_proj, coords);
-        c.proj.clear(); c.proj.shrink_to_fit();
+        cond_lap("cond_slat S=512 R=32 T=512 (device sparse)");
+        vector<float> proj_sp = std::move(c.proj);
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * coords.size());
-        cond_lap("gather_proj + noise");
+        cond_lap("noise");
         lr_norm = mv_shape_flow(W.shape512, cfg, F32, gpu, coords,
                                 c.global.data(), neg_g.data(), c.n_global, proj_sp.data(), neg_p.data(), nz);
         if (lr_norm.empty()) return 1;

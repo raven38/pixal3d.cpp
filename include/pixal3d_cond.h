@@ -51,7 +51,8 @@ struct Pixal3dCondStats {
     size_t weight_bytes = 0;     // DINOv3 weight buffer (resident for the whole call)
     size_t cond_bytes = 0;       // persistent accumulators (global + proj) on the device
     size_t view_alloc_bytes = 0; // largest per-view graph buffer (DINOv3 activations + projection temporaries)
-    size_t peak_bytes = 0;       // weight_bytes + cond_bytes + view_alloc_bytes (buffers are freed per view)
+    size_t peak_bytes = 0;       // max over the graphs run of weight_bytes + persistent buffers resident at
+                                 // that point + that graph's buffer (<= weight + cond + view_alloc)
     double total_ms = 0;         // wall time of the whole call
     double view_ms_max = 0;      // slowest single view (graph build + alloc + compute)
     int views = 0;
