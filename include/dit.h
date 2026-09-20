@@ -45,10 +45,9 @@ bool dit_detect_proj_attn(const Model& m, DiTParams& p);
 //   cos/sin: [1, head_dim/2, 1, L]  precomputed 3D-RoPE tables
 //   proj : [d_proj, L]         Pixal3D proj_cond, one token per latent position (optional;
 //                              only used when p.proj_attn); ignored/unused otherwise.
-//   rope_idx: I32 [head_dim]   even|odd pair indices from dit_rope_index (optional). When given,
-//                              the RoPE scatter reads its set_rows indices from this input instead
-//                              of building them with ggml_arange (same integers; needed on the ggml
-//                              WebGPU backend, which has no ARANGE kernel).
+//   rope_idx: I32 [head_dim]   accepted for API compatibility, unused since the RoPE rewrite
+//                              (2026-09-20): q/k are rotated in a de-interleaved head_dim layout
+//                              and never scattered back, so no index tensor is needed.
 // Returns the [out_ch, L] velocity; `inter` (optional) collects named intermediates.
 ggml_tensor* build_dit_dense(ggml_context* gctx, const Model& m, const DiTParams& p,
                              ggml_tensor* h0, ggml_tensor* tfreq, ggml_tensor* cond,
@@ -56,7 +55,14 @@ ggml_tensor* build_dit_dense(ggml_context* gctx, const Model& m, const DiTParams
                              std::map<std::string, ggml_tensor*>* inter = nullptr,
                              ggml_tensor* proj = nullptr, ggml_tensor* rope_idx = nullptr);
 
-// Host contents of the `rope_idx` input: [0,2,..,head_dim-2, 1,3,..,head_dim-1].
+// Host contents of the `rope_idx` input: [0,2,..,head_dim-2, 1,3,..,head_dim-1]. Kept for the
+// callers that still upload it; build_dit_dense ignores the tensor.
 void dit_rope_index(int head_dim, std::vector<int32_t>& out);
+
+// The DiT's 3D RoPE as a graph op, exposed for trellis-test-rope-layout. x: [head_dim, n_heads, L]
+// f32; cos/sin: [1, head_dim/2, 1, L] (or any contiguous tensor of head_dim/2 * L floats laid out
+// data[token*half + pair]). Returns [head_dim, n_heads, L] in the DE-INTERLEAVED layout
+// out[p*half + i] = (p == 0 ? x[2i]*cos_i - x[2i+1]*sin_i : x[2i+1]*cos_i + x[2i]*sin_i).
+ggml_tensor* dit_rope(ggml_context* gctx, ggml_tensor* x, ggml_tensor* cos, ggml_tensor* sin);
 
 } // namespace trellis
