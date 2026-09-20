@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
     ggml_tensor* gpj  = ggml_new_tensor_2d(c, GGML_TYPE_F32, Dp, L);           ggml_set_input(gpj);
 
     std::map<string, ggml_tensor*> inter;
-    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj, nullptr);   // rope_idx unused since the de-interleaved RoPE
+    ggml_tensor* out = trellis::build_dit_dense(c, m, p, gh0, gtf, gcd, gcos, gsin, &inter, gpj);
 
     ggml_cgraph* g = ggml_new_graph_custom(c, 32768, false);
     ggml_build_forward_expand(g, out);

@@ -3,11 +3,13 @@
 // device when one exists.
 //
 //   1. layout: out[p*half + i] == (p == 0 ? x[2i]*cos_i - x[2i+1]*sin_i
-//                                        : x[2i+1]*cos_i + x[2i]*sin_i)   (bit-exact fp32 ops)
+//                                        : x[2i+1]*cos_i + x[2i]*sin_i), within 1e-6 --
+//      backend-dependent rounding is allowed, bit-exactness is not claimed (measured 4.8e-7).
 //   2. attention invariance: for random q, k the per-(head, query, key) dot products of the
 //      rotated tensors equal those of the interleaved reference rotation (the only consumer of
 //      the rotated values is q.k, so a layout change must not change it beyond fp32 summation
-//      order).
+//      order). This is a LAYOUT proof computed host-side in double precision; it does not run the
+//      FlashAttention / exact-SDPA kernels, so it is not a kernel integration test.
 //
 // Usage: trellis-test-rope-layout [gpu]   (gpu: -1 = CPU only, default = CPU + first GPU device)
 #include "dit.h"

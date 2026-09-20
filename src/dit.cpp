@@ -74,9 +74,8 @@ static T* rms_gamma(ggml_context* c, T* x, T* gamma, float eps) {
 // RoPE elementwise ops cost ~17 s of a 32 s Shape-1024 forward, more than FlashAttention
 // (8 s) and all q8_0 GEMMs (5 s) together. Here every op has rows of `half` (64) elements:
 // one cont of the pair-major permute, four MUL, one SUB, one ADD, one CONCAT (a single
-// launch on every backend: ne3 = 1). `rope_idx` is accepted for API compatibility and unused.
-static T* apply_rope(ggml_context* c, T* x, T* cos, T* sin, T* rope_idx) {
-    (void)rope_idx;
+// launch on every backend: ne3 = 1).
+static T* apply_rope(ggml_context* c, T* x, T* cos, T* sin) {
     const int64_t hd = x->ne[0], nh = x->ne[1], L = x->ne[2];
     const int64_t half = hd / 2;
     // [2, half, nh*L] -> permute -> [half, 2, nh*L]: row p = 0 holds the even (x[2i]) elements,
@@ -313,7 +312,7 @@ static T* gamma32(ggml_context* c, const Model& m, const std::string& key) {
 }
 
 static T* self_attn(ggml_context* c, const Model& m, const std::string& pre, T* h,
-                    T* cos, T* sin, const DiTParams& p, T* mask = nullptr, T* rope_idx = nullptr) {
+                    T* cos, T* sin, const DiTParams& p, T* mask = nullptr) {
     const int hd = p.head_dim, nh = p.n_heads;
     const int64_t L = h->ne[1];
     T* qkv = lin(c, m, pre + ".to_qkv", h);                     // [3*d_model, L]
@@ -325,8 +324,8 @@ static T* self_attn(ggml_context* c, const Model& m, const std::string& pre, T* 
     T* q = pick(0); T* k = pick(1); T* v = pick(2);
     q = rms_gamma(c, q, gamma32(c, m, pre + ".q_rms_norm.gamma"), p.rms_eps);
     k = rms_gamma(c, k, gamma32(c, m, pre + ".k_rms_norm.gamma"), p.rms_eps);
-    q = apply_rope(c, q, cos, sin, rope_idx);
-    k = apply_rope(c, k, cos, sin, rope_idx);
+    q = apply_rope(c, q, cos, sin);
+    k = apply_rope(c, k, cos, sin);
     return lin(c, m, pre + ".to_out", sdpa(c, q, k, v, p.d_model, mask));
 }
 
@@ -355,8 +354,7 @@ static T* modulate(ggml_context* c, T* x, T* scale, T* shift) {
 
 static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
                 T* cos, T* sin, const DiTParams& p, std::map<std::string, T*>* inter = nullptr,
-                T* self_mask = nullptr, T* cross_mask = nullptr, T* proj = nullptr,
-                T* rope_idx = nullptr) {
+                T* self_mask = nullptr, T* cross_mask = nullptr, T* proj = nullptr) {
     const std::string b = "blocks." + std::to_string(i);
     const int dm = p.d_model;
     // Block 0 keeps the historical "blk0_*" names; block 15 is exposed too as a mid-depth probe.
@@ -374,7 +372,7 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
 
     T* hh = layernorm(c, h, p.ln_eps);
     hh = modulate(c, hh, scale_msa, shift_msa);
-    hh = self_attn(c, m, b + ".self_attn", hh, cos, sin, p, self_mask, rope_idx);
+    hh = self_attn(c, m, b + ".self_attn", hh, cos, sin, p, self_mask);
     dbg("blk0_msa", hh);
     h = ggml_add(c, h, ggml_mul(c, hh, gate_msa));
     // Role markers for --profile (flow_runner.cpp). Naming does not change the graph; the
@@ -417,18 +415,12 @@ bool dit_detect_proj_attn(const Model& m, DiTParams& p) {
 }
 
 ggml_tensor* dit_rope(ggml_context* gctx, ggml_tensor* x, ggml_tensor* cos, ggml_tensor* sin) {
-    return apply_rope(gctx, x, cos, sin, nullptr);
-}
-
-void dit_rope_index(int head_dim, std::vector<int32_t>& out) {
-    out.resize(head_dim);
-    const int half = head_dim / 2;
-    for (int i = 0; i < half; ++i) { out[i] = 2 * i; out[half + i] = 2 * i + 1; }
+    return apply_rope(gctx, x, cos, sin);
 }
 
 ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p,
                              T* h0, T* tfreq, T* cond, T* cos, T* sin,
-                             std::map<std::string, T*>* inter, T* proj, T* rope_idx) {
+                             std::map<std::string, T*>* inter, T* proj) {
     g_cast_f32 = p.cast_f32;
     auto keep = [&](const char* n, T* t) { if (inter) (*inter)[n] = t; ggml_set_name(t, n); return t; };
 
@@ -447,7 +439,7 @@ ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p
     T* self_mask  = build_pad_mask(c, h0->ne[1], h0->ne[1]);
     T* cross_mask = build_pad_mask(c, cond->ne[1], h0->ne[1]);
     for (int i = 0; i < p.n_blocks; ++i) {
-        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask, proj, rope_idx);
+        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask, proj);
         keep(("after_block" + std::to_string(i)).c_str(), h);
     }
     h = layernorm(c, h, p.final_ln_eps);

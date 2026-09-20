@@ -45,19 +45,12 @@ bool dit_detect_proj_attn(const Model& m, DiTParams& p);
 //   cos/sin: [1, head_dim/2, 1, L]  precomputed 3D-RoPE tables
 //   proj : [d_proj, L]         Pixal3D proj_cond, one token per latent position (optional;
 //                              only used when p.proj_attn); ignored/unused otherwise.
-//   rope_idx: I32 [head_dim]   accepted for API compatibility, unused since the RoPE rewrite
-//                              (2026-09-20): q/k are rotated in a de-interleaved head_dim layout
-//                              and never scattered back, so no index tensor is needed.
 // Returns the [out_ch, L] velocity; `inter` (optional) collects named intermediates.
 ggml_tensor* build_dit_dense(ggml_context* gctx, const Model& m, const DiTParams& p,
                              ggml_tensor* h0, ggml_tensor* tfreq, ggml_tensor* cond,
                              ggml_tensor* cos, ggml_tensor* sin,
                              std::map<std::string, ggml_tensor*>* inter = nullptr,
-                             ggml_tensor* proj = nullptr, ggml_tensor* rope_idx = nullptr);
-
-// Host contents of the `rope_idx` input: [0,2,..,head_dim-2, 1,3,..,head_dim-1]. Kept for the
-// callers that still upload it; build_dit_dense ignores the tensor.
-void dit_rope_index(int head_dim, std::vector<int32_t>& out);
+                             ggml_tensor* proj = nullptr);
 
 // The DiT's 3D RoPE as a graph op, exposed for trellis-test-rope-layout. x: [head_dim, n_heads, L]
 // f32; cos/sin: [1, head_dim/2, 1, L] (or any contiguous tensor of head_dim/2 * L floats laid out

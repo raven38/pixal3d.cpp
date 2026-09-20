@@ -91,6 +91,11 @@ jobs:
       - name: Check Pixal3D weight selection and FOV contract
         run: bash ./install/test_pixal3d_weight_selection.sh ./build/trellis-cli
 
+      # DiT の 3D RoPE（de-interleaved レイアウト）をホスト参照と突き合わせ、q·k が
+      # 置換に対して不変であることを見る。重み不要・GPU 不要（-1 = CPU backend のみ）。
+      - name: Run the RoPE layout test
+        run: ./build/trellis-test-rope-layout -1
+
       # 単一視点（SV）入力の契約: gauge カメラ・pre-matted クロップ・ブラウザ実装との一致
       # （共有フィクスチャ tests/fixtures/sv_gauge）。外部ファイル不要、リポジトリルートで実行。
       - name: Run the single-view input contract test
