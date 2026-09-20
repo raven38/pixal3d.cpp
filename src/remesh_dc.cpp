@@ -8,9 +8,21 @@
 #endif
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <thread>
-#include <unordered_map>
 #include <vector>
+#include <chrono>
+#include <cstdlib>
+
+// TRELLIS_DBG_POST=1: per-phase wall times to stderr (debug logging only).
+static double post_now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+static void post_tick(const char* tag, double& t) {
+    static const bool on = std::getenv("TRELLIS_DBG_POST") != nullptr;
+    if (!on) return;
+    const double n = post_now();
+    fprintf(stderr, "    [post] %-28s %.2fs\n", tag, n - t);
+    t = n;
+}
 
 namespace trellis {
 
@@ -26,18 +38,51 @@ inline int ctz64(uint64_t v) {
 #endif
 }
 
-inline uint64_t key3(int x, int y, int z) {
-    return ((uint64_t)(uint32_t)x << 42) | ((uint64_t)(uint32_t)y << 21) | (uint32_t)z;
+inline int popcnt64(uint64_t v) {
+#ifdef _MSC_VER
+    return (int)__popcnt64(v);
+#else
+    return __builtin_popcountll(v);
+#endif
 }
 
-// スレッド数。Emscripten ビルドは pthread 無しでリンクしているので std::thread の生成が
-// "thread constructor failed: Not supported" で throw する。さらに下の候補ビットセットは
-// スレッドごとに res^3/8 バイト（res=1024 で 134 MB）を確保するため、wasm32 の 4 GiB
-// ヒープでは並列度がそのままメモリ消費になる。ブラウザでは直列にする。
-// parallel_for 本体は include/parallel_for.h（decimate_qem.cpp と共用）。
-inline int remesh_threads() { return parallel_threads(); }
+// Dense occupancy bitset over a grid with O(1) rank (index among the set bits,
+// in linear order). Stands in for the cell -> dense-index hash maps: 1/8 byte per
+// grid cell instead of a hash node per occupied cell.
+struct RankBitset {
+    std::vector<uint64_t> bits;
+    std::vector<int32_t> rank0;   // set bits before each word
+    int64_t count = 0;
+    void init(int64_t nbits) { bits.assign((size_t)((nbits + 63) / 64), 0); }
+    void set(int64_t i) { bits[(size_t)(i >> 6)] |= 1ull << (i & 63); }
+    void finalize() {
+        rank0.resize(bits.size());
+        int64_t c = 0;
+        for (size_t w = 0; w < bits.size(); ++w) { rank0[w] = (int32_t)c; c += popcnt64(bits[w]); }
+        count = c;
+    }
+    int find(int64_t i) const {
+        const uint64_t w = bits[(size_t)(i >> 6)];
+        const int b = (int)(i & 63);
+        if (!((w >> b) & 1)) return -1;
+        return rank0[(size_t)(i >> 6)] + popcnt64(w & ((1ull << b) - 1));
+    }
+};
 
 }  // namespace
+
+void parallel_for(int64_t n, const std::function<void(int64_t, int64_t)>& fn) {
+    const int nt = remesh_threads();
+    if (nt <= 1) { if (n > 0) fn(0, n); return; }   // 直列（pthread 無しの wasm ビルド）
+    std::vector<std::thread> ts;
+    const int64_t chunk = (n + nt - 1) / nt;
+    for (int t = 0; t < nt; ++t) {
+        const int64_t b = t * chunk, e = std::min(n, b + chunk);
+        if (b >= e) break;
+        ts.emplace_back(fn, b, e);
+    }
+    for (auto& t : ts) t.join();
+}
 
 Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* ifaces, int64_t iF,
                            const TriBvh& bvh, int res, int band, float project_back) {
@@ -51,67 +96,51 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
     const float cell = scale / (float)res;
     const float eps = (float)band * cell;
     const float keep = 0.87f * cell;
+    double post_t = post_now();
 
     // Candidate cells: conservative dilation of every triangle's AABB by the
-    // band-plus-crossing radius, marked in a res^3 bitset.
+    // band-plus-crossing radius, marked in a res^3 bitset. Threads OR into the one
+    // shared bitset atomically (commutative, so the result is thread-count
+    // independent) instead of each owning a res^3/8-byte copy that is merged after.
     const int64_t nbits = (int64_t)res * res * res;
-    std::vector<uint64_t> cand((size_t)((nbits + 63) / 64), 0);
-    auto bit_set = [&cand, res](int x, int y, int z) {
-        const int64_t i = ((int64_t)x * res + y) * res + z;
-        cand[(size_t)(i >> 6)] |= 1ull << (i & 63);
-    };
-    auto bit_get = [&cand, res](int x, int y, int z) -> bool {
-        const int64_t i = ((int64_t)x * res + y) * res + z;
-        return (cand[(size_t)(i >> 6)] >> (i & 63)) & 1;
-    };
+    const size_t nwords = (size_t)((nbits + 63) / 64);
+    std::vector<std::atomic<uint64_t>> cand_at(nwords);
+    parallel_for((int64_t)nwords, [&](int64_t b, int64_t e) {
+        for (int64_t i = b; i < e; ++i) cand_at[(size_t)i].store(0, std::memory_order_relaxed);
+    });
     // A cell is active iff UDF(center) < (band+0.87)·cell, and its closest
     // surface point lies inside some triangle-marked cell, so the per-axis
     // index distance is < band+1.37, i.e. ≤ band+1.
     const int dil = band + 1;
-    {
-        const int F = (int)iF;
-        std::vector<std::vector<uint64_t>> parts;
-        const int nt = remesh_threads();
-        parts.assign(nt, {});
-        std::vector<std::thread> ts;
-        const int chunk = (F + nt - 1) / nt;
-        for (int t = 0; t < nt; ++t) {
-            const int b = t * chunk, e = std::min(F, b + chunk);
-            if (b >= e) break;
-            parts[t].assign(cand.size(), 0);
-            auto job = [&, t, b, e]() {
-                auto& bits = parts[t];
-                auto setb = [&bits, res](int x, int y, int z) {
-                    const int64_t i = ((int64_t)x * res + y) * res + z;
-                    bits[(size_t)(i >> 6)] |= 1ull << (i & 63);
-                };
-                for (int f = b; f < e; ++f) {
-                    float bmin[3] = {1e30f, 1e30f, 1e30f}, bmax[3] = {-1e30f, -1e30f, -1e30f};
-                    for (int j = 0; j < 3; ++j) {
-                        const float* p = &iverts[3 * ifaces[3*f+j]];
-                        for (int k = 0; k < 3; ++k) {
-                            bmin[k] = std::min(bmin[k], p[k]);
-                            bmax[k] = std::max(bmax[k], p[k]);
-                        }
-                    }
-                    int c0[3], c1[3];
-                    for (int k = 0; k < 3; ++k) {
-                        c0[k] = std::max(0, (int)std::floor((bmin[k] / scale + 0.5f) * res) - dil);
-                        c1[k] = std::min(res - 1, (int)std::floor((bmax[k] / scale + 0.5f) * res) + dil);
-                    }
-                    for (int x = c0[0]; x <= c1[0]; ++x)
-                        for (int y = c0[1]; y <= c1[1]; ++y)
-                            for (int z = c0[2]; z <= c1[2]; ++z) setb(x, y, z);
+    parallel_for(iF, [&](int64_t fb, int64_t fe) {
+        auto setb = [&](int x, int y, int z) {
+            const int64_t i = ((int64_t)x * res + y) * res + z;
+            cand_at[(size_t)(i >> 6)].fetch_or(1ull << (i & 63), std::memory_order_relaxed);
+        };
+        for (int64_t f = fb; f < fe; ++f) {
+            float bmin[3] = {1e30f, 1e30f, 1e30f}, bmax[3] = {-1e30f, -1e30f, -1e30f};
+            for (int j = 0; j < 3; ++j) {
+                const float* p = &iverts[3 * ifaces[3*f+j]];
+                for (int k = 0; k < 3; ++k) {
+                    bmin[k] = std::min(bmin[k], p[k]);
+                    bmax[k] = std::max(bmax[k], p[k]);
                 }
-            };
-            if (nt <= 1) job(); else ts.emplace_back(std::move(job));   // 直列（pthread 無しの wasm ビルド）
+            }
+            int c0[3], c1[3];
+            for (int k = 0; k < 3; ++k) {
+                c0[k] = std::max(0, (int)std::floor((bmin[k] / scale + 0.5f) * res) - dil);
+                c1[k] = std::min(res - 1, (int)std::floor((bmax[k] / scale + 0.5f) * res) + dil);
+            }
+            for (int x = c0[0]; x <= c1[0]; ++x)
+                for (int y = c0[1]; y <= c1[1]; ++y)
+                    for (int z = c0[2]; z <= c1[2]; ++z) setb(x, y, z);
         }
-        for (auto& th : ts) th.join();
-        for (auto& bits : parts)
-            if (!bits.empty())
-                for (size_t i = 0; i < cand.size(); ++i) cand[i] |= bits[i];
-    }
+    });
+    std::vector<uint64_t> cand(nwords);
+    for (size_t i = 0; i < nwords; ++i) cand[i] = cand_at[i].load(std::memory_order_relaxed);
+    { std::vector<std::atomic<uint64_t>>().swap(cand_at); }
 
+    post_tick("remesh: candidate bitset", post_t);
     // Active voxels: |UDF(center) - eps| < 0.87*cell (spec 27 §4.1).
     std::vector<int> acoord;
     {
@@ -124,6 +153,7 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
                 cand_cells.push_back((w << 6) | b);
             }
         }
+        post_tick("remesh: cand list", post_t);
         std::vector<uint8_t> act(cand_cells.size(), 0);
         parallel_for((int64_t)cand_cells.size(), [&](int64_t b, int64_t e) {
             for (int64_t i = b; i < e; ++i) {
@@ -138,6 +168,7 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
                 if (std::fabs(f) < keep) act[i] = 1;
             }
         });
+        post_tick("remesh: active UDF (par)", post_t);
         for (size_t i = 0; i < cand_cells.size(); ++i) {
             if (!act[i]) continue;
             const int64_t c = cand_cells[i];
@@ -153,21 +184,42 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
         return out;
     }
 
-    std::unordered_map<uint64_t, int> vox;
-    vox.reserve((size_t)Na * 2);
-    for (int64_t i = 0; i < Na; ++i) vox.emplace(key3(acoord[3*i], acoord[3*i+1], acoord[3*i+2]), (int)i);
+    post_tick("remesh: acoord", post_t);
+    // Active voxels by linear cell index; acoord is in that order, so the rank of
+    // a set bit is its index into acoord.
+    auto lin = [res](int64_t x, int64_t y, int64_t z) { return (x * res + y) * res + z; };
+    RankBitset vox;
+    vox.init((int64_t)res * res * res);
+    for (int64_t i = 0; i < Na; ++i) vox.set(lin(acoord[3*i], acoord[3*i+1], acoord[3*i+2]));
+    vox.finalize();
 
-    // f = UDF - eps at the grid VERTICES (corner mapping v/res, spec 27 §4.3).
-    std::vector<int> vcoord;
-    std::unordered_map<uint64_t, int> vmap;
-    vmap.reserve((size_t)Na * 3);
+    post_tick("remesh: vox map", post_t);
+    // f = UDF - eps at the grid VERTICES (corner mapping v/res, spec 27 §4.3):
+    // the 8 corners of every active voxel, on the (res+1)^3 vertex grid.
+    const int64_t vres = (int64_t)res + 1;
+    auto vlin = [vres](int64_t x, int64_t y, int64_t z) { return (x * vres + y) * vres + z; };
+    RankBitset vset;
+    vset.init(vres * vres * vres);
     for (int64_t i = 0; i < Na; ++i)
-        for (int dx = 0; dx < 2; ++dx) for (int dy = 0; dy < 2; ++dy) for (int dz = 0; dz < 2; ++dz) {
-            const int x = acoord[3*i] + dx, y = acoord[3*i+1] + dy, z = acoord[3*i+2] + dz;
-            if (vmap.emplace(key3(x, y, z), (int)(vcoord.size() / 3)).second) {
-                vcoord.push_back(x); vcoord.push_back(y); vcoord.push_back(z);
+        for (int dx = 0; dx < 2; ++dx) for (int dy = 0; dy < 2; ++dy) for (int dz = 0; dz < 2; ++dz)
+            vset.set(vlin(acoord[3*i] + dx, acoord[3*i+1] + dy, acoord[3*i+2] + dz));
+    vset.finalize();
+    std::vector<int> vcoord((size_t)vset.count * 3);
+    parallel_for((int64_t)vset.bits.size(), [&](int64_t wb, int64_t we) {
+        for (int64_t w = wb; w < we; ++w) {
+            uint64_t b = vset.bits[(size_t)w];
+            int64_t r = vset.rank0[(size_t)w];
+            while (b) {
+                const int64_t i = (w << 6) | ctz64(b);
+                b &= b - 1;
+                vcoord[(size_t)r*3]   = (int)(i / (vres * vres));
+                vcoord[(size_t)r*3+1] = (int)((i / vres) % vres);
+                vcoord[(size_t)r*3+2] = (int)(i % vres);
+                ++r;
             }
         }
+    });
+    post_tick("remesh: vmap", post_t);
     const int64_t Nv = (int64_t)vcoord.size() / 3;
     std::vector<float> fvert((size_t)Nv);
     parallel_for(Nv, [&](int64_t b, int64_t e) {
@@ -182,9 +234,10 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
             fvert[i] = (h.face >= 0 ? std::sqrt(h.dist2) : eps + 2 * cell) - eps;
         }
     });
+    post_tick("remesh: vertex UDF (par)", post_t);
     auto fval = [&](int x, int y, int z) -> float {
-        auto it = vmap.find(key3(x, y, z));
-        return it == vmap.end() ? 1e9f : fvert[it->second];
+        const int idx = vset.find(vlin(x, y, z));
+        return idx < 0 ? 1e9f : fvert[(size_t)idx];
     };
 
     // Dual vertices: plain mean of edge crossings, cell-center fallback; per
@@ -221,6 +274,7 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
         }
     });
 
+    post_tick("remesh: dual verts (par)", post_t);
     // Quad assembly per owned crossing edge (spec 27 §4.5); winding from the
     // crossing direction. The reference's "planar diagonal" selection is a
     // latent no-op upstream (always diagonal q0-q2 unless triangle q0q1q2 is
@@ -241,9 +295,10 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
             int q[4];
             bool ok = true;
             for (int k = 0; k < 4 && ok; ++k) {
-                auto it = vox.find(key3(vx + OFF[axis][k][0], vy + OFF[axis][k][1], vz + OFF[axis][k][2]));
-                if (it == vox.end()) ok = false;
-                else q[k] = it->second;
+                const int x = vx + OFF[axis][k][0], y = vy + OFF[axis][k][1], z = vz + OFF[axis][k][2];
+                const int idx = (x < res && y < res && z < res) ? vox.find(lin(x, y, z)) : -1;
+                if (idx < 0) ok = false;
+                else q[k] = idx;
             }
             if (!ok) continue;
             static const int S1N[6] = {0, 1, 2, 0, 2, 3};
@@ -253,6 +308,7 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
             for (int k = 0; k < 4; ++k) used[q[k]] = 1;
         }
     }
+    post_tick("remesh: quads", post_t);
     if (qfaces.empty()) return out;
 
     // Compact used dual vertices; map back to world coordinates.
@@ -268,6 +324,7 @@ Mesh remesh_narrow_band_dc(const float* iverts, int64_t iV, const int32_t* iface
     out.faces.resize(qfaces.size());
     for (size_t k = 0; k < qfaces.size(); ++k) out.faces[k] = remap[qfaces[k]];
 
+    post_tick("remesh: compact", post_t);
     // Project the dual vertices back onto the input surface (reference:
     // remesh_project=0.9, o_voxel/postprocess.py::to_glb -> remeshing.py §8).
     // Dual contouring places each vertex at the plain MEAN of its cell's edge

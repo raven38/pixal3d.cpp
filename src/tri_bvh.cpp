@@ -1,5 +1,7 @@
 #include "tri_bvh.h"
+#include "parallel_for.h"
 #include <algorithm>
+#include <thread>
 #include <cmath>
 #include <cstring>
 
@@ -57,6 +59,73 @@ inline float box_dist2(const float* p, const float* bmin, const float* bmax) {
 
 }  // namespace
 
+// One node: bounding box of the span, then (unless it is a leaf) the median
+// split of its prims along the widest axis. Shape and prim order depend only on
+// the span's contents, so spans can be processed by different threads without
+// changing the tree.
+namespace {
+struct Span { int32_t node, begin, end; };
+// Returns the split position, or -1 for a leaf (node fully written).
+int32_t bvh_split(std::vector<TriBvh::Node>& nodes, std::vector<int32_t>& prim, const std::vector<float>& cent,
+                  const float* verts, const int32_t* faces, const Span& s, bool par_bbox) {
+    float bmin[3] = {1e30f, 1e30f, 1e30f}, bmax[3] = {-1e30f, -1e30f, -1e30f};
+    auto scan = [&](int32_t b, int32_t e, float* lo, float* hi) {
+        for (int32_t i = b; i < e; ++i) {
+            const int32_t f = prim[i];
+            for (int j = 0; j < 3; ++j) {
+                const float* v = &verts[3*faces[3*f+j]];
+                for (int k = 0; k < 3; ++k) {
+                    lo[k] = std::min(lo[k], v[k]);
+                    hi[k] = std::max(hi[k], v[k]);
+                }
+            }
+        }
+    };
+    if (par_bbox && s.end - s.begin >= (1 << 18)) {   // root-sized spans: reduce per chunk, then merge
+        const int nt = std::max(1, (int)std::thread::hardware_concurrency());
+        std::vector<float> lo((size_t)nt * 3, 1e30f), hi((size_t)nt * 3, -1e30f);
+        const int64_t n = s.end - s.begin, chunk = (n + nt - 1) / nt;
+        parallel_for(nt, [&](int64_t tb, int64_t te) {
+            for (int64_t t = tb; t < te; ++t) {
+                const int64_t b = s.begin + t * chunk, e = std::min<int64_t>(s.end, b + chunk);
+                if (b < e) scan((int32_t)b, (int32_t)e, &lo[(size_t)t * 3], &hi[(size_t)t * 3]);
+            }
+        });
+        for (int t = 0; t < nt; ++t)
+            for (int k = 0; k < 3; ++k) { bmin[k] = std::min(bmin[k], lo[(size_t)t*3+k]); bmax[k] = std::max(bmax[k], hi[(size_t)t*3+k]); }
+    } else {
+        scan(s.begin, s.end, bmin, bmax);
+    }
+    TriBvh::Node& n0 = nodes[s.node];
+    std::memcpy(n0.bmin, bmin, 12);
+    std::memcpy(n0.bmax, bmax, 12);
+    const int32_t cnt = s.end - s.begin;
+    if (cnt <= 4) {
+        n0.left = s.begin;
+        n0.count = cnt;
+        return -1;
+    }
+    int axis = 0;
+    float ext[3] = {bmax[0]-bmin[0], bmax[1]-bmin[1], bmax[2]-bmin[2]};
+    if (ext[1] > ext[axis]) axis = 1;
+    if (ext[2] > ext[axis]) axis = 2;
+    const int32_t mid = s.begin + cnt / 2;
+    std::nth_element(prim.begin() + s.begin, prim.begin() + mid, prim.begin() + s.end,
+                     [&cent, axis](int32_t a, int32_t b) { return cent[3*a+axis] < cent[3*b+axis]; });
+    return mid;
+}
+// Allocate the two children of an internal node and queue their spans.
+void bvh_link(std::vector<TriBvh::Node>& nodes, const Span& s, int32_t mid, std::vector<Span>& out) {
+    const int32_t lc = (int32_t)nodes.size();
+    nodes[s.node].left = lc;
+    nodes[s.node].count = 0;
+    nodes.push_back({});
+    nodes.push_back({});
+    out.push_back({lc, s.begin, mid});
+    out.push_back({lc + 1, mid, s.end});
+}
+}  // namespace
+
 TriBvh TriBvh::build(const float* verts, int64_t V, const int32_t* faces, int64_t F) {
     (void)V;
     TriBvh t;
@@ -65,53 +134,64 @@ TriBvh TriBvh::build(const float* verts, int64_t V, const int32_t* faces, int64_
     if (F == 0) return t;
     t.prim_.resize((size_t)F);
     std::vector<float> cent((size_t)F * 3);
-    for (int64_t f = 0; f < F; ++f) {
-        t.prim_[f] = (int32_t)f;
-        for (int k = 0; k < 3; ++k)
-            cent[3*f+k] = (verts[3*faces[3*f]+k] + verts[3*faces[3*f+1]+k] + verts[3*faces[3*f+2]+k]) / 3.f;
-    }
+    parallel_for(F, [&](int64_t b, int64_t e) {
+        for (int64_t f = b; f < e; ++f) {
+            t.prim_[f] = (int32_t)f;
+            for (int k = 0; k < 3; ++k)
+                cent[3*f+k] = (verts[3*faces[3*f]+k] + verts[3*faces[3*f+1]+k] + verts[3*faces[3*f+2]+k]) / 3.f;
+        }
+    });
     t.nodes_.reserve((size_t)F * 2);
 
-    struct Span { int32_t node, begin, end; };
-    std::vector<Span> stack;
+    // Top levels breadth-first, the spans of one level split in parallel; median
+    // splits keep the spans equal-sized, so 64 of them balance the subtree phase.
+    const int nt = std::max(1, (int)std::thread::hardware_concurrency());
+    const size_t n_sub = nt > 1 ? 64 : 1;
+    std::vector<Span> level, next;
     t.nodes_.push_back({});
-    stack.push_back({0, 0, (int32_t)F});
-    while (!stack.empty()) {
-        const Span s = stack.back(); stack.pop_back();
-        Node& n0 = t.nodes_[s.node];
-        float bmin[3] = {1e30f, 1e30f, 1e30f}, bmax[3] = {-1e30f, -1e30f, -1e30f};
-        for (int32_t i = s.begin; i < s.end; ++i) {
-            const int32_t f = t.prim_[i];
-            for (int j = 0; j < 3; ++j) {
-                const float* v = &verts[3*faces[3*f+j]];
-                for (int k = 0; k < 3; ++k) {
-                    bmin[k] = std::min(bmin[k], v[k]);
-                    bmax[k] = std::max(bmax[k], v[k]);
-                }
+    level.push_back({0, 0, (int32_t)F});
+    while (level.size() < n_sub) {
+        std::vector<int32_t> mids(level.size());
+        const bool par_bbox = level.size() == 1;
+        parallel_for((int64_t)level.size(), [&](int64_t b, int64_t e) {
+            for (int64_t i = b; i < e; ++i) mids[(size_t)i] = bvh_split(t.nodes_, t.prim_, cent, verts, faces, level[(size_t)i], par_bbox);
+        });
+        next.clear();
+        for (size_t i = 0; i < level.size(); ++i)
+            if (mids[i] >= 0) bvh_link(t.nodes_, level[i], mids[i], next);
+        if (next.empty()) return t;
+        level.swap(next);
+    }
+
+    // Each remaining span is an independent subtree.
+    std::vector<std::vector<Node>> local(level.size());
+    parallel_for((int64_t)level.size(), [&](int64_t b, int64_t e) {
+        std::vector<Span> st, kids;
+        for (int64_t i = b; i < e; ++i) {
+            std::vector<Node>& nodes = local[(size_t)i];
+            nodes.reserve((size_t)(level[(size_t)i].end - level[(size_t)i].begin) * 2);
+            nodes.push_back({});
+            st.push_back({0, level[(size_t)i].begin, level[(size_t)i].end});
+            while (!st.empty()) {
+                const Span s = st.back(); st.pop_back();
+                const int32_t mid = bvh_split(nodes, t.prim_, cent, verts, faces, s, false);
+                if (mid >= 0) bvh_link(nodes, s, mid, st);
             }
         }
-        std::memcpy(n0.bmin, bmin, 12);
-        std::memcpy(n0.bmax, bmax, 12);
-        const int32_t cnt = s.end - s.begin;
-        if (cnt <= 4) {
-            n0.left = s.begin;
-            n0.count = cnt;
-            continue;
+    });
+    // Splice: the subtree root takes the pre-allocated node; its children are
+    // appended with their indices rebased (local node 0 stays as a dead copy).
+    for (size_t i = 0; i < level.size(); ++i) {
+        const std::vector<Node>& nodes = local[i];
+        const int32_t off = (int32_t)t.nodes_.size();
+        Node root = nodes[0];
+        if (root.count == 0) root.left += off;
+        t.nodes_[level[i].node] = root;
+        for (const Node& n : nodes) {
+            Node m = n;
+            if (m.count == 0) m.left += off;
+            t.nodes_.push_back(m);
         }
-        int axis = 0;
-        float ext[3] = {bmax[0]-bmin[0], bmax[1]-bmin[1], bmax[2]-bmin[2]};
-        if (ext[1] > ext[axis]) axis = 1;
-        if (ext[2] > ext[axis]) axis = 2;
-        const int32_t mid = s.begin + cnt / 2;
-        std::nth_element(t.prim_.begin() + s.begin, t.prim_.begin() + mid, t.prim_.begin() + s.end,
-                         [&cent, axis](int32_t a, int32_t b) { return cent[3*a+axis] < cent[3*b+axis]; });
-        const int32_t lc = (int32_t)t.nodes_.size();
-        t.nodes_[s.node].left = lc;
-        t.nodes_[s.node].count = 0;
-        t.nodes_.push_back({});
-        t.nodes_.push_back({});
-        stack.push_back({lc, s.begin, mid});
-        stack.push_back({lc + 1, mid, s.end});
     }
     return t;
 }
