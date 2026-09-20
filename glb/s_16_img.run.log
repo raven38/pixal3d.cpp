@@ -1,0 +1,111 @@
+=== s_16_img sv 2026-09-20T02:03:36+09:00
+[trellis] generating model with seed 2000042931 (auto)
+[1/6] preprocess /mnt/hdd1/pixal3d/out/official/stage/s_16_img.png (BiRefNet bg removal, 1024 cascade)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 24563 MiB):
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes, VRAM: 24563 MiB
+      bg-removal cutout -> /mnt/hdd1/pixal3d/out/official/s_16_img/s_16_img_cutout.png
+[bg-only] done (12.2s)
+bg rc=0
+[estimated] preprocessed 1024x1024 -> 1022x1022 RGBA
+[estimated] camera metadata (mesh_scale=1)
+[camera] loading MoGe-2 Ruicheng/moge-2-vitl on cuda
+[camera] view=input.png fx_normalized=1.824955106
+[camera] wrote /tmp/pixal3d-estimated-o1rd8niq/camera_estimation.json
+[camera] source=moge-2 fov=0.534834133 rad (30.644 deg) distance=1.824955106 mesh_scale=1
+[camera] wrote /tmp/pixal3d-estimated-o1rd8niq/transforms.json
+[estimated] running single-view Pixal3D weights
+[trellis] generating model with seed 42
+[1/6] Pixal3D multiview: load /tmp/pixal3d-estimated-o1rd8niq
+      V=1 views, mesh_scale=1.0000
+      flow weights: sv
+[2/6] SS proj conditioning + flow
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 24563 MiB):
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes, VRAM: 24563 MiB
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    0.3s  ~4s left    
+      [flow] [###.................]  2/12    1.0s  ~5s left    
+      [flow] [#####...............]  3/12    1.3s  ~4s left    
+      [flow] [######..............]  4/12    1.7s  ~3s left    
+      [flow] [########............]  5/12    2.0s  ~3s left    
+      [flow] [##########..........]  6/12    2.3s  ~2s left    
+      [flow] [###########.........]  7/12    2.6s  ~2s left    
+      [flow] [#############.......]  8/12    3.0s  ~1s left    
+      [flow] [###############.....]  9/12    3.3s  ~1s left    
+      [flow] [################....] 10/12    3.6s  ~1s left    
+      [flow] [##################..] 11/12    3.8s  ~0s left    
+      [flow] [####################] 12/12    3.9s  ~0s left    
+      [flow] 12 steps, 22 forwards, 3.9s
+      active voxels @res32 = 1209  (6.5s)
+[3/6] shape SLAT flow (LR 512 -> upsample -> HR 1024 cascade, max_tok=49152)
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    0.1s  ~1s left    
+      [flow] [###.................]  2/12    0.2s  ~1s left    
+      [flow] [#####...............]  3/12    0.3s  ~1s left    
+      [flow] [######..............]  4/12    0.4s  ~1s left    
+      [flow] [########............]  5/12    0.5s  ~1s left    
+      [flow] [##########..........]  6/12    0.6s  ~1s left    
+      [flow] [###########.........]  7/12    0.7s  ~0s left    
+      [flow] [#############.......]  8/12    0.8s  ~0s left    
+      [flow] [###############.....]  9/12    0.8s  ~0s left    
+      [flow] [################....] 10/12    0.9s  ~0s left    
+      [flow] [##################..] 11/12    0.9s  ~0s left    
+      [flow] [####################] 12/12    1.0s  ~0s left    
+      [flow] 12 steps, 20 forwards, 1.0s
+      [stats] LR slat (res32, MV) n=38688 mean=0.0430 std=5.8419 min=-26.943 max=23.404 nan/inf=0
+      LR shape SLAT (5.2s)
+      upsampled coords @res512=448517 -> quantized @res1024 (grid 64, Pixal3D round/grid-1 formula) = 4829 tokens
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    0.6s  ~7s left    
+      [flow] [###.................]  2/12    1.0s  ~5s left    
+      [flow] [#####...............]  3/12    1.4s  ~4s left    
+      [flow] [######..............]  4/12    1.8s  ~4s left    
+      [flow] [########............]  5/12    2.2s  ~3s left    
+      [flow] [##########..........]  6/12    2.6s  ~3s left    
+      [flow] [###########.........]  7/12    3.0s  ~2s left    
+      [flow] [#############.......]  8/12    3.4s  ~2s left    
+      [flow] [###############.....]  9/12    3.6s  ~1s left    
+      [flow] [################....] 10/12    3.8s  ~1s left    
+      [flow] [##################..] 11/12    4.1s  ~0s left    
+      [flow] [####################] 12/12    4.3s  ~0s left    
+      [flow] 12 steps, 20 forwards, 4.3s
+      [stats] HR slat (MV) n=154528 mean=-0.0392 std=5.5450 min=-24.892 max=26.201 nan/inf=0
+      HR shape SLAT (21.0s)
+[4/6] FlexiDualGrid shape decode -> mesh @res1024
+      decoded voxels @res1024 = 1781073
+      mesh V=1781073 F=3920070
+      filled 2213 small holes -> V=1783286 F=3933606
+      shape decode (8.4s)
+[5/6] texture SLAT flow (HR 1024, NAF@1024) + PBR decode
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    0.3s  ~4s left    
+      [flow] [###.................]  2/12    0.5s  ~3s left    
+      [flow] [#####...............]  3/12    0.8s  ~2s left    
+      [flow] [######..............]  4/12    1.0s  ~2s left    
+      [flow] [########............]  5/12    1.2s  ~2s left    
+      [flow] [##########..........]  6/12    1.4s  ~1s left    
+      [flow] [###########.........]  7/12    1.6s  ~1s left    
+      [flow] [#############.......]  8/12    1.8s  ~1s left    
+      [flow] [###############.....]  9/12    2.0s  ~1s left    
+      [flow] [################....] 10/12    2.2s  ~0s left    
+      [flow] [##################..] 11/12    2.4s  ~0s left    
+      [flow] [####################] 12/12    2.6s  ~0s left    
+      [flow] 12 steps, 12 forwards, 2.6s
+      PBR voxels=1781073 @res1024
+      texture SLAT + decode (30.5s)
+[6/6] write /mnt/hdd1/pixal3d/out/official/s_16_img/s_16_img.glb
+  weld: V 1783286->1777827 (5459 near-duplicates merged, eps=0.00012)
+  fill_holes: 2094 boundary loops filled (+8973 faces)
+  remesh_dc: 3727105 active voxels -> V=2965577 F=5981032 (eps=0.0009794, project_back=0.00)
+    [clean] faces=5981032, flipped 0 for consistent winding
+  remesh postproc: dropped 804 floater comps -> V=2887440 F=5826948
+  decimate_qem_gpu(target=1000000): V 2887440->460183, F 5826948->965786
+  weld: V 460183->460173 (10 near-duplicates merged, eps=0.00012)
+  decimated postproc: dropped 21 more comps -> F=944888
+  uv_bake: 2 components (0 tiny, 0 faces -> strip S=0), 0 duplicate faces dropped
+  uv_bake: 24777 merge clusters
+  uv_bake: 2204 uncharted faces kept with point-collapsed UVs
+  uv_bake: atlas 4096x4096 (xatlas 1312x1312), Vo=852011 Fo=944888
+      textured GLB (atlas 4096, +/mnt/hdd1/pixal3d/out/official/s_16_img/s_16_img_base.png)
+done in 177.2s -> /mnt/hdd1/pixal3d/out/official/s_16_img/s_16_img.glb (+ /mnt/hdd1/pixal3d/out/official/s_16_img/s_16_img.ply)
+[estimated] wrote /mnt/hdd1/pixal3d/out/official/s_16_img/s_16_img.glb
+sv rc=0 wall=202s
