@@ -4,7 +4,7 @@ Status baseline: `main` after PR #24/#25/#26/#27/#28/#29/#31/#33. This file is t
 
 ## Planned prerelease tags
 
-- Desktop: `v0.9.0-desktop-alpha` (tagged) → `v0.10.0-desktop-alpha` (tagged 2026-09-20 on `main` `d54de75`, release run 35453640055; see "Desktop 0.10.0 — SV parity" below)
+- Desktop: `v0.9.0-desktop-alpha` (tagged) → `v0.10.0-desktop-alpha` (tagged 2026-09-20 on `main` `d54de75`, release run 35453640055; see "Desktop 0.10.0 — SV parity" below) → `v0.10.1-desktop-alpha` (patch: #35 #36 #37 and the macOS server orphan from #24; tagged from branch `release/0.10.1` = `a2f345a` + the three fix PRs + the `release:` commit, **not** from `main`, because `main` had meanwhile taken the Metal/postprocess perf PRs #46/#48/#49 which a fix-only patch release must not carry; see "Clean-install 0.10.1" below)
 - Web: `v0.9.0-web-alpha` (tagged)
 - Model set: Desktop `pixal3d-f16` / `v1`, Web `pixal3d-q8_0` / `v1` (see "Fixed initial release model sets" below)
 
@@ -761,9 +761,9 @@ loopback is not recommended (no auth, `/generate-sv` accepts 64 MiB uploads).
 - #12 MLP chunking exists as opt-in and reduces FA-path memory, but measured WebGPU/NOFA peak did not improve; it is not an initial release blocker.
 - PR #5 auto `mesh_scale`: not release-ready; explicit/manual scale remains the supported contract.
 - Browser 1536: unsupported for initial Web alpha.
-- #35 WSL2 + CUDA 13.1 runtime: `trellis-server` segfaults in `libnvidia-ptxjitcompiler.so.580.x` when the WSL user-mode CUDA libraries are older than the CUDA 13.1 toolkit requires; use the `cuda12` archive there (or a newer Windows driver). The installer does not detect this yet.
-- #36 A `trellis-server` crash mid-request leaves Studio waiting (`busy` never clears, the panel keeps counting); only the log shows it.
-- #37 Cosmetic: WebKitGTK renders Studio's `<select>` text light-on-light; the SV dropzone shows a broken-image glyph before an image is chosen (WebView2); the CUDA server banner prints `gpu=0` under auto-selection; `install.sh` ends with "add your models dir in Settings" even when the dirs were configured.
+- #35 WSL2 + CUDA 13.1 runtime: `trellis-server` segfaults in `libnvidia-ptxjitcompiler.so.580.x` when the WSL user-mode CUDA libraries are older than the R590 branch CUDA 13.1 corresponds to. **Fixed in 0.10.1** (#50): `install.sh` selects `cuda12` on WSL2 below driver 590 and refuses an explicit `--backend cuda` there. The `cuda` (13.1) runtime still needs a newer Windows driver on such a box.
+- #36 A `trellis-server` crash mid-request left Studio waiting (`busy` never cleared, the panel kept counting, zombie child). **Fixed in 0.10.1** (#54): the shell reaps the child and emits `server-exited`; Studio aborts the request, shows `server exited (code N) — see logs: …` and re-enables Generate once the server answers again. Same PR stops the server on `RunEvent::Exit`, which is the only event a macOS `quit` delivers (the orphan noted in #24).
+- #37 Cosmetics (WebKitGTK `<select>` text, SV broken-image glyph, `gpu=0` banner + no CUDA device line, `install.sh` final message, `install.ps1` CP932 mojibake). **Fixed in 0.10.1** (#51).
 
 ## Release note template
 
