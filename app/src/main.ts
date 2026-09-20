@@ -1,12 +1,12 @@
 import "./ui.css";
 import { capabilities, generate, health } from "./api";
 import { loadConfig } from "./config";
-import { blockedReason, canGenerate, observeCapabilities, setLocalGenerating, setServerOnline, stopWaiting, subscribeGate } from "./gate";
+import { blockedReason, canGenerate, gateState, notifyServerLost, observeCapabilities, onServerLost, setLocalGenerating, setServerOnline, stopWaiting, subscribeGate } from "./gate";
 import { mountMvCalibration, type MvResultDetail } from "./mv_calibration";
 import { renderSettings } from "./settings";
 import { all, clear as clearStore, del as removeRecord, get as getRecord, isEphemeral, newId, put } from "./store";
 import { mountSvPanel, type SvResultDetail } from "./sv_panel";
-import { isTauri, listen, saveBytes, saveToOutputDir } from "./tauri";
+import { isTauri, listen, logsDir, saveBytes, saveToOutputDir, serverRunning } from "./tauri";
 import { Viewer } from "./viewer";
 import { DEFAULT_PARAMS, type GenMode, type GenParams, type GenRecord } from "./types";
 
@@ -41,6 +41,7 @@ let currentGlbName = "model.glb"; // default filename offered by "Save GLB…"
 let activeId: string | null = null;
 let generating = false;
 let abort: AbortController | null = null;
+let lostMsg = "";   // サーバ消失で abort したとき、その理由（Stop waiting と区別する）
 let elapsedTimer: number | null = null;
 let galleryUrls: string[] = [];
 let warnedEphemeral = false;
@@ -143,6 +144,7 @@ async function doGenerate(): Promise<void> {
   const params = readParams();
   generating = true;
   setLocalGenerating(true);
+  lostMsg = "";
   updateGenerateEnabled();
   progress.classList.remove("hidden");
   progressStage.textContent = "starting…";
@@ -158,7 +160,8 @@ async function doGenerate(): Promise<void> {
 
     await recordResult({ mode: "trellis2", name: inputName, params, input: inputImage, glb });
   } catch (e) {
-    if (abort?.signal.aborted) toast("Stopped waiting — the server keeps computing this generation");
+    if (abort?.signal.aborted && lostMsg) progressStage.textContent = lostMsg;   // toast は handleServerLost が出す
+    else if (abort?.signal.aborted) toast("Stopped waiting — the server keeps computing this generation");
     else toast((e as Error).message || "generation failed", "err");
   } finally {
     generating = false;
@@ -265,6 +268,33 @@ generateBtn.addEventListener("click", doGenerate);
 cancelBtn.addEventListener("click", () => {
   abort?.abort();
   stopWaiting();
+});
+onServerLost((msg) => {
+  if (!generating || !abort) return;
+  lostMsg = msg;
+  abort.abort();
+});
+
+// ---- server lost (#36) ----
+// Tauri: the shell reaps the child and emits `server-exited`; that is the only
+// signal used there, because a child that is alive but slow to answer /health
+// (memory pressure during a long generation) must not have its result thrown away.
+// Browser mode has no child to watch, so there /health failing three polls in a
+// row (~12 s of 2 s probes) while a generation is waiting counts as lost. Either
+// way every panel aborts its fetch, the gate goes offline, and one error toast
+// points at the logs. Generate comes back through pollHealth once the server is
+// reachable again (Settings → Restart server).
+const OFFLINE_POLLS_WHILE_GENERATING = 3;
+let offlinePolls = 0;
+let cachedLogsDir = "";   // resolved once at boot so the handler applies synchronously
+function handleServerLost(what: string): void {
+  const msg = cachedLogsDir ? `${what} — see logs: ${cachedLogsDir}` : `${what} — see the server's log output`;
+  notifyServerLost(msg);
+  toast(msg, "err");
+}
+listen<{ code: number | null; signal: number | null }>("server-exited", (p) => {
+  const how = p.signal != null ? `signal ${p.signal}` : `code ${p.code ?? "?"}`;
+  handleServerLost(`server exited (${how})`);
 });
 
 // ---- Pixal3D SV / MV panels ----
@@ -434,6 +464,20 @@ async function pollHealth(): Promise<void> {
   const cfg = await loadConfig(true);
   backendBadge.textContent = cfg.backend !== "unknown" ? cfg.backend : "—";
   const ok = await health();
+  const localGenerating = gateState().localGenerating;
+  // A Studio-owned child has the Rust exit watcher, so transient /health failures must
+  // not abandon a long generation. An autostart-reused/manual server has no Child handle
+  // (server_running=false), so it needs the same conservative health fallback as browser mode.
+  const healthFallback = !isTauri() || (!ok && localGenerating && !(await serverRunning()));
+  if (!ok && healthFallback && localGenerating) {
+    offlinePolls++;
+    if (offlinePolls >= OFFLINE_POLLS_WHILE_GENERATING) {
+      offlinePolls = 0;
+      handleServerLost("server stopped responding during generation");
+    }
+  } else {
+    offlinePolls = 0;
+  }
   setServerOnline(ok);
   // /capabilities は 0.10.0 で追加。旧サーバでは null になり、gate は 0.9.0 の挙動に戻る。
   observeCapabilities(ok ? await capabilities() : null);
@@ -461,6 +505,7 @@ listen<string>("server-log", (line) => {
 // ---- boot ----
 async function boot(): Promise<void> {
   setViewerTools(false);
+  cachedLogsDir = await logsDir();
   await refreshGallery();
   await pollHealth();
   window.setInterval(pollHealth, 4000);

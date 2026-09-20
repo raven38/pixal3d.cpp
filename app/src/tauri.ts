@@ -67,6 +67,17 @@ export async function openLogsDir(): Promise<void> {
   if (isTauri()) await invoke("open_logs_dir");
 }
 
+/** Whether Studio currently owns a live trellis-server child. False for browser mode
+ *  and for an already-running server that autostart adopted/reused. */
+export async function serverRunning(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    return await invoke<boolean>("server_running");
+  } catch {
+    return false;
+  }
+}
+
 /** The logs directory path (Tauri only); empty string in the browser. */
 export async function logsDir(): Promise<string> {
   if (!isTauri()) return "";

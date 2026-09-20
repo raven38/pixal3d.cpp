@@ -8,7 +8,7 @@
 // だけを持つ。解像度は本リリースでは 1024 固定なので選ばせない（設計書 D10）。
 
 import { generateSingleView } from "./api";
-import { blockedReason, canGenerate, gateState, setLocalGenerating, stopWaiting, subscribeGate } from "./gate";
+import { blockedReason, canGenerate, gateState, onServerLost, setLocalGenerating, stopWaiting, subscribeGate } from "./gate";
 import { imageAlphaStatus, type AlphaCheckResult } from "./mv_preflight";
 import { listen } from "./tauri";
 
@@ -81,6 +81,7 @@ export function mountSvPanel(root: HTMLElement): void {
   let alpha: AlphaCheckResult | null = null;
   let generating = false;
   let abort: AbortController | null = null;
+  let lostMsg = "";   // サーバ消失で abort したとき、その理由（Stop waiting と区別する）
   let timer: number | null = null;
   let previewUrl = "";
 
@@ -184,6 +185,11 @@ export function mountSvPanel(root: HTMLElement): void {
     abort?.abort();
     stopWaiting();
   });
+  onServerLost((msg) => {
+    if (!generating || !abort) return;
+    lostMsg = msg;
+    abort.abort();
+  });
 
   gen.addEventListener("click", async () => {
     if (!file || generating || problems().length || !canGenerate()) return;
@@ -193,6 +199,7 @@ export function mountSvPanel(root: HTMLElement): void {
     const uv = uvSelect.value === "box" ? "box" : "xatlas";
     generating = true;
     setLocalGenerating(true);
+    lostMsg = "";
     abort = new AbortController();
     progress.hidden = false;
     stage.textContent = "starting…";
@@ -206,7 +213,9 @@ export function mountSvPanel(root: HTMLElement): void {
       const detail: SvResultDetail = { glb, input: file, name: file.name, fovRad: fov, seed };
       window.dispatchEvent(new CustomEvent<SvResultDetail>("pixal3d-sv-result", { detail }));
     } catch (e) {
-      if (abort.signal.aborted) {
+      if (abort.signal.aborted && lostMsg) {
+        stage.textContent = lostMsg;   // main.ts が toast を出す。ここでは重ねない
+      } else if (abort.signal.aborted) {
         stage.textContent = "stopped waiting — the server keeps computing this generation";
       } else {
         stage.textContent = "failed";

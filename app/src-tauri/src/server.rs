@@ -2,16 +2,18 @@
 // configured binary path, forward its stdout/stderr lines to the UI as
 // `server-log` events (so the UI can show live stage progress), tee every line
 // to a per-launch log file under the logs dir (so crashes/backend errors can be
-// diagnosed after the fact), and make sure it dies with the app.
+// diagnosed after the fact), watch for it dying on its own (`server-exited`
+// event, #36), and make sure it dies with the app.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::config::{self, Config};
 
@@ -20,6 +22,64 @@ pub struct ServerState {
     child: Mutex<Option<Child>>,
     /// Path of the log file for the current/last launch, for the "open log" UI.
     log_path: Mutex<Option<PathBuf>>,
+    /// Bumped on every start()/stop(); the exit watcher of an older launch sees the
+    /// mismatch and quits instead of reporting on a child it does not own.
+    launch: AtomicU64,
+}
+
+/// Payload of the `server-exited` event: the child ended without us stopping it.
+/// `code` is the exit code (None when killed by a signal), `signal` the Unix
+/// signal number (None on Windows or on a normal exit).
+#[derive(Clone, serde::Serialize)]
+pub struct ServerExited {
+    pub code: Option<i32>,
+    pub signal: Option<i32>,
+}
+
+/// (exit code, Unix signal) of a finished child; the signal is None on Windows.
+fn exit_reason(status: &std::process::ExitStatus) -> (Option<i32>, Option<i32>) {
+    #[cfg(unix)]
+    let signal = std::os::unix::process::ExitStatusExt::signal(status);
+    #[cfg(not(unix))]
+    let signal: Option<i32> = None;
+    (status.code(), signal)
+}
+
+/// Poll the child we own until it exits on its own. An intentional stop()/restart
+/// takes the child out of the state first (and bumps `launch`), so only an
+/// unexpected death reaches the event. Reaping here also prevents the zombie a
+/// crashed server used to leave until the app quit. The log line and the event
+/// go out while the child lock is still held, so a restart (which takes the same
+/// lock in stop()) cannot slip in between the reap and the notification.
+fn watch_exit(app: AppHandle, launch: u64, sink: LogSink) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(250));
+        let state = app.state::<ServerState>();
+        let mut guard = state.child.lock().unwrap();
+        if state.launch.load(Ordering::SeqCst) != launch {
+            return;
+        }
+        let Some(child) = guard.as_mut() else { return };
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                guard.take();
+                let (code, signal) = exit_reason(&status);
+                let how = match (code, signal) {
+                    (_, Some(sig)) => format!("signal {sig}"),
+                    (Some(c), None) => format!("code {c}"),
+                    (None, None) => "unknown status".to_string(),
+                };
+                studio_log(&app, &sink, &format!("server exited unexpectedly ({how})"));
+                let _ = app.emit("server-exited", ServerExited { code, signal });
+                return;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                studio_log(&app, &sink, &format!("server exit watch failed: {e}"));
+                return;
+            }
+        }
+    });
 }
 
 /// Is something already accepting connections on host:port? Used to detect a
@@ -267,6 +327,8 @@ pub fn start(
     }
 
     *state.child.lock().unwrap() = Some(child);
+    let launch = state.launch.fetch_add(1, Ordering::SeqCst) + 1;
+    watch_exit(app.clone(), launch, sink.clone());
     studio_log(
         app,
         &sink,
@@ -275,7 +337,11 @@ pub fn start(
     Ok(())
 }
 
+/// Kill the child we own (if any) and reap it. This is the single place that
+/// takes the server down: called on restart, on the managed-cache delete, and
+/// from every app-exit path in main.rs (window close, ExitRequested, Exit).
 pub fn stop(state: &ServerState) {
+    state.launch.fetch_add(1, Ordering::SeqCst);
     if let Some(mut child) = state.child.lock().unwrap().take() {
         let _ = child.kill();
         let _ = child.wait();
