@@ -42,9 +42,10 @@ Initial release gates are tracked in [`docs/PIXAL3D_RELEASE_CHECKLIST.md`](docs/
 - browser-safe wasm32 postprocess/memory budgets
 - verified local OPFS model-set installation is implemented; automatic persistent model delivery/version lifecycle remains tracked by #9
 
-Prerelease tags: `v0.9.0-desktop-alpha` and `v0.9.0-web-alpha` (tagged). Next: `v0.10.0-desktop-alpha`
-— Desktop feature parity with the Web alpha's single-view mode (Pixal3D SV, canonical 4-view rig,
-second model directory; design `docs/design/2026-09-19-desktop-0.10.0-sv-parity.md`).
+Prerelease tags: `v0.9.0-desktop-alpha`, `v0.9.0-web-alpha` and `v0.10.0-desktop-alpha` (tagged
+2026-09-20 on `d54de75`) — the latter brings Desktop to feature parity with the Web alpha's single-view
+mode (Pixal3D SV, canonical 4-view rig, second model directory; design
+`docs/design/2026-09-19-desktop-0.10.0-sv-parity.md`).
 
 ## Repository strategy
 
