@@ -531,6 +531,8 @@ std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> samp
                                      std::vector<std::vector<float>>* trace,
                                      int* stochastic_counter) {
     if (conds.empty()) throw std::invalid_argument("sample_flow_multi: empty condition bank");
+    for (const float* c : conds)
+        if (!c) throw std::invalid_argument("sample_flow_multi: null condition element in condition bank");
     if (!neg_cond) throw std::invalid_argument("sample_flow_multi: null negative condition");
     if (sp.steps <= 0) throw std::invalid_argument("sample_flow_multi: steps must be positive");
 
@@ -558,13 +560,17 @@ std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> samp
             const float gs = guided ? sp.guidance_strength : 1.0f;
             if (gs == 1.0f) {
                 pred = fwd(sample, tscaled, c);
+                if (pred.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
                 ++n_fwd;
             } else if (gs == 0.0f) {
                 pred = fwd(sample, tscaled, neg_cond);
+                if (pred.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
                 ++n_fwd;
             } else {
                 pos = fwd(sample, tscaled, c);
+                if (pos.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
                 neg = fwd(sample, tscaled, neg_cond);
+                if (neg.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
                 n_fwd += 2;
                 for (size_t k = 0; k < Nst; ++k)
                     pred[k] = gs * pos[k] + (1.0f - gs) * neg[k];

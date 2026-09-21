@@ -17,8 +17,9 @@
 //   - StochasticCounter型ではなく生の int* を7番目でなく8番目の引数として取る
 //     （include/flow_runner.h: ..., trace = nullptr, stochastic_counter = nullptr)。
 //   - 入力検証で std::runtime_error でなく std::invalid_argument を投げる（catchはstd::exceptionへ）。
-//   - conds の各要素の null は検証しない（null を渡すとSIGSEGVする——このテストでは実行しない）。
-//   - stochastic分岐はforward戻り値サイズを検証しない（multidiffusion分岐は検証する）。
+// TASK-PORT F3（2026-09-21）: P3移植時点では conds 要素の null 検証と、stochastic 分岐の forward
+// 戻り値サイズ検証が #71 に欠けており、それぞれ SKIP / 既知FAIL として扱っていた。flow_runner.cpp
+// 側に両検証を追加したため、現在はどちらも通常の check() で 74/74 (0 FAIL, 0 SKIP) になる。
 //
 // Usage: trellis-test-flow-multi [fixture_path]
 //   既定の fixture_path は "tests/fixtures/trellis2_mv_sampler/sampler_oracle.txt"
@@ -41,16 +42,11 @@ using trellis::MultiCondMode;
 using trellis::SamplerParams;
 
 static int g_fail = 0;
-static int g_skip = 0;
 
 static void check(const char* name, bool cond, const std::string& detail = "") {
     printf("[%s] %s%s%s\n", cond ? "PASS" : "FAIL", name,
            (!cond && !detail.empty()) ? " -- " : "", (!cond && !detail.empty()) ? detail.c_str() : "");
     if (!cond) ++g_fail;
-}
-static void skip(const char* name, const std::string& reason) {
-    printf("[SKIP] %s -- %s\n", name, reason.c_str());
-    ++g_skip;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,11 +438,9 @@ static void test_determinism() {
 // 4.1-13: 入力検証
 // #71 は std::invalid_argument を投げる（旧トラックの std::runtime_error ではない）ため
 // catch を std::exception に変更（例外が飛ぶこと自体の期待値は変えていない）。
-// null cond要素の検証は #71 に無く、実行するとFakeModelのcond[0]参照でSIGSEGVするため
-// 安全のため実行しない（check()でなくSKIPにする、FINDING参照）。
-// forward戻り値サイズ検証はstochastic分岐に無い（multidiffusion分岐にはある）。このケースは
-// fwdが要求サイズより大きいベクタを返すためOOB読みは起きず安全に実行できる -- 例外は飛ばず
-// checkは自然にFAILする（直さず残す、FINDING参照）。
+// TASK-PORT F3 で flow_runner.cpp に2件の検証を追加済み: conds 要素の null チェック（null なら
+// std::invalid_argument）と、stochastic 分岐の forward 戻り値サイズチェック（multidiffusion
+// 分岐と同じ std::runtime_error）。これにより以下は SKIP/既知FAIL でなく通常の check() になる。
 // ---------------------------------------------------------------------------
 static void test_input_validation() {
     const int dim = 4;
@@ -462,24 +456,17 @@ static void test_input_validation() {
         catch (const std::exception&) { return true; }
     };
     check("validation: empty conds throws", threw({}, negbuf.data(), 4));
-    skip("validation: null cond element throws",
-         "flow_runner.cpp:492-494 (#71) does not validate conds element pointers -- passing "
-         "nullptr dereferences it inside fwd() and SIGSEGVs the whole test binary. Not executed "
-         "(FINDING, not fixed here per TASK-PORT prohibition on changing #71 behavior).");
+    check("validation: null cond element throws", threw({ nullptr }, negbuf.data(), 4));
     check("validation: null neg_cond throws", threw({ cond1.data() }, nullptr, 4));
     check("validation: steps<=0 throws", threw({ cond1.data() }, negbuf.data(), 0));
 
-    // fwd_bad_size returns dim+1 (LARGER than Nst=dim) -- safe to call: pred[k] for k<Nst stays
-    // in bounds even though sample_flow_multi's stochastic branch never checks tmp.size(). No
-    // exception is thrown, so this legitimately FAILs (documented deviation, FINDING).
+    // fwd_bad_size returns dim+1 (LARGER than Nst=dim) -- stochastic 分岐は今 tmp.size() を
+    // チェックするので std::runtime_error が飛ぶ（F3 で multidiffusion 分岐と揃えた）。
     FlowFwd fwd_bad_size = [&](const std::vector<float>&, float, const float*) { return std::vector<float>(dim + 1, 0.f); };
     bool threw_size = false;
     try { trellis::sample_flow_multi(fwd_bad_size, noise, { cond1.data() }, negbuf.data(), sp, MultiCondMode::Stochastic); }
     catch (const std::exception&) { threw_size = true; }
-    check("validation: forward return-size mismatch throws (stochastic)", threw_size,
-          "FINDING: flow_runner.cpp's stochastic branch (~:550-567) has no forward-return-size "
-          "check, unlike the multidiffusion branch (~:574: `if (tmp.size() != Nst) throw ...`). "
-          "Not fixed here (P3 scope is porting the test harness, not #71's implementation).");
+    check("validation: forward return-size mismatch throws (stochastic)", threw_size);
 }
 
 // ---------------------------------------------------------------------------
@@ -689,9 +676,8 @@ int main(int argc, char** argv) {
     }
 
     printf("\n");
-    printf("%d FAIL, %d SKIP (trellis-test-flow-multi, CPU, no model weights)\n", g_fail, g_skip);
-    // A known, expected FAIL is the #71 API-deviation check ("forward return-size mismatch throws
-    // (stochastic)") -- see its FINDING comment above. g_fail==1 here is expected, not a
-    // regression; a different count means something else changed (report as a new FINDING).
+    printf("%d FAIL (trellis-test-flow-multi, CPU, no model weights)\n", g_fail);
+    // TASK-PORT F3 (2026-09-21): flow_runner.cpp now validates both null cond elements and the
+    // stochastic branch's forward return size, so g_fail==0 (74/74) is the expected steady state.
     return g_fail ? 1 : 0;
 }
