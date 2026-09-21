@@ -374,6 +374,13 @@ add_executable(trellis-test-trellis2-mv-ss src/test_trellis2_mv_ss.cpp)
 target_link_libraries(trellis-test-trellis2-mv-ss PRIVATE trellis_core)
 set_target_properties(trellis-test-trellis2-mv-ss PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# TASK-PORT P6: cond-bank structural/self-consistency tests (weight-driven, needs dinov3.gguf; see
+# the file's header comment for why build_cond_bank() is file-local static rather than a new
+# shared module).
+add_executable(trellis-test-trellis2-mv-cond src/test_trellis2_mv_cond.cpp)
+target_link_libraries(trellis-test-trellis2-mv-cond PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-cond PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-ss-flow src/test_ss_flow.cpp)
 target_link_libraries(trellis-test-ss-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")

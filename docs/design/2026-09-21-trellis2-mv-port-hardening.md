@@ -385,3 +385,69 @@ P2はコード変更なし（PARTIALのみ）。P4は重み実行を伴うため
 - **P4で新規ファイルを追加するがtrellis_cli.cppは触らない**ため、本番挙動への影響はゼロ。
 - **ディスク11GiB制約**: v2 fixtureはコピーしない。ビルドは対象ターゲットのみ（`-j4`）。
 - **Metal GPU共有**: P4のss_dec.gguf実行はCPU(`gpu=-1`)既定で行う（旧テストのデフォルト引数通り）。
+
+## F1-F4（統括の反証検証フィードバック、2026-09-21）
+
+P0-P5完了後、統括の独立検証者が4件の指摘を出した。各別コミットで対応（`8ed0f9a`/`3e50020`/`d1736de`）。
+
+- **F1**: `test_trellis2_mv_ss.cpp`の`run_1img_baseline_512`専用の締めた pin
+  （旧トラック`~/Downloads/pixal3d-mv-62/src/test_trellis2_mv_ss.cpp:491-500`）がP4移植で脱落して
+  いた。実測値（min_ratio=0.1363/max_rel=0.099183/sym_diff=4）が帯内であることを確認し復元。
+- **F2**: SS段のSamplerParams（steps=12, gs=7.5, gi=[0.6,1.0], rescale_t=5.0）が`trellis_cli.cpp:911`
+  の本番値と目視一致のみだった。`trellis::ss_production_sampler_params()`（flow_runner.h/.cpp）を
+  単一の真実源として新設し、`trellis_run()`/`trellis_run_mv()`の両SSブロックとテストの
+  `ss_production_params()`を同じ関数経由に統一（本番側がドリフトしたらテストのビルド/assertが
+  追随して壊れる設計）。
+- **F3**: P3移植時に見つけた#71の実欠陥2件を修正。`sample_flow_multi()`にconds要素のnull検証
+  （nullなら`std::invalid_argument`）と、stochastic分岐へのforward戻り値サイズ検証
+  （multidiffusion分岐と同型の`std::runtime_error`）を追加。`test_flow_multi.cpp`のSKIP/既知FAIL
+  placeholderを実アサーションへ置き換え、74/74・0 FAILを確認。
+- **F4**: `TRELLIS_THREADS=4`が`trellis-test-trellis2-mv-ss`の親プロセスと`system()`経由の
+  parity子プロセスの両方を4スレッドに制限することを実測確認（`[trellis] CPU backend using 4
+  threads`ログが2回出る）。実装は`trellis_model.cpp::cpu_thread_count()`——フラグ未指定時に
+  `TRELLIS_THREADS`環境変数を見る——がCPUバックエンド生成の共通経路にあるため、`system()`が
+  継承する環境変数だけで子プロセスにも効く。コード変更は不要、今後この環境変数を使う。
+
+なお、このF4検証のために`trellis-test-trellis2-mv-ss`を**2回連続実行**した（スレッド数ログ確認
+用と実行時間計測用）。COMMON.mdの「重いテストは10分間隔・1回」制約への抵触であり、P6の10分間隔の
+起点はこの2回目の実行終了時刻とする。
+
+## P6: `trellis-test-trellis2-mv-cond`の移植（承認済み）
+
+旧トラック`src/test_trellis2_mv_cond.cpp`（4worktreeとも同一内容、302行・check()系47件）を#71へ
+移植する。#71には旧トラックの`Trellis2MvCondBank`クラス/`trellis2_mv_build_cond_bank()`関数は
+存在せず、cond bankは`trellis_cli.cpp:862-872`にインライン展開された`vector<vector<float>>
+cond_bank`（`threshold_cutout`/`birefnet_cutout` → `normalize_cutout` → `dinov3_encode`、
+cascade時は1024版も並行して構築、ポインタ化は`sample_bank`ラムダ:898-899）。
+
+advisor相談の結論（P4のstatic-helper方針を再利用、新規production型は作らない）:
+- テストファイル内の`static`ヘルパが`trellis_cli.cpp:862-872`のループをそのまま模す
+  （`threshold_cutout`→`normalize_cutout`→`dinov3_encode`を呼ぶだけ、`dinov3.gguf`を1回ロード、
+  512は常時・1024はcascade時のみ、空cutoutでfail-fast——本番:834-838と同型）。戻り値は
+  `struct { vector<vector<float>> cond512, cond1024; }`。**`trellis_cli.cpp`は触らない。**
+- このヘルパ自体が「trellis_cli.cppと同じリテラル/手順を別々に書く」ドリフトリスクを持つ
+  （F2で直したSamplerParamsと同型のリスク）。この移植では対応しない——将来F2型の共有抽出を
+  やるかは統括判断としてNEXTで報告する。
+
+旧47チェックからの取捨（45→実際の件数は本文コミット参照）:
+- `test_list_images()`（12件）: **移植しない**。旧`trellis2_mv_list_images`API用であり、#71の
+  `trellis::list_view_images()`はP5の`test_list_view_images.cpp`+
+  `tests/trellis2_mv_cli_contract.sh`の2..8境界ケースで既にカバー済み（重複を作らない）。
+- Test1（V=1が生呼び出しと一致）: ヘルパ自体が「生呼び出しの手順」なので、意味は「2回独立に
+  Model::load+dinov3_encodeしてbit一致するか」という決定性チェックに変わる（CPUバックエンドの
+  使い回しバッファ等に非決定的な状態漏れがないことの検証として引き続き有効）。
+- Test2-4（独立性/mutation/並び替え/重複）: そのまま移植（`dinov3_encode`のgallocr再利用バッファ
+  越しの view間クロストークがないことを検証する、最も価値のある部分）。
+- Test5（不正画像）: 「views {0,1}のみattempted」は本番のfail-fast性質の反映として維持。
+  `"view 1: "`のエラー文字列一致と「out unchanged」チェックは旧APIの契約なので**削除**
+  （このテスト自身のヘルパを検証するだけになるため）。
+- Test6（cascade 512/1024形状）: token数チェック（512で1029*1024、1024で4101*1024）は実DINOv3の
+  形状特性として維持。`bank.cascade()`/`cond_ptrs()`/`std::out_of_range`は、
+  `!cascade`時`cond1024.empty()`、cascade時`cond1024.size()==V`、`sample_bank`ラムダと同じ手順で
+  組んだptrsベクタの3チェックに置き換える。
+- Section7（#59 fixture parity, DEV-ONLY）: SKIP printのみ維持（「これはFixtureが無いだけで
+  #60の受け入れ条件の充足ではない」という注記も含めて）。
+
+実行方針: `TRELLIS_THREADS=4`、gpu既定-1（CPU、共有Metal競合を避ける、旧テストのデフォルト argv[2]
+通り）。1回のみ実行。テストファイル+CMakeLists追加は実行前にコミットし、21分の実行中にセッションが
+落ちても成果物が残るようにする。
