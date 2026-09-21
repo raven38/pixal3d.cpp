@@ -11,6 +11,7 @@
 struct ggml_context;
 struct ggml_cgraph;
 struct ggml_tensor;
+struct ggml_backend_buffer;
 typedef struct ggml_gallocr* ggml_gallocr_t;
 
 namespace trellis {
@@ -60,6 +61,21 @@ private:
     struct CrossKvEntry { const float* key = nullptr; std::vector<float> data; };
     std::vector<CrossKvEntry> cross_kv_host_;
     const std::vector<float>& cross_kv_for(const float* cond);
+
+    // CUDA/Q8_0 only: prepack the step-invariant ProjectAttention proj condition
+    // once per distinct condition into ggml-CUDA's private MMQ Q8_1 layout.
+    // The main graph consumes a Q8_1 tensor, so every block skips its F32->Q8_1
+    // quantizer. Cached packed operands stay on-device; each forward only copies
+    // the selected ~1.125 byte/value operand into the graph input buffer.
+    bool use_proj_q8_cache_ = false;
+    struct ProjQ8Entry {
+        const float* key = nullptr;
+        ggml_context* ctx = nullptr;
+        ggml_backend_buffer* buffer = nullptr;
+        ggml_tensor* packed = nullptr;
+    };
+    std::vector<ProjQ8Entry> proj_q8_cache_;
+    ggml_tensor* proj_q8_for(const float* proj);
 
     std::vector<float> rcos_, rsin_;   // re-uploaded each forward (gallocr may reuse input buffers)
     size_t alloc_bytes_ = 0;
