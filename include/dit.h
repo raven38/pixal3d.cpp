@@ -50,7 +50,15 @@ ggml_tensor* build_dit_dense(ggml_context* gctx, const Model& m, const DiTParams
                              ggml_tensor* h0, ggml_tensor* tfreq, ggml_tensor* cond,
                              ggml_tensor* cos, ggml_tensor* sin,
                              std::map<std::string, ggml_tensor*>* inter = nullptr,
-                             ggml_tensor* proj = nullptr);
+                             ggml_tensor* proj = nullptr,
+                             ggml_tensor* cross_kv_cache = nullptr);
+
+// Build the step-invariant cross-attention K/V projection cache for all blocks.
+// cond: [d_cond, Lc]. Returns contiguous F32 [2*d_model, Lc, n_blocks], where
+// slice [:,:,i] is blocks.i cross-attention to_kv(cond), including its bias.
+// K RMSNorm stays in the main DiT graph so this only removes repeated projection GEMMs.
+ggml_tensor* build_dit_cross_kv_cache(ggml_context* gctx, const Model& m, const DiTParams& p,
+                                      ggml_tensor* cond);
 
 // The DiT's 3D RoPE as a graph op, exposed for trellis-test-rope-layout. x: [head_dim, n_heads, L]
 // f32; cos/sin: [1, head_dim/2, 1, L] (or any contiguous tensor of head_dim/2 * L floats laid out
