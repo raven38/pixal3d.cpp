@@ -4,7 +4,7 @@ Status baseline: `main` after PR #24/#25/#26/#27/#28/#29/#31/#33. This file is t
 
 ## Planned prerelease tags
 
-- Desktop: `v0.9.0-desktop-alpha` (tagged) → `v0.10.0-desktop-alpha` (tagged 2026-09-20 on `main` `d54de75`, release run 35453640055; see "Desktop 0.10.0 — SV parity" below)
+- Desktop: `v0.9.0-desktop-alpha` (tagged) → `v0.10.0-desktop-alpha` (tagged 2026-09-20 on `main` `d54de75`, release run 35453640055; see "Desktop 0.10.0 — SV parity" below) → `v0.10.1-desktop-alpha` (patch: #35 #36 #37 and the macOS server orphan from #24; tagged 2026-09-20 on branch `release/0.10.1` `add368c` = `a2f345a` + the squash commits of #50/#51/#54 + the `release:` commit, release run 35495714152; **not** from `main`, which had meanwhile taken the perf PRs #46/#48/#49 that a fix-only patch must not carry; see "Clean-install 0.10.1" below)
 - Web: `v0.9.0-web-alpha` (tagged)
 - Model set: Desktop `pixal3d-f16` / `v1`, Web `pixal3d-q8_0` / `v1` (see "Fixed initial release model sets" below)
 
@@ -394,6 +394,37 @@ native CUDA 13 CLI). Advertise: **Linux Studio GUI verified on WSL2/WSLg with th
 the `cuda` (13.1) runtime needs a WSL user-mode driver newer than 580.x; native Linux desktop and
 Vulkan GUI not verified.**
 
+### Clean-install 0.10.1 — patch verification on Windows + WSL2 (2026-09-20, RTX 4090 / Windows 11 Home, Ryzen 9 7950X)
+
+`v0.10.1-desktop-alpha` = branch `release/0.10.1` `add368c` (release run 35495714152, 12 jobs green incl. the
+experimental Windows CUDA/ROCm legs, 15 assets: the same names and within a few bytes of the 0.10.0 sizes,
+plus `trellis-rocm-windows-x64.zip` 170.7 MB). Fixes only: #35 (#50), #37 (#51), #36 + macOS orphan (#54).
+Same machine, inputs and model sets as the 0.10.0 rows above; the 0.10.0 installs were left in place
+(`D:\pixal3d\trellis-studio-0.10.0`, `/mnt/hdd1/pixal3d/studio-0.10.0`), config backed up as
+`config.json.bak-0.10.0-*`. Screenshots on the non-merge branch `media/0.10.1-verify` (`rel-*.png`), logs and
+GLBs on the machine under `D:\pixal3d\out-0.10.1\` and `/mnt/hdd1/pixal3d/studio-0.10.1/`.
+
+| step | result |
+|---|:---:|
+| **WSL2 installer, no `--backend`** (#35): `install.sh --tag v0.10.1-desktop-alpha --dest /mnt/hdd1/pixal3d/studio-0.10.1 --models-dir … --models-dir-sv … -y` | rc 0, **195 s**: `warn: WSL2: the user-mode CUDA driver is 580.x (nvidia-smi) but the CUDA 13.1 runtime corresponds to the R590 driver branch — selecting the CUDA 12 runtime (cuda12)`, `auto-detected backend: cuda12`, `trellis-cuda12-linux-x64.tar.gz` downloaded, both model sets 9/9 "already present, verified", `config.json` `"backend": "cuda12"`, `release.json` commit `add368c`; final line `done — launch Trellis Studio.` (no Settings hint, #37) |
+| WSL2 `trellis-cli --views …/cyclops --models … --seed 42 --res 1024 --require-gpu` (cuda12 runtime from that install) | **rc 0, 543.4 s**, `[trellis] using CUDA0: NVIDIA GeForce RTX 4090 (24563 MB) [auto]` (#37), GLB 33,023,408 B (Vo=638,129 Fo=973,088, atlas 4096) |
+| **Windows installer** `install.ps1 -Backend cuda -Tag v0.10.1-desktop-alpha -Dest D:\pixal3d\trellis-studio-0.10.1 -ModelsDir … -ModelsDirSv … -Yes` | rc 0, **89 s**: CUDA 13 runtime zip + Studio setup 0.10.1 (silent, per-user upgrade over 0.10.0), both sets 9/9 verified in place, final line `done - launch Trellis Studio from the Start menu.` (ASCII, #37); `trellis-studio.exe` FileVersion 0.10.1 |
+| Windows Studio launch | `CUDA ● ready`; launch log `[studio] config: … gpu=auto …` and **`[trellis-server] … gpu=auto listening on …`** (#37, was `gpu=0`) |
+| Windows SV panel (WebView2) | no broken-image glyph / alt text before an image is chosen; UV select dark (`rel-win-sv-panel.png`) |
+| **Windows crash mid-request** (#36): MV started (cyclops, `transforms.json`, 1024, seed 42), 40 s in → `Stop-Process -Name trellis-server -Force` | within 4 s: toast **`server exited (code -1) — see logs: C:\Users\…\AppData\Local\trellis-studio\logs`** (+ `Pixal3D multiview generation failed: Failed to fetch` from the rejected fetch), status `offline`, `Generate is paused: server is offline`, launch log `[studio] server exited unexpectedly (code -1)`; Settings → **Restart server** → `ready`, **Generate MV 3D enabled again** (`rel-win-crash-toast.png`) |
+| Windows MV to completion after the restart | server `done in 283.4s` (Vo=655,988 Fo=973,656, atlas 4096); viewer + caption `Pixal3D MV · 1024 · seed 42 · 34.7 MB · mesh_scale 1.000`, gallery 4 items, auto-saved `D:\pixal3d\trellis-studio-0.10.1\output\multiview_1024_seed42_scale1.000_<id>.glb` (34,741,136 B) (`rel-win-mv-done.png`) |
+| Windows lifecycle | `lifecycle.ps1` (WM_CLOSE) → `studio=[] server=[]` at +1 s and +6 s |
+| **WSLg Studio** (0.10.1 AppImage via `--appimage-extract-and-run` + the user-space `libEGL`, installed `cuda12` runtime) | `CUDA12 ● ready`, banner `gpu=auto`; **`<select>` texts readable** (Resolution / UV, WebKitGTK, `rel-wslg-select.png`), SV dropzone clean (`rel-wslg-sv-panel.png`); GTK chooser → `4 image(s) · 4/4 matched`, `Preflight passed` |
+| **WSLg crash mid-request** (#36): MV started, 30 s in → `kill -SEGV <trellis-server>` | WSL's `CaptureCrash` holds the process ~17 s, then `[studio] server exited unexpectedly (signal 11)`, no zombie, toast **`server exited (signal 11) — see logs: /home/raven/.local/share/trellis-studio/logs`** (+ `… failed: Load failed`), `offline`; Settings → Restart server (keyboard: Port field, Tab×3, Enter — the 1276×917 RAIL window cuts the modal's buttons off) → `ready`, Generate enabled (`rel-wslg-crash-toast.png`) |
+| WSLg MV to completion after the restart | `done in 550.7s` (Vo=642,765 Fo=967,638); viewer + caption `Pixal3D MV · 1024 · seed 42 · 33.1 MB · mesh_scale 1.000`, gallery 3 items, auto-saved `/mnt/hdd1/pixal3d/studio-0.10.1/output/multiview_1024_seed42_scale1.000_<id>.glb` (33,088,948 B) (`rel-wslg-mv-done.png`) |
+| WSLg lifecycle | `kill -TERM <trellis-studio>` → 0 `trellis-server`, 0 `trellis-studio` after 3 s |
+| macOS (M1 Pro, branch build before the tag, not these assets) | published 0.10.0 `.app`: `osascript -e 'quit app "Trellis Studio"'` **orphans the server (ppid 1)** — reproduced; 0.10.1 build: 0 servers after quit; crash → `server exited (signal 11)` toast, reaped |
+
+Not covered on 0.10.1: SV / canonical-rig GUI runs (unchanged code, 0.10.0 rows stand), TRELLIS.2 single-image
+path, 1536, Vulkan through Studio, native Linux desktop, CUDA 12 / ROCm Windows archives, silhouette-IoU
+gates (the mesh counts above match the 0.10.0 runs within the usual seed-42 spread). The `cuda` (13.1)
+runtime on WSL2 still segfaults on this box's 580.x user-mode stack; the installer now routes around it.
+
 ## macOS Desktop alpha (2026-09-10)
 
 Supported target: Trellis Studio on **macOS 26.5 / Apple Silicon**, Metal runtime, resident native
@@ -761,9 +792,9 @@ loopback is not recommended (no auth, `/generate-sv` accepts 64 MiB uploads).
 - #12 MLP chunking exists as opt-in and reduces FA-path memory, but measured WebGPU/NOFA peak did not improve; it is not an initial release blocker.
 - PR #5 auto `mesh_scale`: not release-ready; explicit/manual scale remains the supported contract.
 - Browser 1536: unsupported for initial Web alpha.
-- #35 WSL2 + CUDA 13.1 runtime: `trellis-server` segfaults in `libnvidia-ptxjitcompiler.so.580.x` when the WSL user-mode CUDA libraries are older than the CUDA 13.1 toolkit requires; use the `cuda12` archive there (or a newer Windows driver). The installer does not detect this yet.
-- #36 A `trellis-server` crash mid-request leaves Studio waiting (`busy` never clears, the panel keeps counting); only the log shows it.
-- #37 Cosmetic: WebKitGTK renders Studio's `<select>` text light-on-light; the SV dropzone shows a broken-image glyph before an image is chosen (WebView2); the CUDA server banner prints `gpu=0` under auto-selection; `install.sh` ends with "add your models dir in Settings" even when the dirs were configured.
+- #35 WSL2 + CUDA 13.1 runtime: `trellis-server` segfaults in `libnvidia-ptxjitcompiler.so.580.x` when the WSL user-mode CUDA libraries are older than the R590 branch CUDA 13.1 corresponds to. **Fixed in 0.10.1** (#50): `install.sh` selects `cuda12` on WSL2 below driver 590 and refuses an explicit `--backend cuda` there. The `cuda` (13.1) runtime still needs a newer Windows driver on such a box.
+- #36 A `trellis-server` crash mid-request left Studio waiting (`busy` never cleared, the panel kept counting, zombie child). **Fixed in 0.10.1** (#54): the shell reaps the child and emits `server-exited`; Studio aborts the request, shows `server exited (code N) — see logs: …` and re-enables Generate once the server answers again (Settings → Restart server). Same PR stops the server on `RunEvent::Exit`, the only event a macOS `quit` delivers (the orphan noted in #24). Cosmetic leftover: when the dead connection also rejects the fetch (WebKitGTK "Load failed", WebView2 "Failed to fetch") a second toast "generation failed: …" precedes the `server exited` one.
+- #37 Cosmetics (WebKitGTK `<select>` text, SV broken-image glyph, `gpu=0` banner + no CUDA device line, `install.sh` final message, `install.ps1` CP932 mojibake). **Fixed in 0.10.1** (#51).
 
 ## Release note template
 
