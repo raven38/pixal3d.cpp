@@ -80,9 +80,13 @@ jobs:
             -DPIXAL3D_CUDA_Q8_ASYNC_Y=${{ matrix.async_y }}
           nvcc --version
 
-      - name: Compile ggml-cuda and DiT bench
+      - name: Compile ggml-cuda and trellis core
+        # No GPU/driver is present on hosted runners. Building the CUDA shared
+        # library and trellis_core still compiles nvcc/PTX plus CUDA-guarded
+        # flow_runner.cpp; linking an executable would additionally require
+        # libcuda.so from a real driver installation.
         run: |
-          cmake --build build-cuda-ci --target ggml-cuda trellis-test-dit-bench -j 2
+          cmake --build build-cuda-ci --target ggml-cuda trellis_core -j 2
 
   linux-cpu:
     runs-on: ubuntu-22.04
