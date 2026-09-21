@@ -1,0 +1,5 @@
+SELFTEST PASS: base_color_stats matches hand-computed mean/saturation
+SELFTEST PASS: classify boundaries (black<2, normal>=10)
+SELFTEST PASS: fisher_exact_2x2 matches known tea-tasting p=0.485714...
+SELFTEST PASS: fisher_exact_2x2 gives small p for extreme separation
+SELFTEST PASS: fisher_exact_2x2 symmetric under row/col swap
