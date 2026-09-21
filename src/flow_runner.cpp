@@ -115,7 +115,7 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     // F16 models and every other backend keep the existing F32 input path.
     if (p_.proj_attn && std::getenv("TRELLIS_DISABLE_PROJ_Q8_CACHE") == nullptr &&
         ggml_backend_is_cuda(m_.backend)) {
-        T* pw = m_.try_get("blocks.0.cross_attn.proj_linear.weight");
+        ggml_tensor* pw = m_.try_get("blocks.0.cross_attn.proj_linear.weight");
         use_proj_q8_cache_ = pw && pw->type == GGML_TYPE_Q8_0;
     }
 #endif
