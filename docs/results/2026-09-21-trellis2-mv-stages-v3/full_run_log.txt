@@ -174,86 +174,9 @@ ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: step0 CFG pred
 ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: coords has no duplicate rows (N=4171)
       [flow-mv] 1 steps, 4 views, 5 forwards, mode=multidiffusion, 0.0s
       [flow-mv] 1 steps, 4 views, 5 forwards, mode=multidiffusion, 0.0s
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: determinism -- same replay input run twice natively is bit-identical
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: consumed every recorded pos/neg call for this step (5/5)
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: every call's pos/neg branch matches the recorded call pattern
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: OOD clamp regression guard -- step0 ratio stays >=0.2 (observed band 0.2462-0.5918 across all runs, 2026-09-21; ratio=0.591846)
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: step0 CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (production gate, clamp ON, rel=2.8180e-07, N=4171)
-ok   all 6 shape-1024cascade (LR+HR) fixture runs were present and checked (ran=6/6)
-== production (clamp on, default settings): shape full-trajectory (12 step), informational ==
-ok   run_1img_baseline_512 (V=1, stochastic): coords has no duplicate rows (N=3543)
-      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_1img_baseline_512 (V=1, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543) [production gate, informational]
-ok   run_1img_baseline_512 (V=1, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07) [production gate, informational]
-ok   run_1img_injected_stochastic_512 (V=1, stochastic): coords has no duplicate rows (N=3543)
-      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_1img_injected_stochastic_512 (V=1, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543) [production gate, informational]
-ok   run_1img_injected_stochastic_512 (V=1, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07) [production gate, informational]
-ok   run_2img_real_stochastic_512 (V=2, stochastic): coords has no duplicate rows (N=970)
-      [flow-mv] 12 steps, 2 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_2img_real_stochastic_512 (V=2, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9460e-07, N=970) [production gate, informational]
-ok   run_2img_real_stochastic_512 (V=2, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=4.9766e-07) [production gate, informational]
-ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): coords has no duplicate rows (N=963)
-      [flow-mv] 12 steps, 2 views, 33 forwards, mode=multidiffusion, 0.0s
-ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.1505e-07, N=963) [production gate, informational]
-ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=6.4276e-07) [production gate, informational]
-ok   run_4img_real_stochastic_512 (V=4, stochastic): coords has no duplicate rows (N=952)
-      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_4img_real_stochastic_512 (V=4, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9071e-07, N=952) [production gate, informational]
-ok   run_4img_real_stochastic_512 (V=4, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.8294e-07) [production gate, informational]
-ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): coords has no duplicate rows (N=948)
-      [flow-mv] 12 steps, 4 views, 57 forwards, mode=multidiffusion, 0.0s
-ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.3888e-07, N=948) [production gate, informational]
-ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.4101e-07) [production gate, informational]
-ok   run_1img_baseline_1024c (V=1, stochastic) LR: coords has no duplicate rows (N=3543)
-ok   run_1img_baseline_1024c (V=1, stochastic) HR: coords has no duplicate rows (N=16516)
-      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_1img_baseline_1024c (V=1, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543) [production gate, informational]
-ok   run_1img_baseline_1024c (V=1, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07) [production gate, informational]
-      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_1img_baseline_1024c (V=1, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.0569e-07, N=16516) [production gate, informational]
-ok   run_1img_baseline_1024c (V=1, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=9.7377e-07) [production gate, informational]
-ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: coords has no duplicate rows (N=3543)
-ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: coords has no duplicate rows (N=16516)
-      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543) [production gate, informational]
-ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07) [production gate, informational]
-      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.0569e-07, N=16516) [production gate, informational]
-ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=9.7377e-07) [production gate, informational]
-ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: coords has no duplicate rows (N=970)
-ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: coords has no duplicate rows (N=4442)
-      [flow-mv] 12 steps, 2 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9460e-07, N=970) [production gate, informational]
-ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=4.9766e-07) [production gate, informational]
-      [flow-mv] 12 steps, 2 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=4.1673e-07, N=4442) [production gate, informational]
-ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=6.2913e-07) [production gate, informational]
-ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: coords has no duplicate rows (N=963)
-ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: coords has no duplicate rows (N=4431)
-      [flow-mv] 12 steps, 2 views, 33 forwards, mode=multidiffusion, 0.0s
-ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.1505e-07, N=963) [production gate, informational]
-ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=6.4276e-07) [production gate, informational]
-      [flow-mv] 12 steps, 2 views, 33 forwards, mode=multidiffusion, 0.0s
-ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.1181e-07, N=4431) [production gate, informational]
-ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.3033e-07) [production gate, informational]
-ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: coords has no duplicate rows (N=952)
-ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: coords has no duplicate rows (N=4183)
-      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9071e-07, N=952) [production gate, informational]
-ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.8294e-07) [production gate, informational]
-      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 0.0s
-ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.1416e-07, N=4183) [production gate, informational]
-ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=8.8378e-07) [production gate, informational]
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: coords has no duplicate rows (N=948)
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: coords has no duplicate rows (N=4171)
-      [flow-mv] 12 steps, 4 views, 57 forwards, mode=multidiffusion, 0.0s
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.3888e-07, N=948) [production gate, informational]
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.4101e-07) [production gate, informational]
-      [flow-mv] 12 steps, 4 views, 57 forwards, mode=multidiffusion, 0.0s
 ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
 ggml_metal_library_init: using embedded metal library
-ggml_metal_library_init: loaded in 0.007 sec
+ggml_metal_library_init: loaded in 0.008 sec
 ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
 ggml_metal_device_init: GPU name:   MTL0 (Apple M4 Max)
 ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
@@ -275,44 +198,48 @@ ggml_metal_init: use concurrency    = true
 ggml_metal_init: use graph optimize = true
 [trellis] using MTL0 (53084 MB)
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mv_q8_0_f32', name = 'kernel_mul_mv_q8_0_f32_nsg=4_ne12=1_r2=1_r3=1'
-ggml_metal_library_compile_pipeline: loaded kernel_mul_mv_q8_0_f32_nsg=4_ne12=1_r2=1_r3=1      0x1029875e0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mv_q8_0_f32_nsg=4_ne12=1_r2=1_r3=1      0x1057a1480 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_bin_fuse_f32_f32_f32_4', name = 'kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=0_cb=0'
-ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=0_cb=0      0x102988160 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=0_cb=0      0x1057a1e40 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_cpy_f16_f16', name = 'kernel_cpy_f16_f16'
-ggml_metal_library_compile_pipeline: loaded kernel_cpy_f16_f16                            0x10297f3a0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_cpy_f16_f16                            0x10579c7a0 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_unary_f32_f32_4', name = 'kernel_unary_f32_f32_4_op=10_cnt=1'
-ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=10_cnt=1            0x1029866e0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=10_cnt=1            0x1057a5280 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_cpy_f32_f32', name = 'kernel_cpy_f32_f32'
-ggml_metal_library_compile_pipeline: loaded kernel_cpy_f32_f32                            0x102988ee0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_cpy_f32_f32                            0x1057a5b00 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_concat', name = 'kernel_concat'
-ggml_metal_library_compile_pipeline: loaded kernel_concat                                 0x102989260 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_concat                                 0x1057a5e80 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_cpy_i32_i32', name = 'kernel_cpy_i32_i32'
-ggml_metal_library_compile_pipeline: loaded kernel_cpy_i32_i32                            0x863cbc000 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_cpy_i32_i32                            0xc44648000 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_get_rows_f32', name = 'kernel_get_rows_f32'
-ggml_metal_library_compile_pipeline: loaded kernel_get_rows_f32                           0x863cbc380 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_get_rows_f32                           0xc44648380 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_f16_f32', name = 'kernel_mul_mm_f16_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1'
-ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f16_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1      0x863cbc700 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f16_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1      0xc44648700 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_norm_mul_add_f32_4', name = 'kernel_norm_mul_add_f32_4'
-ggml_metal_library_compile_pipeline: loaded kernel_norm_mul_add_f32_4                     0x863cbce00 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_norm_mul_add_f32_4                     0xc44648e00 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_q8_0_f32', name = 'kernel_mul_mm_q8_0_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1'
-ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_q8_0_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1      0x863cbd180 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_q8_0_f32_bci=0_bco=1_ne12=1_ne13=1_r2=1_r3=1      0xc44649180 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_unary_f32_f32_4', name = 'kernel_unary_f32_f32_4_op=106_cnt=0'
-ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=106_cnt=0           0x863cbd500 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_unary_f32_f32_4_op=106_cnt=0           0xc44649500 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_bin_fuse_f32_f32_f32_4', name = 'kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=1_cb=0'
-ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=1_cb=0      0x863cbdc00 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_bin_fuse_f32_f32_f32_4_op=0_nf=1_rb=1_cb=0      0xc44649c00 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_norm_f32_4', name = 'kernel_norm_f32_4'
-ggml_metal_library_compile_pipeline: loaded kernel_norm_f32_4                             0x863cbdf80 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_norm_f32_4                             0xc44649f80 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_repeat_f32', name = 'kernel_repeat_f32'
-ggml_metal_library_compile_pipeline: loaded kernel_repeat_f32                             0x863cbd880 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_repeat_f32                             0xc44649880 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_pad_f32', name = 'kernel_pad_f32'
-ggml_metal_library_compile_pipeline: loaded kernel_pad_f32                                0x863cbe680 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_pad_f32                                0xc4464a680 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_f16_f32', name = 'kernel_mul_mm_f16_f32_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1'
-ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f16_f32_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1      0x863cbea00 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_f16_f32_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1      0xc4464aa00 | th_max = 1024 | th_width =   32
 ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_mul_mm_q8_0_f32', name = 'kernel_mul_mm_q8_0_f32_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1'
-ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_q8_0_f32_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1      0x863cbed80 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: loaded kernel_mul_mm_q8_0_f32_bci=0_bco=0_ne12=1_ne13=1_r2=1_r3=1      0xc4464ad80 | th_max = 1024 | th_width =   32
 ggml_metal_free: deallocating
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.3608e-07, N=4171) [production gate, informational]
-ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.5146e-07) [production gate, informational]
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: consumed every recorded pos/neg call for this step (5/5)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: every call's pos/neg branch matches the recorded call pattern
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: OOD clamp regression guard -- step0 ratio stays >=0.2 (observed band 0.2462-0.5918 across all runs, 2026-09-21; ratio=0.591846)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: step0 CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (production gate, clamp ON, rel=2.8180e-07, N=4171)
+ok   all 6 shape-1024cascade (LR+HR) fixture runs were present and checked (ran=6/6)
 == S3: cascade boundary self-derivation (quantize: hard gate, upsample: q8_0 INFO) ==
 ok   run_1img_baseline_1024c (V=1) S3-quantize: backoff floors at hr_res=1024 on the first pass (v3 doc: 全runでこの分岐、out_hr_res=1024)
 ok   run_1img_baseline_1024c (V=1) S3-quantize: native quantize(shape_hr_coords_prequantize) == fixture shape_slat_coords exactly (native N=16516, fixture N=16516)
@@ -341,171 +268,331 @@ info S3-upsample: native shape_upsample(q8_0) coords vs fixture shape_hr_coords_
       only_fixture[4] = [4,251,387]
 == S4: #77 OOD clamp ratio table (production gate, all runs x all inside steps) ==
       run                                        side step native_ratio    ref_ratio        rel
+ok   run_1img_baseline_512 flat step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.246240)
       run_1img_baseline_512                      flat    0     0.246240     0.246240   8.88e-09
+ok   run_1img_baseline_512 flat step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.249869)
       run_1img_baseline_512                      flat    1     0.249869     0.249869   5.40e-10
+ok   run_1img_baseline_512 flat step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.366045)
       run_1img_baseline_512                      flat    2     0.366045     0.366045   1.85e-08
+ok   run_1img_baseline_512 flat step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.547877)
       run_1img_baseline_512                      flat    3     0.547877     0.547877   2.97e-09
+ok   run_1img_baseline_512 flat step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.658070)
       run_1img_baseline_512                      flat    4     0.658070     0.658070   2.11e-08
+ok   run_1img_baseline_512 flat step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.790716)
       run_1img_baseline_512                      flat    5     0.790716     0.790716   3.96e-09
+ok   run_1img_baseline_512 flat step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.862644)
       run_1img_baseline_512                      flat    6     0.862644     0.862644   1.66e-07
+ok   run_1img_baseline_512 flat step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.914235)
       run_1img_baseline_512                      flat    7     0.914235     0.914235   3.82e-09
+ok   run_1img_baseline_512 flat step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.951854)
       run_1img_baseline_512                      flat    8     0.951854     0.951854   7.01e-09
+ok   run_1img_injected_stochastic_512 flat step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.246240)
       run_1img_injected_stochastic_512           flat    0     0.246240     0.246240   8.88e-09
+ok   run_1img_injected_stochastic_512 flat step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.249869)
       run_1img_injected_stochastic_512           flat    1     0.249869     0.249869   5.40e-10
+ok   run_1img_injected_stochastic_512 flat step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.366045)
       run_1img_injected_stochastic_512           flat    2     0.366045     0.366045   1.85e-08
+ok   run_1img_injected_stochastic_512 flat step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.547877)
       run_1img_injected_stochastic_512           flat    3     0.547877     0.547877   2.97e-09
+ok   run_1img_injected_stochastic_512 flat step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.658070)
       run_1img_injected_stochastic_512           flat    4     0.658070     0.658070   2.11e-08
+ok   run_1img_injected_stochastic_512 flat step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.790716)
       run_1img_injected_stochastic_512           flat    5     0.790716     0.790716   3.96e-09
+ok   run_1img_injected_stochastic_512 flat step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.862644)
       run_1img_injected_stochastic_512           flat    6     0.862644     0.862644   1.66e-07
+ok   run_1img_injected_stochastic_512 flat step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.914235)
       run_1img_injected_stochastic_512           flat    7     0.914235     0.914235   3.82e-09
+ok   run_1img_injected_stochastic_512 flat step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.951854)
       run_1img_injected_stochastic_512           flat    8     0.951854     0.951854   7.01e-09
+ok   run_2img_real_stochastic_512 flat step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.462587)
       run_2img_real_stochastic_512               flat    0     0.462587     0.462587   2.89e-09
+ok   run_2img_real_stochastic_512 flat step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.442222)
       run_2img_real_stochastic_512               flat    1     0.442222     0.442222   1.28e-08
+ok   run_2img_real_stochastic_512 flat step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.501193)
       run_2img_real_stochastic_512               flat    2     0.501193     0.501193   2.00e-08
+ok   run_2img_real_stochastic_512 flat step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.522372)
       run_2img_real_stochastic_512               flat    3     0.522372     0.522372   3.01e-08
+ok   run_2img_real_stochastic_512 flat step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.644538)
       run_2img_real_stochastic_512               flat    4     0.644538     0.644538   4.90e-08
+ok   run_2img_real_stochastic_512 flat step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.686724)
       run_2img_real_stochastic_512               flat    5     0.686724     0.686724   4.74e-08
+ok   run_2img_real_stochastic_512 flat step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.740685)
       run_2img_real_stochastic_512               flat    6     0.740685     0.740685   1.53e-08
+ok   run_2img_real_stochastic_512 flat step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.798091)
       run_2img_real_stochastic_512               flat    7     0.798091     0.798091   1.82e-08
+ok   run_2img_real_stochastic_512 flat step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.880976)
       run_2img_real_stochastic_512               flat    8     0.880976     0.880976   2.56e-09
+ok   run_2img_real_multidiffusion_512 flat step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.479429)
       run_2img_real_multidiffusion_512           flat    0     0.479429     0.479429   2.32e-08
+ok   run_2img_real_multidiffusion_512 flat step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.481651)
       run_2img_real_multidiffusion_512           flat    1     0.481651     0.481651   3.92e-08
+ok   run_2img_real_multidiffusion_512 flat step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.500681)
       run_2img_real_multidiffusion_512           flat    2     0.500681     0.500681   7.51e-08
+ok   run_2img_real_multidiffusion_512 flat step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.555148)
       run_2img_real_multidiffusion_512           flat    3     0.555148     0.555148   2.71e-08
+ok   run_2img_real_multidiffusion_512 flat step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.659999)
       run_2img_real_multidiffusion_512           flat    4     0.659999     0.659998   5.03e-08
+ok   run_2img_real_multidiffusion_512 flat step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.722942)
       run_2img_real_multidiffusion_512           flat    5     0.722942     0.722942   4.26e-08
+ok   run_2img_real_multidiffusion_512 flat step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.756474)
       run_2img_real_multidiffusion_512           flat    6     0.756474     0.756474   4.15e-08
+ok   run_2img_real_multidiffusion_512 flat step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.826228)
       run_2img_real_multidiffusion_512           flat    7     0.826228     0.826228   2.18e-08
+ok   run_2img_real_multidiffusion_512 flat step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.896229)
       run_2img_real_multidiffusion_512           flat    8     0.896229     0.896229   1.53e-08
+ok   run_4img_real_stochastic_512 flat step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.476274)
       run_4img_real_stochastic_512               flat    0     0.476274     0.476274   1.16e-08
+ok   run_4img_real_stochastic_512 flat step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.448962)
       run_4img_real_stochastic_512               flat    1     0.448962     0.448962   1.53e-08
+ok   run_4img_real_stochastic_512 flat step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.489907)
       run_4img_real_stochastic_512               flat    2     0.489907     0.489907   2.74e-08
+ok   run_4img_real_stochastic_512 flat step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.542434)
       run_4img_real_stochastic_512               flat    3     0.542434     0.542434   5.14e-08
+ok   run_4img_real_stochastic_512 flat step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.581998)
       run_4img_real_stochastic_512               flat    4     0.581998     0.581998   9.85e-09
+ok   run_4img_real_stochastic_512 flat step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.624117)
       run_4img_real_stochastic_512               flat    5     0.624117     0.624117   8.01e-08
+ok   run_4img_real_stochastic_512 flat step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.702234)
       run_4img_real_stochastic_512               flat    6     0.702234     0.702234   1.00e-08
+ok   run_4img_real_stochastic_512 flat step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.799259)
       run_4img_real_stochastic_512               flat    7     0.799259     0.799259   1.10e-08
+ok   run_4img_real_stochastic_512 flat step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.867195)
       run_4img_real_stochastic_512               flat    8     0.867195     0.867195   3.41e-08
+ok   run_4img_real_multidiffusion_512 flat step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.510328)
       run_4img_real_multidiffusion_512           flat    0     0.510328     0.510328   1.17e-07
+ok   run_4img_real_multidiffusion_512 flat step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.527970)
       run_4img_real_multidiffusion_512           flat    1     0.527970     0.527970   9.24e-09
+ok   run_4img_real_multidiffusion_512 flat step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.555397)
       run_4img_real_multidiffusion_512           flat    2     0.555397     0.555397   7.40e-08
+ok   run_4img_real_multidiffusion_512 flat step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.598091)
       run_4img_real_multidiffusion_512           flat    3     0.598091     0.598091   5.52e-08
+ok   run_4img_real_multidiffusion_512 flat step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.668295)
       run_4img_real_multidiffusion_512           flat    4     0.668295     0.668295   3.88e-08
+ok   run_4img_real_multidiffusion_512 flat step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.727784)
       run_4img_real_multidiffusion_512           flat    5     0.727784     0.727784   6.25e-08
+ok   run_4img_real_multidiffusion_512 flat step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.781623)
       run_4img_real_multidiffusion_512           flat    6     0.781623     0.781623   5.34e-08
+ok   run_4img_real_multidiffusion_512 flat step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.862081)
       run_4img_real_multidiffusion_512           flat    7     0.862081     0.862081   1.21e-08
+ok   run_4img_real_multidiffusion_512 flat step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.914689)
       run_4img_real_multidiffusion_512           flat    8     0.914689     0.914689   3.69e-08
+ok   run_1img_baseline_1024c lr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.246240)
       run_1img_baseline_1024c                    lr      0     0.246240     0.246240   8.88e-09
+ok   run_1img_baseline_1024c hr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.307000)
       run_1img_baseline_1024c                    hr      0     0.307000     0.307000   1.16e-07
+ok   run_1img_baseline_1024c lr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.249869)
       run_1img_baseline_1024c                    lr      1     0.249869     0.249869   5.40e-10
+ok   run_1img_baseline_1024c hr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.412980)
       run_1img_baseline_1024c                    hr      1     0.412980     0.412980   7.32e-08
+ok   run_1img_baseline_1024c lr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.366045)
       run_1img_baseline_1024c                    lr      2     0.366045     0.366045   1.85e-08
+ok   run_1img_baseline_1024c hr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.555822)
       run_1img_baseline_1024c                    hr      2     0.555822     0.555822   1.22e-07
+ok   run_1img_baseline_1024c lr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.547877)
       run_1img_baseline_1024c                    lr      3     0.547877     0.547877   2.97e-09
+ok   run_1img_baseline_1024c hr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.700483)
       run_1img_baseline_1024c                    hr      3     0.700483     0.700483   6.74e-08
+ok   run_1img_baseline_1024c lr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.658070)
       run_1img_baseline_1024c                    lr      4     0.658070     0.658070   2.11e-08
+ok   run_1img_baseline_1024c hr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.807605)
       run_1img_baseline_1024c                    hr      4     0.807605     0.807605   1.56e-08
+ok   run_1img_baseline_1024c lr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.790716)
       run_1img_baseline_1024c                    lr      5     0.790716     0.790716   3.96e-09
+ok   run_1img_baseline_1024c hr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.874352)
       run_1img_baseline_1024c                    hr      5     0.874352     0.874352   2.54e-08
+ok   run_1img_baseline_1024c lr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.862644)
       run_1img_baseline_1024c                    lr      6     0.862644     0.862644   1.66e-07
+ok   run_1img_baseline_1024c hr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.919924)
       run_1img_baseline_1024c                    hr      6     0.919924     0.919924   7.22e-08
+ok   run_1img_baseline_1024c lr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.914235)
       run_1img_baseline_1024c                    lr      7     0.914235     0.914235   3.82e-09
+ok   run_1img_baseline_1024c hr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.946421)
       run_1img_baseline_1024c                    hr      7     0.946421     0.946421   1.78e-09
+ok   run_1img_baseline_1024c lr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.951854)
       run_1img_baseline_1024c                    lr      8     0.951854     0.951854   7.01e-09
+ok   run_1img_baseline_1024c hr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.957503)
       run_1img_baseline_1024c                    hr      8     0.957503     0.957503   2.11e-08
+ok   run_1img_injected_stochastic_1024c lr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.246240)
       run_1img_injected_stochastic_1024c         lr      0     0.246240     0.246240   8.88e-09
+ok   run_1img_injected_stochastic_1024c hr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.307000)
       run_1img_injected_stochastic_1024c         hr      0     0.307000     0.307000   1.16e-07
+ok   run_1img_injected_stochastic_1024c lr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.249869)
       run_1img_injected_stochastic_1024c         lr      1     0.249869     0.249869   5.40e-10
+ok   run_1img_injected_stochastic_1024c hr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.412980)
       run_1img_injected_stochastic_1024c         hr      1     0.412980     0.412980   7.32e-08
+ok   run_1img_injected_stochastic_1024c lr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.366045)
       run_1img_injected_stochastic_1024c         lr      2     0.366045     0.366045   1.85e-08
+ok   run_1img_injected_stochastic_1024c hr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.555822)
       run_1img_injected_stochastic_1024c         hr      2     0.555822     0.555822   1.22e-07
+ok   run_1img_injected_stochastic_1024c lr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.547877)
       run_1img_injected_stochastic_1024c         lr      3     0.547877     0.547877   2.97e-09
+ok   run_1img_injected_stochastic_1024c hr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.700483)
       run_1img_injected_stochastic_1024c         hr      3     0.700483     0.700483   6.74e-08
+ok   run_1img_injected_stochastic_1024c lr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.658070)
       run_1img_injected_stochastic_1024c         lr      4     0.658070     0.658070   2.11e-08
+ok   run_1img_injected_stochastic_1024c hr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.807605)
       run_1img_injected_stochastic_1024c         hr      4     0.807605     0.807605   1.56e-08
+ok   run_1img_injected_stochastic_1024c lr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.790716)
       run_1img_injected_stochastic_1024c         lr      5     0.790716     0.790716   3.96e-09
+ok   run_1img_injected_stochastic_1024c hr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.874352)
       run_1img_injected_stochastic_1024c         hr      5     0.874352     0.874352   2.54e-08
+ok   run_1img_injected_stochastic_1024c lr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.862644)
       run_1img_injected_stochastic_1024c         lr      6     0.862644     0.862644   1.66e-07
+ok   run_1img_injected_stochastic_1024c hr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.919924)
       run_1img_injected_stochastic_1024c         hr      6     0.919924     0.919924   7.22e-08
+ok   run_1img_injected_stochastic_1024c lr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.914235)
       run_1img_injected_stochastic_1024c         lr      7     0.914235     0.914235   3.82e-09
+ok   run_1img_injected_stochastic_1024c hr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.946421)
       run_1img_injected_stochastic_1024c         hr      7     0.946421     0.946421   1.78e-09
+ok   run_1img_injected_stochastic_1024c lr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.951854)
       run_1img_injected_stochastic_1024c         lr      8     0.951854     0.951854   7.01e-09
+ok   run_1img_injected_stochastic_1024c hr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.957503)
       run_1img_injected_stochastic_1024c         hr      8     0.957503     0.957503   2.11e-08
+ok   run_2img_real_stochastic_1024c lr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.462587)
       run_2img_real_stochastic_1024c             lr      0     0.462587     0.462587   2.89e-09
+ok   run_2img_real_stochastic_1024c hr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.533844)
       run_2img_real_stochastic_1024c             hr      0     0.533844     0.533844   1.47e-08
+ok   run_2img_real_stochastic_1024c lr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.442222)
       run_2img_real_stochastic_1024c             lr      1     0.442222     0.442222   1.28e-08
+ok   run_2img_real_stochastic_1024c hr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.513807)
       run_2img_real_stochastic_1024c             hr      1     0.513807     0.513807   5.50e-08
+ok   run_2img_real_stochastic_1024c lr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.501193)
       run_2img_real_stochastic_1024c             lr      2     0.501193     0.501193   2.00e-08
+ok   run_2img_real_stochastic_1024c hr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.585544)
       run_2img_real_stochastic_1024c             hr      2     0.585544     0.585544   1.47e-07
+ok   run_2img_real_stochastic_1024c lr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.522372)
       run_2img_real_stochastic_1024c             lr      3     0.522372     0.522372   3.01e-08
+ok   run_2img_real_stochastic_1024c hr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.628007)
       run_2img_real_stochastic_1024c             hr      3     0.628007     0.628007   1.22e-07
+ok   run_2img_real_stochastic_1024c lr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.644538)
       run_2img_real_stochastic_1024c             lr      4     0.644538     0.644538   4.90e-08
+ok   run_2img_real_stochastic_1024c hr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.707913)
       run_2img_real_stochastic_1024c             hr      4     0.707913     0.707913   4.33e-08
+ok   run_2img_real_stochastic_1024c lr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.686724)
       run_2img_real_stochastic_1024c             lr      5     0.686724     0.686724   4.74e-08
+ok   run_2img_real_stochastic_1024c hr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.749693)
       run_2img_real_stochastic_1024c             hr      5     0.749693     0.749693   1.97e-08
+ok   run_2img_real_stochastic_1024c lr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.740685)
       run_2img_real_stochastic_1024c             lr      6     0.740685     0.740685   1.53e-08
+ok   run_2img_real_stochastic_1024c hr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.807646)
       run_2img_real_stochastic_1024c             hr      6     0.807646     0.807646   3.64e-08
+ok   run_2img_real_stochastic_1024c lr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.798091)
       run_2img_real_stochastic_1024c             lr      7     0.798091     0.798091   1.82e-08
+ok   run_2img_real_stochastic_1024c hr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.891180)
       run_2img_real_stochastic_1024c             hr      7     0.891180     0.891180   9.29e-08
+ok   run_2img_real_stochastic_1024c lr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.880976)
       run_2img_real_stochastic_1024c             lr      8     0.880976     0.880976   2.56e-09
+ok   run_2img_real_stochastic_1024c hr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.925336)
       run_2img_real_stochastic_1024c             hr      8     0.925336     0.925337   8.56e-08
+ok   run_2img_real_multidiffusion_1024c lr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.479429)
       run_2img_real_multidiffusion_1024c         lr      0     0.479429     0.479429   2.32e-08
+ok   run_2img_real_multidiffusion_1024c hr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.542178)
       run_2img_real_multidiffusion_1024c         hr      0     0.542178     0.542178   1.97e-07
+ok   run_2img_real_multidiffusion_1024c lr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.481651)
       run_2img_real_multidiffusion_1024c         lr      1     0.481651     0.481651   3.92e-08
+ok   run_2img_real_multidiffusion_1024c hr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.543407)
       run_2img_real_multidiffusion_1024c         hr      1     0.543407     0.543406   4.34e-08
+ok   run_2img_real_multidiffusion_1024c lr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.500681)
       run_2img_real_multidiffusion_1024c         lr      2     0.500681     0.500681   7.51e-08
+ok   run_2img_real_multidiffusion_1024c hr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.599416)
       run_2img_real_multidiffusion_1024c         hr      2     0.599416     0.599416   2.32e-08
+ok   run_2img_real_multidiffusion_1024c lr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.555148)
       run_2img_real_multidiffusion_1024c         lr      3     0.555148     0.555148   2.71e-08
+ok   run_2img_real_multidiffusion_1024c hr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.685090)
       run_2img_real_multidiffusion_1024c         hr      3     0.685090     0.685090   4.20e-08
+ok   run_2img_real_multidiffusion_1024c lr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.659999)
       run_2img_real_multidiffusion_1024c         lr      4     0.659999     0.659998   5.03e-08
+ok   run_2img_real_multidiffusion_1024c hr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.749487)
       run_2img_real_multidiffusion_1024c         hr      4     0.749487     0.749486   5.23e-08
+ok   run_2img_real_multidiffusion_1024c lr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.722942)
       run_2img_real_multidiffusion_1024c         lr      5     0.722942     0.722942   4.26e-08
+ok   run_2img_real_multidiffusion_1024c hr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.815433)
       run_2img_real_multidiffusion_1024c         hr      5     0.815433     0.815433   7.50e-09
+ok   run_2img_real_multidiffusion_1024c lr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.756474)
       run_2img_real_multidiffusion_1024c         lr      6     0.756474     0.756474   4.15e-08
+ok   run_2img_real_multidiffusion_1024c hr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.873858)
       run_2img_real_multidiffusion_1024c         hr      6     0.873858     0.873859   1.38e-07
+ok   run_2img_real_multidiffusion_1024c lr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.826228)
       run_2img_real_multidiffusion_1024c         lr      7     0.826228     0.826228   2.18e-08
+ok   run_2img_real_multidiffusion_1024c hr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.906067)
       run_2img_real_multidiffusion_1024c         hr      7     0.906067     0.906067   4.46e-08
+ok   run_2img_real_multidiffusion_1024c lr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.896229)
       run_2img_real_multidiffusion_1024c         lr      8     0.896229     0.896229   1.53e-08
+ok   run_2img_real_multidiffusion_1024c hr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.933190)
       run_2img_real_multidiffusion_1024c         hr      8     0.933190     0.933190   5.16e-08
+ok   run_4img_real_stochastic_1024c lr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.476274)
       run_4img_real_stochastic_1024c             lr      0     0.476274     0.476274   1.16e-08
+ok   run_4img_real_stochastic_1024c hr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.505959)
       run_4img_real_stochastic_1024c             hr      0     0.505959     0.505959   5.93e-08
+ok   run_4img_real_stochastic_1024c lr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.448962)
       run_4img_real_stochastic_1024c             lr      1     0.448962     0.448962   1.53e-08
+ok   run_4img_real_stochastic_1024c hr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.525760)
       run_4img_real_stochastic_1024c             hr      1     0.525760     0.525760   2.58e-08
+ok   run_4img_real_stochastic_1024c lr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.489907)
       run_4img_real_stochastic_1024c             lr      2     0.489907     0.489907   2.74e-08
+ok   run_4img_real_stochastic_1024c hr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.530489)
       run_4img_real_stochastic_1024c             hr      2     0.530489     0.530489   1.66e-08
+ok   run_4img_real_stochastic_1024c lr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.542434)
       run_4img_real_stochastic_1024c             lr      3     0.542434     0.542434   5.14e-08
+ok   run_4img_real_stochastic_1024c hr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.605200)
       run_4img_real_stochastic_1024c             hr      3     0.605200     0.605199   1.45e-07
+ok   run_4img_real_stochastic_1024c lr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.581998)
       run_4img_real_stochastic_1024c             lr      4     0.581998     0.581998   9.85e-09
+ok   run_4img_real_stochastic_1024c hr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.665375)
       run_4img_real_stochastic_1024c             hr      4     0.665375     0.665375   2.26e-08
+ok   run_4img_real_stochastic_1024c lr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.624117)
       run_4img_real_stochastic_1024c             lr      5     0.624117     0.624117   8.01e-08
+ok   run_4img_real_stochastic_1024c hr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.778080)
       run_4img_real_stochastic_1024c             hr      5     0.778080     0.778080   1.69e-07
+ok   run_4img_real_stochastic_1024c lr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.702234)
       run_4img_real_stochastic_1024c             lr      6     0.702234     0.702234   1.00e-08
+ok   run_4img_real_stochastic_1024c hr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.820660)
       run_4img_real_stochastic_1024c             hr      6     0.820660     0.820660   3.85e-08
+ok   run_4img_real_stochastic_1024c lr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.799259)
       run_4img_real_stochastic_1024c             lr      7     0.799259     0.799259   1.10e-08
+ok   run_4img_real_stochastic_1024c hr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.876130)
       run_4img_real_stochastic_1024c             hr      7     0.876130     0.876130   1.44e-07
+ok   run_4img_real_stochastic_1024c lr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.867195)
       run_4img_real_stochastic_1024c             lr      8     0.867195     0.867195   3.41e-08
+ok   run_4img_real_stochastic_1024c hr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.919926)
       run_4img_real_stochastic_1024c             hr      8     0.919926     0.919926   3.75e-09
+ok   run_4img_real_multidiffusion_1024c lr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.510328)
       run_4img_real_multidiffusion_1024c         lr      0     0.510328     0.510328   1.17e-07
+ok   run_4img_real_multidiffusion_1024c hr step0: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.591846)
       run_4img_real_multidiffusion_1024c         hr      0     0.591846     0.591846   3.43e-08
+ok   run_4img_real_multidiffusion_1024c lr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.527970)
       run_4img_real_multidiffusion_1024c         lr      1     0.527970     0.527970   9.24e-09
+ok   run_4img_real_multidiffusion_1024c hr step1: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.574275)
       run_4img_real_multidiffusion_1024c         hr      1     0.574275     0.574275   9.26e-08
+ok   run_4img_real_multidiffusion_1024c lr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.555397)
       run_4img_real_multidiffusion_1024c         lr      2     0.555397     0.555397   7.40e-08
+ok   run_4img_real_multidiffusion_1024c hr step2: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.601337)
       run_4img_real_multidiffusion_1024c         hr      2     0.601337     0.601337   7.44e-08
+ok   run_4img_real_multidiffusion_1024c lr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.598091)
       run_4img_real_multidiffusion_1024c         lr      3     0.598091     0.598091   5.52e-08
+ok   run_4img_real_multidiffusion_1024c hr step3: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.653208)
       run_4img_real_multidiffusion_1024c         hr      3     0.653208     0.653208   1.40e-08
+ok   run_4img_real_multidiffusion_1024c lr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.668295)
       run_4img_real_multidiffusion_1024c         lr      4     0.668295     0.668295   3.88e-08
+ok   run_4img_real_multidiffusion_1024c hr step4: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.719857)
       run_4img_real_multidiffusion_1024c         hr      4     0.719857     0.719857   3.48e-08
+ok   run_4img_real_multidiffusion_1024c lr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.727784)
       run_4img_real_multidiffusion_1024c         lr      5     0.727784     0.727784   6.25e-08
+ok   run_4img_real_multidiffusion_1024c hr step5: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.825477)
       run_4img_real_multidiffusion_1024c         hr      5     0.825477     0.825477   1.43e-08
+ok   run_4img_real_multidiffusion_1024c lr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.781623)
       run_4img_real_multidiffusion_1024c         lr      6     0.781623     0.781623   5.34e-08
+ok   run_4img_real_multidiffusion_1024c hr step6: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.888147)
       run_4img_real_multidiffusion_1024c         hr      6     0.888147     0.888147   2.65e-08
+ok   run_4img_real_multidiffusion_1024c lr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.862081)
       run_4img_real_multidiffusion_1024c         lr      7     0.862081     0.862081   1.21e-08
+ok   run_4img_real_multidiffusion_1024c hr step7: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.920547)
       run_4img_real_multidiffusion_1024c         hr      7     0.920547     0.920547   2.70e-08
+ok   run_4img_real_multidiffusion_1024c lr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.914689)
       run_4img_real_multidiffusion_1024c         lr      8     0.914689     0.914689   3.69e-08
+ok   run_4img_real_multidiffusion_1024c hr step8: OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=0.941929)
       run_4img_real_multidiffusion_1024c         hr      8     0.941929     0.941929   4.82e-08
-      -- summary: 162 rows, native ratio min=0.2462 max=0.9575, no_clamp=162, would_fire=0, missing=0, max rel vs manifest ood_ratio=1.97e-07 --
-ok   S4: native ratio computed for every row (no missing pos/neg/xt files, missing=0)
-ok   S4: clamp is a no-op across all measured points (isfinite && ratio in [0.2,5.0] for all 162 rows, min=0.246240, max=0.957503)
+      -- summary (informational aggregate, the per-row check() calls above are the real gate): 162 rows, native ratio min=0.2462 max=0.9575, no_clamp=162, would_fire=0, missing=0, max rel vs manifest ood_ratio=1.97e-07 --
 == S4: NOFIX vs production full-trajectory trace bit-identical (independent evidence clamp is no-op) ==
 ok   run_1img_baseline_512 flat: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (5442118 bytes)
 ok   run_1img_injected_stochastic_512 flat: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (5442118 bytes)
@@ -515,7 +602,123 @@ ok   run_4img_real_stochastic_512 flat: production vs TRELLIS_NOFIX=1 full-traje
 ok   run_4img_real_multidiffusion_512 flat: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1456202 bytes)
 ok   run_1img_baseline_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (5442118 bytes)
 ok   run_1img_baseline_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (25368646 bytes)
-ok   run_1img_injected_stochastic_1024c LR: produc== parity (clamp off): shape step0 CFG vs pinned reference ==
+ok   run_1img_injected_stochastic_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (5442118 bytes)
+ok   run_1img_injected_stochastic_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (25368646 bytes)
+ok   run_2img_real_stochastic_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1489990 bytes)
+ok   run_2img_real_stochastic_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6822982 bytes)
+ok   run_2img_real_multidiffusion_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1479242 bytes)
+ok   run_2img_real_multidiffusion_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6806090 bytes)
+ok   run_4img_real_stochastic_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1462342 bytes)
+ok   run_4img_real_stochastic_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6425158 bytes)
+ok   run_4img_real_multidiffusion_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1456202 bytes)
+ok   run_4img_real_multidiffusion_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6406730 bytes)
+== production (clamp on, default settings): shape full-trajectory (12 step), PROMOTED to hard assert (S4 proved clamp is a no-op for every point + NOFIX/production trace bit-identical) ==
+ok   run_1img_baseline_512 (V=1, stochastic): coords has no duplicate rows (N=3543)
+      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_512 (V=1, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543)
+ok   run_1img_baseline_512 (V=1, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07)
+ok   run_1img_baseline_512 (V=1, stochastic): step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=6.0297e-01, observed band >=0.603 across all runs)
+ok   run_1img_baseline_512 (V=1, stochastic): step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_1img_injected_stochastic_512 (V=1, stochastic): coords has no duplicate rows (N=3543)
+      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_512 (V=1, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543)
+ok   run_1img_injected_stochastic_512 (V=1, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07)
+ok   run_1img_injected_stochastic_512 (V=1, stochastic): step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=6.0297e-01, observed band >=0.603 across all runs)
+ok   run_1img_injected_stochastic_512 (V=1, stochastic): step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_2img_real_stochastic_512 (V=2, stochastic): coords has no duplicate rows (N=970)
+      [flow-mv] 12 steps, 2 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_512 (V=2, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9460e-07, N=970)
+ok   run_2img_real_stochastic_512 (V=2, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=4.9766e-07)
+ok   run_2img_real_stochastic_512 (V=2, stochastic): step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=7.9254e-01, observed band >=0.603 across all runs)
+ok   run_2img_real_stochastic_512 (V=2, stochastic): step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): coords has no duplicate rows (N=963)
+      [flow-mv] 12 steps, 2 views, 33 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.1505e-07, N=963)
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=6.4276e-07)
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=7.7633e-01, observed band >=0.603 across all runs)
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_4img_real_stochastic_512 (V=4, stochastic): coords has no duplicate rows (N=952)
+      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_512 (V=4, stochastic): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9071e-07, N=952)
+ok   run_4img_real_stochastic_512 (V=4, stochastic): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.8294e-07)
+ok   run_4img_real_stochastic_512 (V=4, stochastic): step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=9.9590e-01, observed band >=0.603 across all runs)
+ok   run_4img_real_stochastic_512 (V=4, stochastic): step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): coords has no duplicate rows (N=948)
+      [flow-mv] 12 steps, 4 views, 57 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.3888e-07, N=948)
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.4101e-07)
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=8.3010e-01, observed band >=0.603 across all runs)
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   all 6 shape-512 full-trajectory (12 step) fixture runs were present and checked (ran=6/6)
+ok   run_1img_baseline_1024c (V=1, stochastic) LR: coords has no duplicate rows (N=3543)
+ok   run_1img_baseline_1024c (V=1, stochastic) HR: coords has no duplicate rows (N=16516)
+      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_1024c (V=1, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543)
+ok   run_1img_baseline_1024c (V=1, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07)
+ok   run_1img_baseline_1024c (V=1, stochastic) LR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=6.0297e-01, observed band >=0.603 across all runs)
+ok   run_1img_baseline_1024c (V=1, stochastic) LR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_1024c (V=1, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.0569e-07, N=16516)
+ok   run_1img_baseline_1024c (V=1, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=9.7377e-07)
+ok   run_1img_baseline_1024c (V=1, stochastic) HR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=7.2857e-01, observed band >=0.603 across all runs)
+ok   run_1img_baseline_1024c (V=1, stochastic) HR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: coords has no duplicate rows (N=3543)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: coords has no duplicate rows (N=16516)
+      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.4456e-07, N=3543)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.4651e-07)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=6.0297e-01, observed band >=0.603 across all runs)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) LR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+      [flow-mv] 12 steps, 1 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.0569e-07, N=16516)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=9.7377e-07)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=7.2857e-01, observed band >=0.603 across all runs)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) HR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: coords has no duplicate rows (N=970)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: coords has no duplicate rows (N=4442)
+      [flow-mv] 12 steps, 2 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9460e-07, N=970)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=4.9766e-07)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=7.9254e-01, observed band >=0.603 across all runs)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) LR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+      [flow-mv] 12 steps, 2 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=4.1673e-07, N=4442)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=6.2913e-07)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=8.3368e-01, observed band >=0.603 across all runs)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) HR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: coords has no duplicate rows (N=963)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: coords has no duplicate rows (N=4431)
+      [flow-mv] 12 steps, 2 views, 33 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.1505e-07, N=963)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=6.4276e-07)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=7.7633e-01, observed band >=0.603 across all runs)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) LR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+      [flow-mv] 12 steps, 2 views, 33 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.1181e-07, N=4431)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.3033e-07)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=6.8598e-01, observed band >=0.603 across all runs)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) HR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: coords has no duplicate rows (N=952)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: coords has no duplicate rows (N=4183)
+      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=1.9071e-07, N=952)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.8294e-07)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=9.9590e-01, observed band >=0.603 across all runs)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) LR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=3.1416e-07, N=4183)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=8.8378e-07)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=8.0646e-01, observed band >=0.603 across all runs)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) HR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: coords has no duplicate rows (N=948)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: coords has no duplicate rows (N=4171)
+      [flow-mv] 12 steps, 4 views, 57 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.3888e-07, N=948)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=5.4101e-07)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=8.3010e-01, observed band >=0.603 across all runs)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) LR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+      [flow-mv] 12 steps, 4 views, 57 forwards, mode=multidiffusion, 0.0s
+== parity (clamp off): shape step0 CFG vs pinned reference ==
 ok   run_1img_baseline_512 (V=1, stochastic): coords has no duplicate rows (N=3543)
       [flow-mv] 1 steps, 1 views, 2 forwards, mode=stochastic, 0.0s
       [flow-mv] 1 steps, 1 views, 2 forwards, mode=stochastic, 0.0s
@@ -757,16 +960,11 @@ ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: step9 (outside
 ok   all 6 shape-1024cascade full-trajectory (LR+HR, 12 step) fixture runs were present and checked (ran=6/6)
 
 [parity subprocess] ALL PASS
-tion vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (5442118 bytes)
-ok   run_1img_injected_stochastic_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (25368646 bytes)
-ok   run_2img_real_stochastic_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1489990 bytes)
-ok   run_2img_real_stochastic_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6822982 bytes)
-ok   run_2img_real_multidiffusion_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1479242 bytes)
-ok   run_2img_real_multidiffusion_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6806090 bytes)
-ok   run_4img_real_stochastic_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1462342 bytes)
-ok   run_4img_real_stochastic_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6425158 bytes)
-ok   run_4img_real_multidiffusion_1024c LR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (1456202 bytes)
-ok   run_4img_real_multidiffusion_1024c HR: production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (6406730 bytes)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture (max rel over all 12 comparisons=2.3608e-07, N=4171)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture cfg_output for all 12 steps (max rel=7.5146e-07)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula pred=pos would NOT reproduce it (rel=8.1276e-01, observed band >=0.603 across all runs)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) HR: step9 (outside) cfg_output == pos/avg exactly (trivial, rel=0.0000e+00)
+ok   all 6 shape-1024cascade full-trajectory (LR+HR, 12 step) fixture runs were present and checked (ran=6/6)
 == parity (clamp off): re-exec'ing self with TRELLIS_NOFIX forced internally ==
 ok   parity (clamp off) subprocess exited 0 -- shape step0 CFG matches the pinned reference (~1e-6-1e-3 rel) across all 12 real fixture runs (512 x6 + 1024cascade LR/HR x6)
 

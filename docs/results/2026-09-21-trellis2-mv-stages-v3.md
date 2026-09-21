@@ -3,14 +3,20 @@
 - 対象: `src/test_trellis2_mv_shape.cpp`（`trellis-test-trellis2-mv-shape`）。v3 fixture
   `~/nfs/pixal3d_trellis2mv_ref_v3/` を既定 fixture root に変更（v2 は byte 一致でサブセット、
   既存 step0-only テストは無変更で継続 PASS）。
-- 設計・codex exec レビュー: `docs/design/2026-09-21-trellis2-mv-stages-v3.md`。
+- 設計・codex exec レビュー: `docs/design/2026-09-21-trellis2-mv-stages-v3.md`、
+  レビュー全文 `docs/design/2026-09-21-trellis2-mv-stages-v3-codex-review.md`。
 - worktree: `~/Downloads/pixal3d-mv-stages`（`feat/trellis2-mv-stages`）。先頭 SHA（着手前 ff）:
-  `0d4cfc5`。実装コミット: S1+S2 `935ac7a`、S3 `50277ac`、S4 `439865a`。
-- 実行: `cmake --build build --target trellis-test-trellis2-mv-shape -j4 && flock
-  /tmp/pixal3d-metal-gpu.lock -c './build/trellis-test-trellis2-mv-shape'`（S3-upsample のみ
-  Metal GPU を使うため lock 下で実行）。全出力: `full_run_log.txt`（同ディレクトリ、773行）。
-  `grep -c "^ok "` = 405、`grep -c "^FAIL"` = 0、プロセス exit code = 0。S5（tex 全step、任意）
-  は優先度低のため見送り。
+  `0d4cfc5`。実装コミット: S1+S2 `935ac7a`、S3 `50277ac`、S4 `439865a`、差し戻し対応
+  `456b43d`（§S4差し戻し対応節参照）。
+- 実行: `TRELLIS_THREADS=4 cmake --build build --target trellis-test-trellis2-mv-shape -j4
+  && TRELLIS_THREADS=4 flock /tmp/pixal3d-metal-gpu.lock -c
+  './build/trellis-test-trellis2-mv-shape'`（S3-upsample のみ Metal GPU を使うため lock 下で
+  実行、COMMON.md §6 のスレッド制約に合わせ `TRELLIS_THREADS=4` で再実行）。全出力:
+  `full_run_log.txt`（同ディレクトリ、971行）。**真の hard assert（`check()`）の内訳**:
+  `grep -c "^ok "` = 603、`grep -c "^FAIL"` = 0。**informational（`check()` を経ない printf）**:
+  `grep -c "^info "` = 1（S3-upsample の q8_0 診断のみ——他の informational は全て §S4差し戻し対応
+  で hard assert へ昇格済み）。プロセス exit code = 0。S5（tex 全step、任意）は優先度低のため
+  見送り。
 
 ## 結論（先に）
 
@@ -53,13 +59,42 @@
 | S2 最終SLat | denorm後 (`SHAPE_STD*x+SHAPE_MEAN`) rel<1e-4 | 同上（x_t chainと同一assertに統合、design§1の通り） | PASS | 同上 |
 | S3 quantize | fixture prequantize→native quantize、完全一致（集合） | 全6 run、native N=fixture N、diff 0 | PASS | `S3-quantize: native quantize(...) == fixture ... exactly` 行×6 |
 | S3 upsample | q8_0、best-effort、不一致は情報として報告のみ・期待値は変えない | native 1,385,777 vs fixture 1,390,129（diff 5,528/9,880） | INFO（PASS/FAILの対象外、design通り） | `S3-upsample: ... MISMATCH` 行 + diff例5件 |
-| S4 clamp条件 | `isfinite(ratio) && 0.2<=ratio<=5.0`（codexレビューで下限のみ→両側+finite に修正） | 162点全て満たす、min=0.2462, max=0.9575 | PASS | `S4: clamp is a no-op across all measured points` 行 |
+| S4 clamp条件 | `isfinite(ratio) && 0.2<=ratio<=5.0`（codexレビューで下限のみ→両側+finite に修正）を**162行each個別にhard assert**（差し戻し対応、旧実装は集計後 `if(would_fire==0) check(true,...)` という tautology で1点もhard assertしていなかった） | 162行 `check()` 全PASS、min=0.2462, max=0.9575 | PASS | `S4: ... OOD clamp guard is no-op` 行×162 |
 | S4 manifest照合 | rel（許容誤差は事前未指定→実測後 1e-6 級であることを doc に明記して確定） | 全162点 max rel=1.97e-07 | PASS（参考、hard gateではない） | `summary: ... max rel vs manifest ood_ratio=1.97e-07` 行 |
 | S4 bit-identical | NOFIX/production trace が別プロセスでbit-identical | 全18 run×side 一致 | PASS | `production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical` 行×18 |
 
 事後変更: 上記のうちS1副対照の閾値（1e-2→0.1）とS1 trivial/S4 clamp条件式の2点は、
 **実装前** の codex exec レビュー + 事前 numpy 実測を経て設計ドキュメント側で確定させたもので、
 実装後に閾値を緩めた事後変更ではない（design doc §0.5 に実測根拠込みで記録済み）。
+
+## S4差し戻し対応（2026-09-22）
+
+外部レビューで3点の指摘を受け、コードのみ修正（凍結した数値・閾値は変更なし）:
+
+1. **`src/test_trellis2_mv_shape.cpp` の S4 集計ロジックが構造的にtautologyだった**:
+   旧実装は `would_fire_count` を数えたあと `if (would_fire_count==0) check(true, ...)` と
+   していたため、この分岐に入る時点で条件は既に真——`check(true,...)` は何を検証しても
+   必ずPASSする空虚な assert で、1点も実質的にhard assertされていなかった（else 側は
+   printfのみで、発火時も個々の行がFAILとして報告される経路が無かった）。
+   **修正**: ループ内で行ごとに `check(no_fire, tag + ": OOD clamp guard is no-op (...)")`
+   を呼ぶ形に変更（162行、各行が独立した合否）。missing行も `check(false, ...)` に変更。
+   集計 printf は「informational aggregate、実ゲートは上のper-row check」と明記して残す。
+2. **production-gate の informational 36件（`run_full_trajectory_512/1024c` の
+   `hard_assert=false` 呼び出し、x_t chain + CFG reconstruction × 18 run-side）**:
+   S4修正でclampが全162測定点で発火しないことが個別hard assertで確立され、かつ
+   NOFIX/production trace のbit-identical証拠（S4、18 run-side）もあるため、`main()` を
+   並べ替えてS4を先に実行し、両方成立した場合のみ `hard_assert=true` へ昇格するよう変更
+   （`promote_production_gate = s4_ratio_ok && s4_bitid_ok`）。実測ではこの Mac の v3 fixture
+   全体で両方成立したため、**36件全てhard assertへ昇格**（`[production gate, informational]`
+   タグが出力に0件になったことで確認、`full_run_log.txt`）。降格せず残すべき情報は無かった
+   （残っている唯一のinformationalはS3-upsampleのq8_0診断で、これは§0-4の理由により意図的に
+   hard assertにしない——native バグと量子化ノイズを区別できないため）。
+3. **design doc §0.5 が実在しないパス `docs/design/../codex-review` を参照していた**:
+   実際の codex exec 出力（プロンプト全文＋最終回答）を
+   `docs/design/2026-09-21-trellis2-mv-stages-v3-codex-review.md` として保存し、
+   design doc の参照をこの実在パスへ修正した。
+4. `TRELLIS_THREADS=4` で再実行（COMMON.md §6）、結果は変わらず全PASS
+   （§冒頭の実行ログ参照、603 ok / 0 FAIL / informational 1件）。
 
 ## 既知の限界・申し送り
 
