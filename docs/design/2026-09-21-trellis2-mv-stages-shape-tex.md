@@ -279,14 +279,44 @@ TASK-STAGES.md の項目1・2 が要求する「最終 shape_slat/tex_slat 一�
   `FINDING:` は「clampが発火した」ではなく「step8/11は原理的に測定不能」という fixture 側の
   制約について出す。
 - tex: pure test 2件（concat structural、guidance-interval境界）+ 全12run×3step(0,8,11)=36箇所の
-  CFG が rel誤差 2.1e-8〜8.5e-8で参照と一致（`gr=0.0`のためclamp分岐自体に入らず、production/parity
-  gateの区別は不要——両者は同じコードパスを通る）。
+  CFG が **rel誤差 2.1e-8〜9.2075e-08**（統括の差し戻し(4)で指摘、当初記載の8.5e-8は自己申告の
+  丸めが甘く実測値と不一致だったため訂正）で参照と一致（`gr=0.0`のためclamp分岐自体に入らず、
+  production/parity gateの区別は不要——両者は同じコードパスを通る）。
 - 実装中に1件バグを発見・修正: texture の multidiffusion step8 チェックで、実fixtureのneg.npy
   （guided分岐の「gs=1でも常にneg評価」quirkによる記録）を`sp.steps=1`replay（not-guided強制、
   neg呼び出し無し）に誤って含めていたため「recorded callを全て消費」チェックが4/4 runで失敗した
   （4 FAILURE(S)）。`build_replay_one_step`に`include_neg`引数を追加し、
   `real_branch_guided==true`のケースではneg.npyを読み込まないよう修正、再ビルド・再実行で
   ALL PASS を確認した。
+
+## 差し戻し対応（2026-09-21、統括の検証FAIL 1回目、実装済み）
+
+数値・バグ修正は正当と確認された一方、設計 doc が約束した項目が未実装のまま完了報告していた
+ため差し戻しを受けた。以下4件を実装し、`TRELLIS_THREADS=4` で両テストを再実行して
+`ALL PASS`（両方 exit 0、FAIL行0件）を再確認した。
+
+1. **LR→HR 共有 stochastic カウンタ配線を real fixture 上で実行**（重大指摘）: 当初は
+   `sample_flow_multi` を常にデフォルト `nullptr`（stochastic_counter未使用）で呼んでおり、
+   「レビュー反映」2番・「検証項目」2番が約束したこの検証を一度も実装していなかった。
+   `test_cascade_stochastic_counter_real_scale()` を新規追加し、4本のstochastic 1024cascade run
+   （V=1×2, V=2, V=4）の実 N_lr/N_hr を使い、`trellis_cli.cpp:925,940-942` と同じ配線
+   （`int counter=0` をLR呼び出しに渡し、その値をHR呼び出しへ継続）で `sample_flow_multi` を
+   `steps=12`（本番どおり、ダミー forward — 戻り値の内容はcounter遷移の検証に無関係）で実行、
+   LR後 `counter==12`・HR後 `counter==24`・両呼び出しとも例外なしを assert。全4run PASS
+   （continued/reset の数値判別自体は既存の synthetic test に委譲、重複実装しない、変更なし）。
+2. **決定性（TASK-STAGES.md項目7）**: shape/tex 両ファイルの CFG チェック関数内で、同一入力
+   （同じ recorded テンソル・同じ noise）に対して独立に構築した2つの `ReplayModel` で
+   `sample_flow_multi` を2回実行し、返り値が bit-identical（`memcmp`）であることを assert する
+   ように変更（shape 18箇所・tex 36箇所、全て個別に確認）。
+3. **shape の production gate を info printf のみから hard assert へ**: `min_ratio`
+   （issue #77 OOD clamp診断）を、実測帯 `[0.2462, 0.5918]` を包含する `ratio>=0.2` の回帰ガード
+   として assert するよう変更。かつ `ratio>=0.2`（=clampがno-op）が確認できた場合は、
+   それまで info printf のみだった production gate の rel 比較も `check()`（hard assert、
+   `g_fail` に反映）に変更した——「ratioが0.2以上ならclampは効かないはずなので、production gate
+   もparity gateと数値的に一致するはず」という論理的根拠に基づく（ratioが求まらない場合のみ
+   info に留める、そのケースは現状の18箇所では発生していない）。
+4. **tex の rel 上限の訂正**: 上の「実装結果」節を「8.5e-8」から実測「9.2075e-08」へ修正した
+   （自己申告時の丸め誤り、統括の実測指摘どおり）。
 
 ## 禁止事項の再確認
 

@@ -152,28 +152,38 @@ static bool check_step_cfg(const std::string& tag, const std::string& prefix,
                            const std::vector<float>& sample0, const std::string& cfg_path, int N,
                            bool real_branch_guided) {
     std::string err;
-    ReplayModel rm;
-    if (!build_replay_one_step(prefix, N, rm, err, /*include_neg=*/!real_branch_guided)) {
-        check(false, tag + ": " + err); return false;
-    }
 
-    std::vector<float> negbuf(32, 0.0f);
-    std::vector<std::vector<float>> condbufs(V, std::vector<float>(32, 0.0f));
-    std::vector<const float*> conds; conds.reserve(V);
-    for (auto& b : condbufs) conds.push_back(b.data());
-    rm.neg_ptr = negbuf.data();
+    // 2回、独立に構築した ReplayModel + 同一入力で sample_flow_multi を呼び、bit-identical を
+    // assert する（TASK-STAGES.md 項目7「決定性」。native側のみの決定性確認）。
+    auto run_once = [&](std::vector<float>& out_result, ReplayModel& rm_out, std::string& err_out) -> bool {
+        if (!build_replay_one_step(prefix, N, rm_out, err_out, /*include_neg=*/!real_branch_guided)) return false;
+        std::vector<float> negbuf(32, 0.0f);
+        std::vector<std::vector<float>> condbufs(V, std::vector<float>(32, 0.0f));
+        std::vector<const float*> conds; conds.reserve(V);
+        for (auto& b : condbufs) conds.push_back(b.data());
+        rm_out.neg_ptr = negbuf.data();
+        FlowFwd fwd = [&rm_out](const std::vector<float>& x, float t, const float* c) { return rm_out(x, t, c); };
+        SamplerParams sp1 = sp_full; sp1.steps = 1;   // t[0]==1.0 は steps に関わらず不変 -> not-guided (tex gi1=0.9)
+        std::vector<float> sample = sample0;
+        try {
+            out_result = sample_flow_multi(fwd, sample, conds, negbuf.data(), sp1, mode);
+        } catch (const std::exception& e) {
+            err_out = std::string("sample_flow_multi(steps=1) threw: ") + e.what();
+            return false;
+        }
+        return true;
+    };
 
-    FlowFwd fwd = [&](const std::vector<float>& x, float t, const float* c) { return rm(x, t, c); };
-    SamplerParams sp1 = sp_full; sp1.steps = 1;   // t[0]==1.0 は steps に関わらず不変 -> not-guided (tex gi1=0.9)
+    ReplayModel rm, rm2;
+    std::vector<float> result, result2;
+    std::string err2;
+    if (!run_once(result, rm, err)) { check(false, tag + ": " + err); return false; }
+    const bool ok2 = run_once(result2, rm2, err2);
+    check(ok2 && result.size() == result2.size() &&
+          std::memcmp(result.data(), result2.data(), result.size() * sizeof(float)) == 0,
+          tag + ": determinism -- same replay input run twice natively is bit-identical" +
+          (ok2 ? "" : (" (2nd run failed: " + err2 + ")")));
 
-    std::vector<float> sample = sample0;
-    std::vector<float> result;
-    try {
-        result = sample_flow_multi(fwd, sample, conds, negbuf.data(), sp1, mode);
-    } catch (const std::exception& e) {
-        check(false, tag + ": sample_flow_multi(steps=1) threw: " + std::string(e.what()));
-        return false;
-    }
     check(rm.next == rm.tensors.size(), tag + ": consumed every recorded pos/neg call for this step (" +
           std::to_string(rm.next) + "/" + std::to_string(rm.tensors.size()) + ")");
     if (real_branch_guided)

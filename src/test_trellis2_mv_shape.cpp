@@ -37,6 +37,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <limits>
+#include <memory>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -172,6 +174,12 @@ bool load_native32(const std::string& path, int expectN, npy::Array& out, std::s
 }
 } // namespace
 
+// Issue #77 の OOD clamp ratio を step0 の記録済みテンソルから直接計算する（前方宣言、定義は
+// check_step0_cfg の後）。pure arithmetic, apply_guidance_rescale は呼ばない -- 本番実装の検証
+// ではなく、この step のデータが [0.2,5.0] guard に触れるかどうかの診断のみ。欠損時は NaN。
+static double compute_step0_clamp_ratio(const std::string& prefix, const SamplerParams& sp, int N,
+                                        const std::vector<float>& noise, bool multidiffusion);
+
 // Returns false (and reports via check()) on any structural failure. `strict`: TRELLIS_NOFIX=1
 // (parity gate, clamp disabled) vs default (production gate, clamp on -- known/expected
 // divergence from the un-clamped reference is informational only, matching P4's precedent).
@@ -182,29 +190,43 @@ static bool check_step0_cfg(const std::string& tag, const std::string& prefix,
     npy::Array noise;
     if (!load_native32(noise_path, N, noise, err)) { check(false, tag + ": " + err); return false; }
 
-    ReplayModel rm;
-    if (!build_replay_one_step(prefix, N, rm, err)) { check(false, tag + ": " + err); return false; }
+    const bool multidiffusion = (mode == MultiCondMode::MultiDiffusion);
 
-    std::vector<float> negbuf(32, 0.0f);   // ReplayModel は内容を無視、identity 目的のポインタのみ使う
-    std::vector<std::vector<float>> condbufs(V, std::vector<float>(32, 0.0f));
-    std::vector<const float*> conds; conds.reserve(V);
-    for (auto& b : condbufs) conds.push_back(b.data());
-    rm.neg_ptr = negbuf.data();
+    // 2回、独立に構築した ReplayModel + 同一入力で sample_flow_multi を呼び、bit-identical を
+    // assert する（TASK-STAGES.md 項目7「決定性」。native側のみの決定性確認、上の追記コメント参照）。
+    auto run_once = [&](std::vector<float>& out_result, ReplayModel& rm_out, std::string& err_out) -> bool {
+        if (!build_replay_one_step(prefix, N, rm_out, err_out)) return false;
+        // ローカルの neg/cond バッファは呼び出しごとに作る（ReplayModel の neg_ptr 比較用）。
+        auto negbuf = std::make_shared<std::vector<float>>(32, 0.0f);
+        auto condbufs = std::make_shared<std::vector<std::vector<float>>>(V, std::vector<float>(32, 0.0f));
+        std::vector<const float*> conds; conds.reserve(V);
+        for (auto& b : *condbufs) conds.push_back(b.data());
+        rm_out.neg_ptr = negbuf->data();
+        FlowFwd fwd = [&rm_out](const std::vector<float>& x, float t, const float* c) { return rm_out(x, t, c); };
+        SamplerParams sp1 = sp_full; sp1.steps = 1;   // t[0]==1.0 は steps に関わらず不変（設計ドキュメント参照）
+        try {
+            out_result = sample_flow_multi(fwd, noise.data, conds, negbuf->data(), sp1, mode);
+        } catch (const std::exception& e) {
+            err_out = std::string("sample_flow_multi(steps=1) threw: ") + e.what();
+            return false;
+        }
+        return true;
+    };
 
-    FlowFwd fwd = [&](const std::vector<float>& x, float t, const float* c) { return rm(x, t, c); };
-    SamplerParams sp1 = sp_full; sp1.steps = 1;   // t[0]==1.0 は steps に関わらず不変（設計ドキュメント参照）
+    ReplayModel rm1, rm2;
+    std::vector<float> result, result2;
+    std::string err1, err2;
+    const bool ok1 = run_once(result, rm1, err1);
+    if (!ok1) { check(false, tag + ": " + err1); return false; }
+    const bool ok2 = run_once(result2, rm2, err2);
+    check(ok2 && result.size() == result2.size() &&
+          std::memcmp(result.data(), result2.data(), result.size() * sizeof(float)) == 0,
+          tag + ": determinism -- same replay input run twice natively is bit-identical" +
+          (ok2 ? "" : (" (2nd run failed: " + err2 + ")")));
 
-    std::vector<float> result;
-    try {
-        result = sample_flow_multi(fwd, noise.data, conds, negbuf.data(), sp1, mode);
-    } catch (const std::exception& e) {
-        check(false, tag + ": sample_flow_multi(steps=1) threw: " + std::string(e.what()));
-        return false;
-    }
-
-    check(rm.next == rm.tensors.size(), tag + ": consumed every recorded pos/neg call for this step (" +
-          std::to_string(rm.next) + "/" + std::to_string(rm.tensors.size()) + ")");
-    check(rm.mismatches == 0, tag + ": every call's pos/neg branch matches the recorded call pattern");
+    check(rm1.next == rm1.tensors.size(), tag + ": consumed every recorded pos/neg call for this step (" +
+          std::to_string(rm1.next) + "/" + std::to_string(rm1.tensors.size()) + ")");
+    check(rm1.mismatches == 0, tag + ": every call's pos/neg branch matches the recorded call pattern");
 
     const std::vector<double> ts1 = flow_t_schedule(1, sp_full.rescale_t);
     const double dt1 = ts1[0] - ts1[1];
@@ -223,25 +245,43 @@ static bool check_step0_cfg(const std::string& tag, const std::string& prefix,
     const double rel = maxd / std::max(gmax, 1e-12);
     const bool strict = getenv("TRELLIS_NOFIX") != nullptr;
     char relbuf[64]; snprintf(relbuf, sizeof relbuf, "%.4e", rel);
-    const std::string msg = tag + ": step0 CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded "
-        "cfg.npy (rel=" + std::string(relbuf) + ", N=" + std::to_string(N) + ")" +
-        (strict ? "" : " [production gate -- clamp ON, divergence from the unclamped reference is expected/informational]");
-    if (strict) check(rel < 1e-3, msg);
-    else printf("%s %s\n", (rel < 1e-3) ? "ok  " : "info", msg.c_str());
+
+    if (strict) {
+        check(rel < 1e-3, tag + ": step0 CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded "
+              "cfg.npy (parity gate, clamp OFF, rel=" + std::string(relbuf) + ", N=" + std::to_string(N) + ")");
+    } else {
+        // production gate (clamp ON): 2026-09-21 差し戻し対応 (3) -- min_ratio を info printf のみに
+        // せず、実測帯（0.2462-0.5918、本ファイルの全run）を回帰ガードとして assert する。
+        // ratio>=0.2 が成立する限り clamp は no-op なので、その場合は rel も hard assert にできる
+        // （parity gate と数値的に同じ結果になるはず）。ratio が求まらない/0.2未満の場合のみ
+        // rel を info に落とす（clamp由来の既知の乖離、SS版と同じ扱い）。
+        const double ratio = compute_step0_clamp_ratio(prefix, sp_full, N, noise.data, multidiffusion);
+        const bool ratio_known = std::isfinite(ratio);
+        if (ratio_known) {
+            check(ratio >= 0.2, tag + ": OOD clamp regression guard -- step0 ratio stays >=0.2 (observed "
+                  "band 0.2462-0.5918 across all runs, 2026-09-21; ratio=" + std::to_string(ratio) + ")");
+        } else {
+            printf("info %s: OOD clamp ratio unavailable (missing pos/neg files) -- rel check left informational\n",
+                   tag.c_str());
+        }
+        const std::string msg = tag + ": step0 CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded "
+            "cfg.npy (production gate, clamp ON, rel=" + std::string(relbuf) + ", N=" + std::to_string(N) + ")";
+        if (ratio_known && ratio >= 0.2) check(rel < 1e-3, msg);   // ratio>=0.2 -> clamp no-op -> hard assert
+        else printf("%s %s [informational -- clamp may be active]\n", (rel < 1e-3) ? "ok  " : "info", msg.c_str());
+    }
     return true;
 }
 
-// Diagnostic-only (issue #77): OOD clamp ratio at step0, computed directly from the recorded
-// pos/neg tensors + known noise (pure arithmetic on fixture data, NOT a call into
-// apply_guidance_rescale -- this does not validate production's implementation, only reports
-// whether THIS step's data would trip the [0.2,5.0] guard if it did). Never gates pass/fail.
-static void report_step0_clamp_diagnostic(const std::string& tag, const std::string& prefix,
-                                          const SamplerParams& sp, int N, const std::vector<float>& noise,
-                                          bool multidiffusion) {
+// Issue #77 の OOD clamp ratio を step0 の記録済みテンソルから直接計算する（pure arithmetic,
+// apply_guidance_rescale は呼ばない -- 本番実装の検証ではなく、この step のデータが [0.2,5.0]
+// guard に触れるかどうかの診断のみ）。ファイル欠如時は NaN を返す。
+static double compute_step0_clamp_ratio(const std::string& prefix, const SamplerParams& sp, int N,
+                                        const std::vector<float>& noise, bool multidiffusion) {
     std::string err;
     npy::Array pos0, neg;
     const std::string pos_path = multidiffusion ? (prefix + "_avg.npy") : (prefix + "_pos0.npy");
-    if (!load_native32(pos_path, N, pos0, err) || !load_native32(prefix + "_neg.npy", N, neg, err)) return;
+    if (!load_native32(pos_path, N, pos0, err) || !load_native32(prefix + "_neg.npy", N, neg, err))
+        return std::numeric_limits<double>::quiet_NaN();
     const double a = 1.0 - sp.sigma_min, b = sp.sigma_min + (1.0 - sp.sigma_min) * 1.0;   // t==1.0 at step0
     double mp = 0, mc = 0;
     std::vector<double> x0p(noise.size()), x0c(noise.size());
@@ -255,9 +295,7 @@ static void report_step0_clamp_diagnostic(const std::string& tag, const std::str
     mp /= noise.size(); mc /= noise.size();
     double vp = 0, vc = 0;
     for (size_t i = 0; i < noise.size(); ++i) { vp += (x0p[i]-mp)*(x0p[i]-mp); vc += (x0c[i]-mc)*(x0c[i]-mc); }
-    const double ratio = vc > 0 ? std::sqrt(vp / (noise.size()-1)) / std::sqrt(vc / (noise.size()-1)) : 1.0;
-    printf("info %s: OOD clamp diagnostic (step0, from recorded tensors only) ratio=%.4f%s\n",
-           tag.c_str(), ratio, ratio < 0.2 ? "  ** below 0.2 floor -- clamp would fire **" : "");
+    return vc > 0 ? std::sqrt(vp / (noise.size()-1)) / std::sqrt(vc / (noise.size()-1)) : 1.0;
 }
 
 // =================================================================================================
@@ -306,10 +344,6 @@ static int run_512(const std::string& fixture_root) {
         if (N < 0) continue;
         if (check_step0_cfg(tag, dir + "/shape_step0", shape_production_params(), r.V, r.mode,
                             dir + "/noise_shape_0.npy", dir + "/shape_step0_cfg.npy", N)) {
-            npy::Array noise; std::string err;
-            if (load_native32(dir + "/noise_shape_0.npy", N, noise, err))
-                report_step0_clamp_diagnostic(tag, dir + "/shape_step0", shape_production_params(), N,
-                                              noise.data, r.mode == MultiCondMode::MultiDiffusion);
             ++ran;
         }
     }
@@ -333,10 +367,6 @@ static int run_1024c(const std::string& fixture_root) {
             const std::string tag = base_tag + " LR";
             ok &= check_step0_cfg(tag, dir + "/shape_lr_step0", shape_production_params(), r.V, r.mode,
                                   dir + "/noise_shape_cascade_0.npy", dir + "/shape_lr_step0_cfg.npy", N_lr);
-            npy::Array noise; std::string err;
-            if (ok && load_native32(dir + "/noise_shape_cascade_0.npy", N_lr, noise, err))
-                report_step0_clamp_diagnostic(tag, dir + "/shape_lr_step0", shape_production_params(), N_lr,
-                                              noise.data, r.mode == MultiCondMode::MultiDiffusion);
         }
 
         const int N_hr = check_coords_rows(base_tag + " HR", dir + "/shape_slat_coords.npy");
@@ -348,16 +378,87 @@ static int run_1024c(const std::string& fixture_root) {
             const bool ok_hr = check_step0_cfg(tag, dir + "/shape_hr_step0", shape_production_params(), r.V, r.mode,
                                                dir + "/noise_shape_cascade_1.npy", dir + "/shape_hr_step0_cfg.npy", N_hr);
             ok &= ok_hr;
-            npy::Array noise; std::string err;
-            if (ok_hr && load_native32(dir + "/noise_shape_cascade_1.npy", N_hr, noise, err))
-                report_step0_clamp_diagnostic(tag, dir + "/shape_hr_step0", shape_production_params(), N_hr,
-                                              noise.data, r.mode == MultiCondMode::MultiDiffusion);
         }
         if (ok) ++ran;
     }
     check(ran == 6, "all 6 shape-1024cascade (LR+HR) fixture runs were present and checked (ran=" +
           std::to_string(ran) + "/6)");
     return ran;
+}
+
+// =================================================================================================
+// §4: LR->HR 共有 stochastic カウンタ配線の real-fixture-scale structural test。
+// 2026-09-21 差し戻し対応 (1) -- 設計ドキュメント「レビュー反映」2番・「検証項目」2番が約束した
+// 「continued カウンタを渡しても実行が破綻せず」を、それまで一度も stochastic_counter を渡して
+// いなかった (sample_flow_multi へのデフォルト nullptr のまま) のを修正して実装する。
+//
+// trellis_cli.cpp:925 (`int shape_stochastic_counter = 0;`) / :940-942
+// (`t2mv_mode == Stochastic ? &shape_stochastic_counter : nullptr`) と同じ配線で、
+// 実 1024cascade stochastic run の実 N_lr/N_hr/V を使い、LR呼び出し(steps=12)完了後に
+// counter==12、それを継続して渡した HR呼び出し(steps=12)完了後に counter==24 になることを
+// assert する。呼び出し値そのもの（forward の戻り値）はこの検証には無関係なので、実重み
+// fixture の記録テンソルではなく決定的なダミー forward を使う（V が12を割り切るため
+// continued/reset の数値差はどのみち観測できない -- 設計ドキュメント参照。この test の目的は
+// 「API経路が例外なく通ること」と「counter値の遷移そのもの」だけ）。continued/reset の判別自体は
+// test_trellis2_mv_sampler.cpp:75-97 と test_flow_multi.cpp の synthetic fixture が担保済み
+// （重複実装しない）。
+namespace {
+struct RunScaleSpec { const char* name; int V; };
+const RunScaleSpec STOCHASTIC_1024C_SCALES[] = {
+    { "run_1img_baseline_1024c",            1 },
+    { "run_1img_injected_stochastic_1024c", 1 },
+    { "run_2img_real_stochastic_1024c",     2 },
+    { "run_4img_real_stochastic_1024c",     4 },
+};
+} // namespace
+
+static void test_cascade_stochastic_counter_real_scale(const std::string& fixture_root) {
+    printf("-- shape LR->HR shared stochastic counter: real-fixture-scale structural test --\n");
+    for (const auto& r : STOCHASTIC_1024C_SCALES) {
+        const std::string dir = fixture_root + "/" + r.name;
+        const std::string tag = std::string(r.name) + " (V=" + std::to_string(r.V) + ")";
+        if (!fs::exists(dir)) { check(false, tag + ": fixture run directory present (" + dir + ")"); continue; }
+
+        npy::Array noise_lr, noise_hr;
+        std::string err;
+        if (!load_native32(dir + "/noise_shape_cascade_0.npy", -1, noise_lr, err) ||
+            !load_native32(dir + "/noise_shape_cascade_1.npy", -1, noise_hr, err)) {
+            check(false, tag + ": " + err); continue;
+        }
+        const int N_lr = (int)noise_lr.shape[0], N_hr = (int)noise_hr.shape[0];
+
+        std::vector<float> negbuf(32, 0.0f);
+        std::vector<std::vector<float>> condbufs(r.V, std::vector<float>(32, 0.0f));
+        std::vector<const float*> conds; conds.reserve(r.V);
+        for (auto& b : condbufs) conds.push_back(b.data());
+        // 戻り値は無関係（このテストは counter の遷移だけを見る）。有限なゼロ速度を返すだけの
+        // ダミー forward -- 実 DiT/fixture データは使わない。
+        FlowFwd dummy_fwd = [](const std::vector<float>& x, float, const float*) {
+            return std::vector<float>(x.size(), 0.0f);
+        };
+        const SamplerParams sp = shape_production_params();   // steps=12 (LR/HRとも本番どおり)
+
+        int counter = 0;   // trellis_cli.cpp:925 の shape_stochastic_counter に対応
+        bool threw = false; std::string what;
+        try {
+            sample_flow_multi(dummy_fwd, noise_lr.data, conds, negbuf.data(), sp,
+                              MultiCondMode::Stochastic, nullptr, &counter);   // :940-942 相当（LR）
+        } catch (const std::exception& e) { threw = true; what = e.what(); }
+        check(!threw, tag + ": LR call (steps=12, real N=" + std::to_string(N_lr) +
+              ") does not throw" + (threw ? (" (" + what + ")") : ""));
+        check(counter == 12, tag + ": shared counter == 12 after the LR call (counter=" +
+              std::to_string(counter) + ")");
+
+        threw = false;
+        try {
+            sample_flow_multi(dummy_fwd, noise_hr.data, conds, negbuf.data(), sp,
+                              MultiCondMode::Stochastic, nullptr, &counter);   // 同じ counter を継続（HR）
+        } catch (const std::exception& e) { threw = true; what = e.what(); }
+        check(!threw, tag + ": HR call (steps=12, real N=" + std::to_string(N_hr) +
+              "), continuing the LR counter, does not throw" + (threw ? (" (" + what + ")") : ""));
+        check(counter == 24, tag + ": shared counter == 24 after the HR call continues the LR "
+              "counter (counter=" + std::to_string(counter) + ")");
+    }
 }
 
 static int run_parity_subprocess_mode(int argc, char** argv) {
@@ -382,6 +483,7 @@ int main(int argc, char** argv) {
 
     test_quantize_backoff_synthetic();
     test_i8_boundary();
+    test_cascade_stochastic_counter_real_scale(fixture_root);
 
     printf("== production (clamp on, default settings): step0 CFG, informational + diagnostics ==\n");
     run_512(fixture_root);
