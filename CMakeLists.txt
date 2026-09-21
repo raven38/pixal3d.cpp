@@ -368,6 +368,12 @@ add_executable(trellis-test-list-view-images src/test_list_view_images.cpp)
 target_link_libraries(trellis-test-list-view-images PRIVATE trellis_core)
 set_target_properties(trellis-test-list-view-images PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# TASK-PORT P4: SS MV stage tests (weight-driven, needs ss_dec.gguf; see the file's header comment
+# for why the 4 helper functions it needs are file-local static rather than a new shared module).
+add_executable(trellis-test-trellis2-mv-ss src/test_trellis2_mv_ss.cpp)
+target_link_libraries(trellis-test-trellis2-mv-ss PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-ss PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-ss-flow src/test_ss_flow.cpp)
 target_link_libraries(trellis-test-ss-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")
