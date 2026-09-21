@@ -482,4 +482,125 @@ std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
     return sample_flow(f, std::move(sample), cond, neg_cond, nullptr, nullptr, sp, trace);
 }
 
+std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> sample,
+                                     const std::vector<const float*>& conds,
+                                     const float* neg_cond,
+                                     const SamplerParams& sp,
+                                     MultiCondMode mode,
+                                     std::vector<std::vector<float>>* trace) {
+    if (conds.empty()) throw std::invalid_argument("sample_flow_multi: empty condition bank");
+    if (!neg_cond) throw std::invalid_argument("sample_flow_multi: null negative condition");
+    if (sp.steps <= 0) throw std::invalid_argument("sample_flow_multi: steps must be positive");
+
+    const float sm = sp.sigma_min;
+    const size_t Nst = sample.size();
+    std::vector<float> ts((size_t)sp.steps + 1);
+    for (int i = 0; i <= sp.steps; ++i) {
+        const float t = 1.0f - (float)i / sp.steps;
+        ts[(size_t)i] = sp.rescale_t * t / (1.0f + (sp.rescale_t - 1.0f) * t);
+    }
+
+    std::vector<float> pos(Nst), neg(Nst), pred(Nst), tmp;
+    static const bool no_fix = std::getenv("TRELLIS_NOFIX") != nullptr;
+    const auto tflow0 = std::chrono::steady_clock::now();
+    int n_fwd = 0;
+
+    auto apply_rescale = [&](float t, const std::vector<float>& pred_pos) {
+        if (sp.guidance_rescale <= 0.0f || Nst < 2) return;
+        const float a = 1.0f - sm;
+        const float b = sm + (1.0f - sm) * t;
+        double mp = 0.0, mc = 0.0;
+        std::vector<float> x0p(Nst), x0c(Nst);
+        for (size_t k = 0; k < Nst; ++k) {
+            x0p[k] = a * sample[k] - b * pred_pos[k];
+            x0c[k] = a * sample[k] - b * pred[k];
+            mp += x0p[k];
+            mc += x0c[k];
+        }
+        mp /= (double)Nst;
+        mc /= (double)Nst;
+        double vp = 0.0, vc = 0.0;
+        for (size_t k = 0; k < Nst; ++k) {
+            const double dp = x0p[k] - mp, dc = x0c[k] - mc;
+            vp += dp * dp;
+            vc += dc * dc;
+        }
+        float ratio = vc > 0.0 ? (float)(std::sqrt(vp / (Nst - 1)) / std::sqrt(vc / (Nst - 1))) : 1.0f;
+        // Match the production single-image sampler's robustness guard. The pinned
+        // Python oracle is the semantic target; for in-distribution fixtures this
+        // clamp is inactive. TRELLIS_NOFIX=1 restores the raw reference arithmetic.
+        if (!no_fix) {
+            if (!std::isfinite(ratio)) ratio = 1.0f;
+            ratio = fminf(fmaxf(ratio, 0.2f), 5.0f);
+        }
+        const float gr = sp.guidance_rescale;
+        for (size_t k = 0; k < Nst; ++k) {
+            const float x0r = x0c[k] * ratio;
+            const float x0 = gr * x0r + (1.0f - gr) * x0c[k];
+            pred[k] = (a * sample[k] - x0) / b;
+        }
+    };
+
+    for (int i = 0; i < sp.steps; ++i) {
+        const float t = ts[(size_t)i], tprev = ts[(size_t)i + 1];
+        const bool guided = sp.gi0 <= t && t <= sp.gi1;
+        const float tscaled = 1000.0f * t;
+
+        if (mode == MultiCondMode::Stochastic) {
+            const float* c = conds[(size_t)i % conds.size()];
+            const float gs = guided ? sp.guidance_strength : 1.0f;
+            if (gs == 1.0f) {
+                pred = fwd(sample, tscaled, c);
+                ++n_fwd;
+            } else if (gs == 0.0f) {
+                pred = fwd(sample, tscaled, neg_cond);
+                ++n_fwd;
+            } else {
+                pos = fwd(sample, tscaled, c);
+                neg = fwd(sample, tscaled, neg_cond);
+                n_fwd += 2;
+                for (size_t k = 0; k < Nst; ++k)
+                    pred[k] = gs * pos[k] + (1.0f - gs) * neg[k];
+                apply_rescale(t, pos);
+            }
+        } else {
+            // PR #104 semantics: average RAW positive model predictions first.
+            std::fill(pos.begin(), pos.end(), 0.0f);
+            for (const float* c : conds) {
+                tmp = fwd(sample, tscaled, c);
+                ++n_fwd;
+                if (tmp.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
+                for (size_t k = 0; k < Nst; ++k) pos[k] += tmp[k];
+            }
+            const float inv = 1.0f / (float)conds.size();
+            for (float& v : pos) v *= inv;
+
+            if (!guided) {
+                pred = pos;
+            } else {
+                // Preserve PR #104 literally: inside the interval it evaluates one
+                // negative forward even for guidance_strength == 1.
+                neg = fwd(sample, tscaled, neg_cond);
+                ++n_fwd;
+                for (size_t k = 0; k < Nst; ++k)
+                    pred[k] = sp.guidance_strength * pos[k] +
+                              (1.0f - sp.guidance_strength) * neg[k];
+                apply_rescale(t, pos);
+            }
+        }
+
+        if (!no_fix) for (float& v : pred) if (!std::isfinite(v)) v = 0.0f;
+        const float dt = t - tprev;
+        for (size_t k = 0; k < Nst; ++k) sample[k] -= dt * pred[k];
+        if (trace) trace->push_back(sample);
+    }
+
+    printf("      [flow-mv] %d steps, %zu views, %d forwards, mode=%s, %.1fs\n",
+           sp.steps, conds.size(), n_fwd,
+           mode == MultiCondMode::Stochastic ? "stochastic" : "multidiffusion",
+           std::chrono::duration<double>(std::chrono::steady_clock::now() - tflow0).count());
+    fflush(stdout);
+    return sample;
+}
+
 } // namespace trellis
