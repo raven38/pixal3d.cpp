@@ -104,7 +104,7 @@ index 61041bd..0000000 100644
                  if (a->buffer && ggml_backend_buft_is_cuda_split(a->buffer->buft)) {
                      if (a->ne[2] > 1 || a->ne[3] > 1) {
                          return false;
-@@ -5760,4 +5775,38 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
+@@ -5760,4 +5775,42 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
      return cuda_backend;
  }
  
