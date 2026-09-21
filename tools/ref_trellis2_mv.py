@@ -224,6 +224,13 @@ def run_selftest() -> int:
     short["steps"] = 2
     assert _synthetic_run("stochastic", short)["view_schedule"] == [0, 1]
 
+    # PR #104 wraps the cascade's LR+HR shape samples in one injection context.
+    # For V=5 and 12 steps, HR starts at view 12 % 5 == 2 (not view 0).
+    lr_sched = [i % 5 for i in range(12)]
+    hr_sched = [(12 + i) % 5 for i in range(12)]
+    assert lr_sched[:6] == [0, 1, 2, 3, 4, 0]
+    assert hr_sched[:6] == [2, 3, 4, 0, 1, 2]
+
     # gs=1: stochastic's original CFG mixin skips the negative model call;
     # PR #104 multidiffusion still evaluates it inside the guidance interval.
     gs1 = dict(p)
