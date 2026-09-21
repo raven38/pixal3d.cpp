@@ -32,6 +32,17 @@ if(PIXAL3D_GGML_PATCHES AND GGML_WEBGPU)
 endif()
 if(PIXAL3D_GGML_PATCHES AND GGML_CUDA)
   pixal3d_apply_ggml_patches("${CMAKE_SOURCE_DIR}/patches/ggml-cuda/*.patch")
+elseif(PIXAL3D_GGML_PATCHES)
+  # CPU/WebGPU CI still validates that CUDA patches apply cleanly to the pinned
+  # submodule, even though it cannot compile nvcc code on those runners.
+  file(GLOB _pixal3d_ggml_cuda_check ${CMAKE_SOURCE_DIR}/patches/ggml-cuda/*.patch)
+  foreach(_p ${_pixal3d_ggml_cuda_check})
+    execute_process(COMMAND git apply --check ${_p} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/thirdparty/ggml
+                    RESULT_VARIABLE _chk OUTPUT_QUIET ERROR_QUIET)
+    if(NOT _chk EQUAL 0)
+      message(FATAL_ERROR "ggml CUDA patch does not apply to pinned submodule: ${_p}")
+    endif()
+  endforeach()
 endif()
 option(TRELLIS_WASM_SMOKE "Build only the browser WebGPU smoke test (Emscripten only)" OFF)
 if(EMSCRIPTEN AND TRELLIS_WASM_SMOKE)
