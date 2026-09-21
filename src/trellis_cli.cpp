@@ -908,7 +908,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, Lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
         trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
-        vector<float> z = trellis::sample_flow(fwd, noise(8*4096), cond.data(), neg.data(), sp);  // [8,4096] ne0=8
+        vector<float> z = sample_bank(fwd, noise(8*4096), cond_bank, neg, sp);  // [8,4096] ne0=8
         delete run; m.free();
         // transpose [8,L] -> torch [8,16,16,16] memory (c*4096 + sp)
         vector<float> zdec(8*4096);
@@ -925,14 +925,14 @@ int trellis_run(const trellis::TrellisParams& cfg) {
 
     // one shape SLAT flow run -> normalized [32,n] (sparse, CFG 7.5, gi[0.6,1], rescale_t 3)
     auto shape_flow = [&](const std::string& path, const vector<std::array<int,3>>& cds,
-                          const float* cnd, const float* ncnd, int lc) {
+                          const vector<vector<float>>& bank, const vector<float>& ncnd, int lc) {
         const int n = (int)cds.size();
         trellis::Model m = trellis::Model::load(path, gpu);
         trellis::DiTParams p; p.in_ch = 32; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
         trellis::DitRunner* run = trellis::make_sparse_runner(m, p, cds, lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
         trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gsh; sp.guidance_rescale=0.5f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=3.0f;
-        vector<float> sn = trellis::sample_flow(fwd, noise((size_t)32*n), cnd, ncnd, sp);   // [32,n]
+        vector<float> sn = sample_bank(fwd, noise((size_t)32*n), bank, ncnd, sp);   // [32,n]
         delete run; m.free();
         return sn;
     };
@@ -940,8 +940,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
     vector<float> slat_norm, slat_dn;        // normalized (for tex concat) and denormalized (for decode)
     vector<std::array<int,3>> shc;           // coords where the shape SLAT lives + is decoded
     int RES = 512;                           // final grid resolution
-    const float* cond_dec = cond.data();     // cond used by HR shape + tex flows
-    const float* neg_dec  = neg.data();
+    const vector<vector<float>>* cond_dec_bank = &cond_bank; // HR shape + tex flow condition bank
+    const vector<float>* neg_dec_vec = &neg;
     int Lc_dec = Lc;
     vector<float> lr_norm, lr_dn;            // LR (res-512) shape slat @res32 — reused for the res-512 tex path
     if (cascade) {
@@ -959,7 +959,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         const int max_tok   = cfg.max_tokens;
         printf("[4/7] shape SLAT flow (LR 512 -> upsample -> HR %d cascade, max_tok=%d)\n", hr_target, max_tok);
         // (1) LR shape flow @res32 with cond_512
-        lr_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond.data(), neg.data(), Lc);
+        lr_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond_bank, neg, Lc);
         lr_dn.resize(lr_norm.size());
         for (size_t n = 0; n < coords.size(); ++n) for (int c = 0; c < 32; ++c)
             lr_dn[(size_t)c + 32*n] = lr_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
@@ -989,12 +989,12 @@ int trellis_run(const trellis::TrellisParams& cfg) {
             hr_res -= 128;
         }
         // (4) HR shape flow @res(hr_res//16) with cond_1024
-        slat_norm = shape_flow(M + "/shape_flow_1024.gguf", shc, cond1024.data(), neg1024.data(), Lc1024);
-        RES = hr_res; cond_dec = cond1024.data(); neg_dec = neg1024.data(); Lc_dec = Lc1024;
+        slat_norm = shape_flow(M + "/shape_flow_1024.gguf", shc, cond1024_bank, neg1024, Lc1024);
+        RES = hr_res; cond_dec_bank = &cond1024_bank; neg_dec_vec = &neg1024; Lc_dec = Lc1024;
     } else {
         printf("[4/7] shape SLAT flow (512)\n");
         shc = coords;
-        slat_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond.data(), neg.data(), Lc);
+        slat_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond_bank, neg, Lc);
     }
     const int N = (int)shc.size();
     slat_dn.resize(slat_norm.size());
@@ -1061,8 +1061,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         const std::string tflow = M + (mixed ? "/tex_flow_512.gguf" : (cascade ? "/tex_flow_1024.gguf" : "/tex_flow_512.gguf"));
         const vector<std::array<int,3>>& tcoords = mixed ? coords : shc;
         const vector<float>& tslat = mixed ? lr_norm : slat_norm;
-        const float* tcond = mixed ? cond.data() : cond_dec;
-        const float* tneg  = mixed ? neg.data()  : neg_dec;
+        const vector<vector<float>>& tbank = mixed ? cond_bank : *cond_dec_bank;
+        const vector<float>& tneg = mixed ? neg : *neg_dec_vec;
         const int    tlc   = mixed ? Lc : Lc_dec;
         const int    tN    = (int)tcoords.size();
         const std::vector<std::vector<uint8_t>>& tsubs = mixed ? so_tex.subs : so.subs;
@@ -1082,7 +1082,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
                 return run->forward(x64, ts, c);
             };
             trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6f; sp.gi1=0.9f; sp.rescale_t=3.0f;
-            texlat = trellis::sample_flow(fwd, noise((size_t)32*tN), tcond, tneg, sp);  // [32,tN]
+            texlat = sample_bank(fwd, noise((size_t)32*tN), tbank, tneg, sp);  // [32,tN]
             delete run; m.free();
             for (int n = 0; n < tN; ++n) for (int c = 0; c < 32; ++c) texlat[(size_t)c + 32*n] = texlat[(size_t)c + 32*n]*TEX_STD[c] + TEX_MEAN[c];
         }
