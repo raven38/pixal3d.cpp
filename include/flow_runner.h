@@ -48,7 +48,19 @@ private:
     void check_device_budget() const;
     const Model& m_; DiTParams p_; int N_, Lc_;
     ggml_context* ctx_ = nullptr; ggml_cgraph* g_ = nullptr; ggml_gallocr_t alloc_ = nullptr;
-    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr;
+    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr, *gcross_kv_ = nullptr;
+
+    // Pixal3D's global conditioning is step-invariant (Lc=5). Cache all 30 blocks'
+    // to_kv(cond) projections once per distinct cond pointer, then upload the compact
+    // [2*d_model,Lc,n_blocks] cache as one graph input per forward. This removes 30
+    // skinny Q8_0 GEMMs/forward while keeping K RMSNorm + attention in the main graph.
+    bool use_cross_kv_cache_ = false;
+    ggml_context* kv_ctx_ = nullptr; ggml_cgraph* kv_g_ = nullptr; ggml_gallocr_t kv_alloc_ = nullptr;
+    ggml_tensor *kv_cond_ = nullptr, *kv_out_ = nullptr;
+    struct CrossKvEntry { const float* key = nullptr; std::vector<float> data; };
+    std::vector<CrossKvEntry> cross_kv_host_;
+    const std::vector<float>& cross_kv_for(const float* cond);
+
     std::vector<float> rcos_, rsin_;   // re-uploaded each forward (gallocr may reuse input buffers)
     size_t alloc_bytes_ = 0;
     std::map<std::string, ggml_tensor*> inter_;   // [dbg] named intermediates for NaN localization
