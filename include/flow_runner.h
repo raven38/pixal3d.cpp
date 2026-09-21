@@ -49,7 +49,7 @@ private:
     void check_device_budget() const;
     const Model& m_; DiTParams p_; int N_, Lc_;
     ggml_context* ctx_ = nullptr; ggml_cgraph* g_ = nullptr; ggml_gallocr_t alloc_ = nullptr;
-    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr, *gcross_kv_ = nullptr;
+    ggml_tensor *gh0_, *gtf_, *gcond_, *gcos_, *gsin_, *gout_, *gproj_ = nullptr, *gproj_view_ = nullptr, *gcross_kv_ = nullptr;
 
     // Pixal3D's global conditioning is step-invariant (Lc=5). Cache all 30 blocks'
     // to_kv(cond) projections once per distinct cond pointer, then upload the compact
