@@ -1,0 +1,4 @@
+  formulation              max|d|      mean|d|        L2rel         ms   worst
+  ggml_group_norm      2.1744e-03   9.0540e-05   1.3338e-04      466.7   @20526378
+  ggml_norm[n/8,8]     9.5367e-07   3.1082e-08   6.0566e-08        8.2   @52488586
+  N1: selected on this backend = ggml_norm[n/8,8]: max|d| 9.537e-07 <= 1e-3 and <= 1.5 x other 2.174e-03  -> PASS

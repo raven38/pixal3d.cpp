@@ -1,0 +1,21 @@
+P1 START Sun Sep 20 18:28:36 JST 2026
+gate: waiting (18:30:37) gpu=59% others=0
+gate: passed 18:31:31 gpu=0%
+--- new nafops_T1024 18:31:31
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: stale lock (1789896957 s) -> taking over
+gate: passed 18:36:31 gpu=0%
+--- old nafops_T1024 18:36:31
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: waiting (18:37:52) gpu=43% others=0
+gate: passed 18:38:31 gpu=36%
+--- new nafops_T512 18:38:31
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: stale lock (1789897228 s) -> taking over
+gate: passed 18:41:02 gpu=0%
+--- old nafops_T512 18:41:02
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 

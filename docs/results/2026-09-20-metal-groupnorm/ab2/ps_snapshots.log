@@ -1,0 +1,1546 @@
+== 18:31:31 before new nafops_T1024 gpu_util=0 load= 5.73 5.70 8.40 
+  PID  %CPU     ELAPSED ARGS
+  411  43.8 03-09:02:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  461  26.8 03-09:02:21 /usr/libexec/mobileassetd
+43771  14.4       00:01 auditd -l
+  914  14.4 03-09:00:59 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+37511  13.4    06:14:53 /usr/libexec/spotlightknowledged.updater -u
+  949  12.7 03-09:00:58 /usr/libexec/pkd
+  881  12.1 03-09:01:00 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+-- trellis:
+== 18:31:51 after new nafops_T1024 gpu_util=0 load= 6.63 5.92 8.42 
+  PID  %CPU     ELAPSED ARGS
+  411  16.8 03-09:02:42 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686  15.0 03-09:02:24 /usr/libexec/sysmond
+  523  11.1 03-09:02:41 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  942   7.1 03-09:01:18 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+  465   6.2 03-09:02:41 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   5.4 03-09:02:42 /usr/libexec/trustd
+  338   4.0 03-09:02:42 /usr/libexec/smd
+-- trellis:
+== 18:36:31 before old nafops_T1024 gpu_util=0 load= 4.22 4.74 7.16 
+  PID  %CPU     ELAPSED ARGS
+  411  45.1 03-09:07:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  38.5    01:59:57 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  13.7 03-09:05:57 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   7.8 03-09:05:59 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  523   7.5 03-09:07:21 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+40050   5.9 02-02:59:44 claude
+90749   3.5 03-01:32:45 claude
+-- trellis:
+== 18:36:59 after old nafops_T1024 gpu_util=99 load= 4.01 4.66 7.05 
+  PID  %CPU     ELAPSED ARGS
+  411  41.1 03-09:07:50 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  11.9    02:00:25 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  10.5 03-09:06:25 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   6.2 03-09:06:27 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  523   5.1 03-09:07:49 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6069   5.0 03-08:58:56 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+  942   4.6 03-09:06:26 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+-- trellis:
+== 18:38:31 before new nafops_T512 gpu_util=26 load= 5.47 5.07 6.97 
+  PID  %CPU     ELAPSED ARGS
+ 2212  71.8    02:01:57 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  47.8 03-09:09:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  35.2 03-09:07:57 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  10.4 03-09:07:59 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   9.9 03-09:08:00 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   8.1 03-09:07:41 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  523   6.6 03-09:09:21 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 18:38:46 after new nafops_T512 gpu_util=35 load= 5.77 5.16 6.97 
+  PID  %CPU     ELAPSED ARGS
+  411  46.4 03-09:09:37 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  44.9 03-09:08:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  35.0    02:02:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523   4.8 03-09:09:36 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.0 03-01:35:00 claude
+ 1688   3.8 03-09:07:49 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+58284   3.3    16:30:36 claude
+-- trellis:
+== 18:41:02 before old nafops_T512 gpu_util=0 load= 3.51 4.64 6.50 
+  PID  %CPU     ELAPSED ARGS
+  964 247.3 03-09:10:29 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/coresp
+66439  12.8       00:01 gh issue view 277 --repo CyberAgentAILab/cy3i --json number,state,title
+  523  12.3 03-09:11:52 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   7.6 03-09:10:30 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+66437   5.2       00:01 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+58284   4.9    16:32:52 claude
+  414   4.5 03-09:11:53 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow console
+-- trellis:
+== 18:41:27 after old nafops_T512 gpu_util=0 load= 4.15 4.72 6.48 
+  PID  %CPU     ELAPSED ARGS
+67109  92.5       00:06 /Library/Apple/System/Library/CoreServices/XProtect.app/Contents/MacOS/XProtectRemediatorDolittle 97833A64-32D6-46B8
+32219  12.0    18:39:38 /System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd
+  523   7.1 03-09:12:17 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   6.2 03-01:37:41 claude
+  465   6.0 03-09:12:17 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  390   5.2 03-09:12:18 /usr/libexec/dasd
+  418   4.5 03-09:12:18 /usr/libexec/trustd
+-- trellis:
+== 18:42:59 before new nafops_LR gpu_util=0 load= 4.18 4.72 6.30 
+  PID  %CPU     ELAPSED ARGS
+  953  87.3 03-09:12:26 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+69481  86.6       00:09 /Library/Apple/System/Library/CoreServices/XProtect.app/Contents/MacOS/XProtectRemediatorMRTv3 FA4F8917-1FF3-472E-9E
+  686  27.9 03-09:13:32 /usr/libexec/sysmond
+16286   7.3    18:52:44 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  924   6.1 03-09:12:27 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   5.9 03-09:13:49 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   5.0 03-09:13:49 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 18:43:04 after new nafops_LR gpu_util=0 load= 4.25 4.72 6.29 
+  PID  %CPU     ELAPSED ARGS
+69481  86.3       00:14 /Library/Apple/System/Library/CoreServices/XProtect.app/Contents/MacOS/XProtectRemediatorMRTv3 FA4F8917-1FF3-472E-9E
+  953  86.2 03-09:12:31 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465  11.9 03-09:13:54 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6053  11.1 03-09:05:01 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+  418  10.7 03-09:13:55 /usr/libexec/trustd
+  383  10.5 03-09:13:55 /usr/sbin/securityd -i
+  338   7.1 03-09:13:55 /usr/libexec/smd
+-- trellis:
+== 18:47:28 before old nafops_LR gpu_util=0 load= 3.07 4.10 5.63 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-09:16:55 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.2 03-09:18:18 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.8 03-09:18:18 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+59065   2.9 01-02:15:22 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  418   2.8 03-09:18:19 /usr/libexec/trustd
+90749   2.8 03-01:43:42 claude
+ 2085   2.6 03-09:16:23 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+-- trellis:
+== 18:47:39 after old nafops_LR gpu_util=0 load= 2.91 4.04 5.58 
+  PID  %CPU     ELAPSED ARGS
+  953  94.8 03-09:17:06 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.0 03-09:18:29 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.8 03-09:18:29 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6167   4.7 03-09:09:36 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+90749   4.0 03-01:43:53 claude
+  418   3.7 03-09:18:30 /usr/libexec/trustd
+  338   3.5 03-09:18:30 /usr/libexec/smd
+-- trellis:
+== 18:49:27 before old nafops_T1024 gpu_util=0 load= 3.03 3.76 5.29 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-09:18:54 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   5.8 03-09:20:17 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.5 03-01:45:41 claude
+  686   3.2 03-09:20:00 /usr/libexec/sysmond
+ 1193   2.8 03-09:18:50 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+  957   1.9 03-09:18:54 /Applications/Emacs.app/Contents/MacOS/Emacs-arm64-11
+ 6183   1.5 03-09:11:24 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+-- trellis:
+== 18:49:53 after old nafops_T1024 gpu_util=99 load= 3.03 3.70 5.23 
+  PID  %CPU     ELAPSED ARGS
+  953  95.4 03-09:19:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   6.8 03-09:20:43 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   4.5 03-09:20:43 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6066   4.5 03-09:11:50 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+ 2085   4.3 03-09:18:48 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  338   4.2 03-09:20:44 /usr/libexec/smd
+  418   3.9 03-09:20:44 /usr/libexec/trustd
+-- trellis:
+== 18:51:43 before new nafops_T1024 gpu_util=0 load= 2.49 3.23 4.85 
+  PID  %CPU     ELAPSED ARGS
+  953  93.9 03-09:21:10 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   6.4 03-09:22:33 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+58284   3.8    16:43:33 claude
+ 6069   3.4 03-09:13:40 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+90749   3.4 03-01:47:57 claude
+  686   3.2 03-09:22:16 /usr/libexec/sysmond
+ 6032   2.5 03-09:13:40 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+-- trellis:
+== 18:52:03 after new nafops_T1024 gpu_util=0 load= 3.24 3.36 4.86 
+  PID  %CPU     ELAPSED ARGS
+  953  88.1 03-09:21:30 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+82862  23.5       00:01 /usr/libexec/biomesyncd
+  686  18.4 03-09:22:36 /usr/libexec/sysmond
+  922  11.0 03-09:21:31 /System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd
+  924   8.4 03-09:21:31 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  926   7.9 03-09:21:31 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  418   6.4 03-09:22:54 /usr/libexec/trustd
+-- trellis:
+== 18:53:52 before old nafops_T512 gpu_util=0 load= 4.56 3.58 4.75 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-09:23:19 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   8.2 03-09:24:42 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  686   7.8 03-09:24:25 /usr/libexec/sysmond
+  418   5.8 03-09:24:43 /usr/libexec/trustd
+ 6053   5.8 03-09:15:49 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+ 5809   5.5 03-09:15:49 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+  338   5.2 03-09:24:43 /usr/libexec/smd
+-- trellis:
+== 18:54:18 after old nafops_T512 gpu_util=0 load= 4.07 3.54 4.70 
+  PID  %CPU     ELAPSED ARGS
+  953  75.8 03-09:23:45 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  461  29.6 03-09:25:08 /usr/libexec/mobileassetd
+ 2244  14.6 03-09:23:08 /usr/libexec/pkd
+  949  11.9 03-09:23:45 /usr/libexec/pkd
+  565  11.6 03-09:25:07 /System/Library/CoreServices/TimeMachine/backupd
+86912   9.0       00:01 /System/Applications/Mail.app/Contents/PlugIns/MailCacheDelete.appex/Contents/MacOS/MailCacheDelete -AppleLanguages 
+  958   8.1 03-09:23:45 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted
+-- trellis:
+== 18:56:11 before new nafops_T512 gpu_util=0 load= 2.61 3.37 4.50 
+  PID  %CPU     ELAPSED ARGS
+  953  91.3 03-09:25:38 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.2 03-09:27:01 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.1 03-01:52:25 claude
+59383   3.9    16:47:51 claude
+  944   3.6 03-09:25:38 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+ 6222   3.4 03-09:18:08 claude --resume d2d9b1b4-5da4-40a3-937c-1d3119f2d87a
+  465   2.5 03-09:27:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 18:56:21 after new nafops_T512 gpu_util=0 load= 2.66 3.35 4.48 
+  PID  %CPU     ELAPSED ARGS
+  953  97.5 03-09:25:48 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  15.0 03-09:25:48 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  523   6.7 03-09:27:11 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57915   2.8    16:48:38 claude
+ 1480   2.0 03-09:25:30 /Applications/Screen InStyle.app/Contents/MacOS/ScreenInStyle
+58284   2.0    16:48:11 claude
+16286   1.7    19:06:06 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 18:58:07 before old nafops_LR gpu_util=0 load= 3.14 3.24 4.29 
+  PID  %CPU     ELAPSED ARGS
+  953  94.3 03-09:27:34 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.2 03-09:28:57 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   7.0 03-01:54:21 claude
+  465   4.0 03-09:28:57 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.1 03-09:28:58 /usr/libexec/trustd
+  338   2.8 03-09:28:58 /usr/libexec/smd
+  926   1.0 03-09:27:35 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+== 18:58:17 after old nafops_LR gpu_util=0 load= 2.97 3.20 4.27 
+  PID  %CPU     ELAPSED ARGS
+  953  95.5 03-09:27:44 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   6.4 03-09:29:07 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  686   5.7 03-09:28:50 /usr/libexec/sysmond
+58284   4.7    16:50:07 claude
+ 5782   4.6 03-09:20:14 claude --resume 08526447-a989-4e72-b49e-a874a6e26996
+59383   3.5    16:49:57 claude
+90749   2.4 03-01:54:31 claude
+-- trellis:
+== 19:00:19 before new nafops_LR gpu_util=0 load= 4.17 3.41 4.19 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-09:29:46 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749  11.1 03-01:56:33 claude
+  523   7.4 03-09:31:09 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+59065   2.3 01-02:28:13 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+16286   2.1    19:10:04 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  338   1.6 03-09:31:10 /usr/libexec/smd
+  465   1.4 03-09:31:09 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:00:24 after new nafops_LR gpu_util=0 load= 4.07 3.41 4.18 
+  PID  %CPU     ELAPSED ARGS
+  953  93.7 03-09:29:52 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926  11.9 03-09:29:53 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  523   6.1 03-09:31:15 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 5923   6.0 03-09:22:22 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+90749   5.0 03-01:56:39 claude
+16286   4.0    19:10:10 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 6032   2.3 03-09:22:22 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+-- trellis:
+== 19:02:11 before new nafops_T1024 gpu_util=0 load= 2.64 3.15 4.00 
+  PID  %CPU     ELAPSED ARGS
+  953  94.4 03-09:31:38 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  11.4 03-09:32:44 /usr/libexec/sysmond
+  523   7.9 03-09:33:01 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  926   5.6 03-09:31:39 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+57872   3.9    18:43:47 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+90749   3.9 03-01:58:25 claude
+  465   2.8 03-09:33:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:02:32 after new nafops_T1024 gpu_util=0 load= 2.60 3.11 3.96 
+  PID  %CPU     ELAPSED ARGS
+  953  93.1 03-09:31:59 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.0 03-09:33:22 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   3.2 03-01:58:46 claude
+  944   3.2 03-09:31:59 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+16286   1.9    19:12:17 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+57872   1.8    18:44:08 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+  465   1.5 03-09:33:22 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:04:13 before old nafops_T1024 gpu_util=0 load= 2.87 3.15 3.88 
+  PID  %CPU     ELAPSED ARGS
+  953  95.4 03-09:33:41 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+59383   8.0    16:55:54 claude
+  465   6.9 03-09:35:04 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   6.4 03-09:35:04 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   5.0 03-09:35:05 /usr/libexec/trustd
+  338   4.3 03-09:35:05 /usr/libexec/smd
+90749   3.9 03-02:00:28 claude
+-- trellis:
+== 19:04:40 after old nafops_T1024 gpu_util=96 load= 2.55 3.04 3.82 
+  PID  %CPU     ELAPSED ARGS
+  953  90.8 03-09:34:07 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 5923  17.7 03-09:26:37 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+  970  10.9 03-09:34:07 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  341   8.1 03-09:35:31 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseven
+ 6183   6.1 03-09:26:37 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+90749   4.8 03-02:00:54 claude
+  523   2.2 03-09:35:30 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 19:06:42 before new nafops_T512 gpu_util=0 load= 3.01 3.17 3.78 
+  PID  %CPU     ELAPSED ARGS
+  953  91.3 03-09:36:09 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+53350  26.1    06:13:08 /usr/libexec/PerfPowerServices
+  419  16.9 03-09:37:33 /usr/libexec/runningboardd
+  914   8.5 03-09:36:10 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1122   6.8 03-09:36:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 5809   5.6 03-09:28:39 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+90749   5.6 03-02:02:56 claude
+-- trellis:
+== 19:06:53 after new nafops_T512 gpu_util=0 load= 2.86 3.13 3.75 
+  PID  %CPU     ELAPSED ARGS
+  953  96.7 03-09:36:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  12.6 03-09:36:20 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  465   6.8 03-09:37:43 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   5.4 03-09:37:44 /usr/libexec/trustd
+  338   5.0 03-09:37:44 /usr/libexec/smd
+  523   3.3 03-09:37:43 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   2.2 03-02:03:07 claude
+-- trellis:
+== 19:08:49 before old nafops_T512 gpu_util=0 load= 2.37 2.90 3.59 
+  PID  %CPU     ELAPSED ARGS
+  953  96.3 03-09:38:16 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+29954   6.8    17:13:36 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+  523   5.8 03-09:39:39 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.7 03-02:05:03 claude
+ 6062   1.6 03-09:30:46 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+  963   1.5 03-09:38:16 /System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter
+59383   1.4    17:00:29 claude
+-- trellis:
+== 19:09:14 after old nafops_T512 gpu_util=0 load= 2.84 2.96 3.59 
+  PID  %CPU     ELAPSED ARGS
+  953  93.5 03-09:38:41 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  14.7 03-09:39:47 /usr/libexec/sysmond
+  926  11.8 03-09:38:42 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  924  10.9 03-09:38:42 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   7.0 03-09:40:04 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 5845   5.8       00:00 gh issue comment 270 --repo CyberAgentAILab/cy3i --body-file /private/tmp/claude-111520707/-Users-s25705-aifes-demo/
+90749   2.4 03-02:05:28 claude
+-- trellis:
+== 19:11:13 before new nafops_LR gpu_util=0 load= 3.20 3.07 3.54 
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 03-09:40:40 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   5.3 03-09:42:03 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.2 03-02:07:27 claude
+ 6182   3.3 03-09:33:10 claude --resume e5905586-eccc-45c3-95a3-c8c62e4e8041
+ 2085   2.5 03-09:40:08 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+57872   2.0    18:52:49 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+59065   1.8 01-02:39:07 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 19:11:18 after new nafops_LR gpu_util=0 load= 3.03 3.04 3.53 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-09:40:45 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.4 03-09:42:08 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   6.8 03-02:07:32 claude
+ 2085   4.2 03-09:40:13 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+ 1193   4.1 03-09:40:41 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+  465   3.4 03-09:42:08 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   3.0 03-09:42:09 /usr/libexec/smd
+-- trellis:
+== 19:13:25 before old nafops_LR gpu_util=0 load= 2.06 2.66 3.31 
+  PID  %CPU     ELAPSED ARGS
+  953  94.3 03-09:42:52 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924  12.7 03-09:42:53 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 6183   9.4 03-09:35:22 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  465   6.6 03-09:44:15 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   6.4 03-09:44:15 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   5.0 03-09:44:16 /usr/libexec/trustd
+  338   4.7 03-09:44:16 /usr/libexec/smd
+-- trellis:
+== 19:13:36 after old nafops_LR gpu_util=0 load= 2.05 2.64 3.29 
+  PID  %CPU     ELAPSED ARGS
+  953  91.3 03-09:43:03 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+55713  16.0 03-07:26:51 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com
+ 6183  12.1 03-09:35:33 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+90749  10.0 03-02:09:50 claude
+  418   6.1 03-09:44:27 /usr/libexec/trustd
+  523   6.0 03-09:44:26 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   5.8 03-09:44:26 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:15:33 before old nafops_T1024 gpu_util=0 load= 2.61 2.74 3.25 
+  PID  %CPU     ELAPSED ARGS
+  953  96.4 03-09:45:00 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749   4.9 03-02:11:47 claude
+  523   4.9 03-09:46:23 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 5782   4.3 03-09:37:30 claude --resume 08526447-a989-4e72-b49e-a874a6e26996
+ 5809   4.0 03-09:37:30 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+ 6182   3.4 03-09:37:30 claude --resume e5905586-eccc-45c3-95a3-c8c62e4e8041
+  465   2.6 03-09:46:23 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:15:59 after old nafops_T1024 gpu_util=0 load= 2.57 2.72 3.23 
+  PID  %CPU     ELAPSED ARGS
+  953  92.5 03-09:45:26 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  461  26.1 03-09:46:49 /usr/libexec/mobileassetd
+ 1117  22.5 03-09:45:24 /usr/libexec/triald
+  565  19.9 03-09:46:48 /System/Library/CoreServices/TimeMachine/backupd
+ 2244   8.0 03-09:44:49 /usr/libexec/pkd
+  924   7.0 03-09:45:27 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  949   6.9 03-09:45:26 /usr/libexec/pkd
+-- trellis:
+== 19:17:53 before new nafops_T1024 gpu_util=0 load= 2.19 2.60 3.12 
+  PID  %CPU     ELAPSED ARGS
+  953  95.5 03-09:47:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+57915   7.6    17:10:10 claude
+  523   5.7 03-09:48:43 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   3.4 03-09:48:43 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 2085   2.8 03-09:46:48 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  418   2.7 03-09:48:44 /usr/libexec/trustd
+  686   2.7 03-09:48:26 /usr/libexec/sysmond
+-- trellis:
+== 19:18:13 after new nafops_T1024 gpu_util=0 load= 1.92 2.51 3.07 
+  PID  %CPU     ELAPSED ARGS
+  953  88.9 03-09:47:40 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  32.3 03-09:48:46 /usr/libexec/sysmond
+  523   8.4 03-09:49:03 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   7.0 03-09:47:41 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  926   5.9 03-09:47:41 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 5887   3.4 03-09:40:10 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+90749   2.6 03-02:14:27 claude
+-- trellis:
+== 19:19:56 before old nafops_T512 gpu_util=0 load= 2.50 2.54 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  96.0 03-09:49:23 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6276  35.4 03-09:41:53 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+  523   9.3 03-09:50:46 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.3 03-02:16:10 claude
+  465   4.0 03-09:50:46 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6069   3.5 03-09:41:53 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+  418   3.3 03-09:50:47 /usr/libexec/trustd
+-- trellis:
+== 19:20:21 after old nafops_T512 gpu_util=0 load= 2.57 2.56 3.01 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-09:49:48 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.8 03-09:51:11 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 5923   5.7 03-09:42:18 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+  465   3.9 03-09:51:11 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5809   3.7 03-09:42:18 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+90749   3.5 03-02:16:35 claude
+  418   3.1 03-09:51:12 /usr/libexec/trustd
+-- trellis:
+== 19:22:27 before new nafops_T512 gpu_util=0 load= 3.27 2.76 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  94.4 03-09:51:54 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749  11.1 03-02:18:41 claude
+  523  10.6 03-09:53:17 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  686   8.4 03-09:53:00 /usr/libexec/sysmond
+16286   4.4    19:32:12 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+22721   3.3       00:13 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin
+  924   2.7 03-09:51:55 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+== 19:22:37 after new nafops_T512 gpu_util=0 load= 3.44 2.82 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  98.5 03-09:52:04 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924   4.3 03-09:52:05 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   3.9 03-09:53:27 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   1.5 03-02:18:51 claude
+ 6062   1.3 03-09:44:34 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+  970   1.2 03-09:52:04 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  516   1.1 03-09:53:27 /Library/Application Support/org.pqrs/Karabiner-Elements/Karabiner-Core-Service.app/Contents/MacOS/Karabiner-Core-Se
+-- trellis:
+== 19:25:06 before old nafops_LR gpu_util=0 load= 3.02 2.93 3.05 
+  PID  %CPU     ELAPSED ARGS
+53350  91.0    06:31:32 /usr/libexec/PerfPowerServices
+  953  46.2 03-09:54:33 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  419  22.4 03-09:55:57 /usr/libexec/runningboardd
+12739  14.1 03-09:43:03 /System/Library/PrivateFrameworks/SafariSafeBrowsing.framework/com.apple.Safari.SafeBrowsing.Service
+  390   8.7 03-09:55:57 /usr/libexec/dasd
+  523   7.9 03-09:55:56 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  515   5.0 03-09:55:56 /usr/libexec/symptomsd
+-- trellis:
+== 19:25:17 after old nafops_LR gpu_util=0 load= 4.06 3.14 3.12 
+  PID  %CPU     ELAPSED ARGS
+  953  93.0 03-09:54:44 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.3 03-09:56:07 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   6.6 03-09:56:07 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   5.0 03-09:56:08 /usr/libexec/trustd
+  338   4.5 03-09:56:08 /usr/libexec/smd
+90749   3.2 03-02:21:31 claude
+40050   3.2 02-03:48:30 claude
+-- trellis:
+== 19:25:54 before new nafops_LR gpu_util=0 load= 3.88 3.22 3.15 
+  PID  %CPU     ELAPSED ARGS
+  953  93.7 03-09:55:21 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926   9.7 03-09:55:22 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+90749   9.1 03-02:22:08 claude
+  523   7.0 03-09:56:44 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+59065   2.9 01-02:53:48 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 6053   2.8 03-09:47:51 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+ 2085   2.7 03-09:54:49 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+-- trellis:
+== 19:26:00 after new nafops_LR gpu_util=0 load= 3.65 3.18 3.14 
+  PID  %CPU     ELAPSED ARGS
+  953  92.5 03-09:55:27 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+59383   7.1    17:17:40 claude
+  926   6.5 03-09:55:28 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+90749   4.7 03-02:22:14 claude
+58284   3.9    17:17:50 claude
+ 2085   3.2 03-09:54:55 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+34223   3.1       00:01 (Karabiner-Elemen)
+-- trellis:
+== 19:26:40 before new nafops_T1024 gpu_util=0 load= 4.17 3.35 3.20 
+  PID  %CPU     ELAPSED ARGS
+35459  91.7       00:02 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+  953  89.9 03-09:56:07 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  565  31.3 03-09:57:29 /System/Library/CoreServices/TimeMachine/backupd
+  461  23.4 03-09:57:30 /usr/libexec/mobileassetd
+  686  15.0 03-09:57:13 /usr/libexec/sysmond
+  949   7.1 03-09:56:07 /usr/libexec/pkd
+  422   6.9 03-09:57:31 /System/Library/CoreServices/TimeMachine/backupd-helper -launchd
+-- trellis:
+== 19:27:01 after new nafops_T1024 gpu_util=0 load= 4.61 3.53 3.27 
+  PID  %CPU     ELAPSED ARGS
+  953  92.2 03-09:56:28 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+35858  53.7       00:09 find /Users/s25705 -path */snapshots/* -name pipeline_mv.json -o -name pipeline.json
+  523   9.9 03-09:57:51 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  970   9.5 03-09:56:28 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  414   9.4 03-09:57:52 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow console
+  465   3.7 03-09:57:51 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.0 03-09:57:52 /usr/libexec/trustd
+-- trellis:
+== 19:27:38 before old nafops_T1024 gpu_util=0 load= 3.89 3.49 3.26 
+  PID  %CPU     ELAPSED ARGS
+  953  95.2 03-09:57:05 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+35858  49.9       00:46 find /Users/s25705 -path */snapshots/* -name pipeline_mv.json -o -name pipeline.json
+    1  12.2 03-10:01:12 /sbin/launchd
+  523  10.2 03-09:58:28 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+16286   4.0    19:37:23 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  465   3.5 03-09:58:28 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   1.6 03-09:58:29 /usr/libexec/trustd
+-- trellis:
+== 19:28:04 after old nafops_T1024 gpu_util=99 load= 3.30 3.38 3.23 
+  PID  %CPU     ELAPSED ARGS
+  953  98.1 03-09:57:31 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+16286   3.5    19:37:49 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 2085   2.7 03-09:56:59 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  523   2.5 03-09:58:54 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   2.1 03-02:24:18 claude
+  465   1.2 03-09:58:54 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   1.0 03-09:58:55 /usr/libexec/trustd
+-- trellis:
+== 19:28:48 before new nafops_T512 gpu_util=0 load= 2.65 3.20 3.17 
+  PID  %CPU     ELAPSED ARGS
+  953  95.3 03-09:58:15 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   7.4 03-09:59:21 /usr/libexec/sysmond
+90749   6.8 03-02:25:02 claude
+  523   6.2 03-09:59:38 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   6.0 03-09:59:38 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  924   4.7 03-09:58:16 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 6276   4.4 03-09:50:45 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+-- trellis:
+== 19:28:58 after new nafops_T512 gpu_util=0 load= 2.62 3.18 3.16 
+  PID  %CPU     ELAPSED ARGS
+  953  97.4 03-09:58:25 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970   7.1 03-09:58:25 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  523   4.3 03-09:59:48 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.1 03-09:59:48 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  686   4.0 03-09:59:31 /usr/libexec/sysmond
+  418   2.6 03-09:59:49 /usr/libexec/trustd
+  926   2.4 03-09:58:26 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+== 19:29:38 before old nafops_T512 gpu_util=0 load= 2.28 3.03 3.11 
+  PID  %CPU     ELAPSED ARGS
+  953  93.6 03-09:59:05 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+58284  17.3    17:21:28 claude
+  686   8.2 03-10:00:11 /usr/libexec/sysmond
+90749   6.4 03-02:25:52 claude
+  523   6.4 03-10:00:28 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+    1   5.1 03-10:03:12 /sbin/launchd
+  465   4.0 03-10:00:28 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:30:04 after old nafops_T512 gpu_util=0 load= 2.17 2.94 3.07 
+  PID  %CPU     ELAPSED ARGS
+  953  96.3 03-09:59:31 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.0 03-10:00:54 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.8 03-02:26:18 claude
+ 6276   4.1 03-09:52:01 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+ 5782   3.5 03-09:52:01 claude --resume 08526447-a989-4e72-b49e-a874a6e26996
+ 6053   2.4 03-09:52:01 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+16286   2.2    19:39:49 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 19:30:41 before new nafops_LR gpu_util=0 load= 2.21 2.87 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  84.6 03-10:00:08 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+59383  36.6    17:22:21 claude
+  341  16.4 03-10:01:32 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseven
+  924  11.6 03-10:00:09 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523  10.9 03-10:01:31 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   5.5 03-02:26:55 claude
+  686   4.8 03-10:01:14 /usr/libexec/sysmond
+-- trellis:
+== 19:30:47 after new nafops_LR gpu_util=0 load= 2.20 2.85 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  96.1 03-10:00:14 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924  12.8 03-10:00:15 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749  12.4 03-02:27:01 claude
+  523   8.3 03-10:01:37 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6032   7.1 03-09:52:44 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+ 6276   4.4 03-09:52:44 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+  686   4.0 03-10:01:20 /usr/libexec/sysmond
+-- trellis:
+== 19:31:20 before old nafops_LR gpu_util=0 load= 2.61 2.87 3.03 
+  PID  %CPU     ELAPSED ARGS
+  953  91.0 03-10:00:48 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.8 03-10:02:11 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   7.2 03-10:02:11 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  686   5.2 03-10:01:54 /usr/libexec/sysmond
+90749   5.1 03-02:27:35 claude
+  418   4.4 03-10:02:12 /usr/libexec/trustd
+ 6053   4.2 03-09:53:18 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+-- trellis:
+== 19:31:31 after old nafops_LR gpu_util=0 load= 2.83 2.91 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  94.4 03-10:00:58 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   7.3 03-10:02:04 /usr/libexec/sysmond
+59065   5.9 01-02:59:25 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  523   4.9 03-10:02:21 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.6 03-02:27:45 claude
+ 6062   2.5 03-09:53:28 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+ 6227   2.3 03-09:53:28 claude --resume 73f40f78-86d4-4e55-b7b0-d5f1b6d058d5
+-- trellis:
+== 19:32:16 before old nafops_T1024 gpu_util=0 load= 2.25 2.74 2.97 
+  PID  %CPU     ELAPSED ARGS
+  953  88.8 03-10:01:43 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523  12.9 03-10:03:06 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749  11.5 03-02:28:30 claude
+  924   9.7 03-10:01:44 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  530   4.9 03-10:03:06 /usr/libexec/airportd
+  465   3.0 03-10:03:06 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  921   3.0 03-10:01:44 /usr/libexec/networkserviceproxy
+-- trellis:
+== 19:32:42 after old nafops_T1024 gpu_util=99 load= 2.07 2.66 2.93 
+  PID  %CPU     ELAPSED ARGS
+  953  92.6 03-10:02:09 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  914   6.1 03-10:02:10 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  523   5.7 03-10:03:32 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1122   3.9 03-10:02:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   3.9 03-10:03:32 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.2 03-10:03:33 /usr/libexec/trustd
+43478   3.0       00:01 gh run view 35504212347 --repo CyberAgentAILab/cy3i --log
+-- trellis:
+== 19:33:19 before new nafops_T1024 gpu_util=0 load= 3.41 2.93 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 03-10:02:46 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  365  71.6 03-10:04:10 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds
+ 5887   6.4 03-09:55:16 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+40050   4.6 02-03:56:32 claude
+  465   3.9 03-10:04:09 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   3.7 03-10:04:09 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6069   3.6 03-09:55:16 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+-- trellis:
+== 19:33:39 after new nafops_T1024 gpu_util=0 load= 3.32 2.95 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-10:03:06 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+44413  17.7       00:00 /Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Co
+  523   6.6 03-10:04:29 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6227   5.2 03-09:55:36 claude --resume 73f40f78-86d4-4e55-b7b0-d5f1b6d058d5
+90749   3.3 03-02:29:53 claude
+59383   2.9    17:25:19 claude
+  465   2.1 03-10:04:29 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:34:20 before old nafops_T512 gpu_util=0 load= 3.51 3.05 3.06 
+  PID  %CPU     ELAPSED ARGS
+  953  94.1 03-10:03:47 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  26.2 03-10:04:53 /usr/libexec/sysmond
+  926  11.1 03-10:03:48 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  523   6.1 03-10:05:10 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.8 03-02:30:34 claude
+  465   3.7 03-10:05:10 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6171   3.0 03-09:56:17 claude --resume 80cbf6e5-db05-4032-b65e-5238d104813e
+-- trellis:
+== 19:34:45 after old nafops_T512 gpu_util=0 load= 3.15 3.00 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  83.7 03-10:04:12 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6069  21.4 03-09:56:42 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+  341  11.6 03-10:05:36 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseven
+  924   5.5 03-10:04:13 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   5.2 03-10:05:35 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   3.4 03-02:30:59 claude
+16286   2.2    19:44:30 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 19:35:25 before new nafops_T512 gpu_util=0 load= 2.67 2.91 3.00 
+  PID  %CPU     ELAPSED ARGS
+  953  94.3 03-10:04:52 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   8.5 03-10:06:15 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   8.1 03-10:06:15 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  970   7.8 03-10:04:52 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  418   5.9 03-10:06:16 /usr/libexec/trustd
+  338   5.3 03-10:06:16 /usr/libexec/smd
+46591   5.2       00:08 /Users/s25705/.local/bin/claude --output-format stream-json --verbose --system-prompt You are a senior application-s
+-- trellis:
+== 19:35:35 after new nafops_T512 gpu_util=0 load= 2.65 2.90 3.00 
+  PID  %CPU     ELAPSED ARGS
+  953  97.3 03-10:05:02 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  12.6 03-10:05:02 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+16286   6.5    19:45:20 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  523   5.1 03-10:06:25 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+29954   3.3    17:40:22 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+ 6171   2.4 03-09:57:32 claude --resume 80cbf6e5-db05-4032-b65e-5238d104813e
+  418   2.3 03-10:06:26 /usr/libexec/trustd
+-- trellis:
+== 19:36:09 before old nafops_LR gpu_util=0 load= 2.71 2.89 2.99 
+  PID  %CPU     ELAPSED ARGS
+  953  94.8 03-10:05:36 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6066   8.2 03-09:58:06 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+  465   4.2 03-10:06:59 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   4.2 03-10:06:59 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   3.6 03-10:07:00 /usr/libexec/trustd
+  686   3.4 03-10:06:42 /usr/libexec/sysmond
+90749   3.1 03-02:32:23 claude
+-- trellis:
+== 19:36:19 after old nafops_LR gpu_util=0 load= 2.60 2.86 2.98 
+  PID  %CPU     ELAPSED ARGS
+  953  95.2 03-10:05:46 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926  11.3 03-10:05:47 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+46591   7.6       01:02 /Users/s25705/.local/bin/claude --output-format stream-json --verbose --system-prompt You are a senior application-s
+ 6062   6.9 03-09:58:16 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+90749   3.7 03-02:32:33 claude
+  523   3.4 03-10:07:09 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57915   2.4    17:28:36 claude
+-- trellis:
+== 19:37:03 before new nafops_LR gpu_util=0 load= 2.68 2.84 2.97 
+  PID  %CPU     ELAPSED ARGS
+  953  94.0 03-10:06:30 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   6.9 03-10:07:53 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   3.7 03-02:33:17 claude
+  465   3.3 03-10:07:53 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.2 03-10:07:54 /usr/libexec/trustd
+  338   1.8 03-10:07:54 /usr/libexec/smd
+ 6062   1.7 03-09:59:00 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+-- trellis:
+== 19:37:08 after new nafops_LR gpu_util=0 load= 2.89 2.88 2.98 
+  PID  %CPU     ELAPSED ARGS
+  953  97.8 03-10:06:36 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6183   8.6 03-09:59:06 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+90749   4.3 03-02:33:23 claude
+ 6171   3.3 03-09:59:06 claude --resume 80cbf6e5-db05-4032-b65e-5238d104813e
+  523   2.9 03-10:07:59 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57915   1.5    17:29:26 claude
+    1   1.5 03-10:10:43 /sbin/launchd
+-- trellis:
+== 19:37:42 before new tex gpu_util=0 load= 3.36 2.99 3.01 
+  PID  %CPU     ELAPSED ARGS
+  953  91.8 03-10:07:09 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523  11.5 03-10:08:32 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924  10.6 03-10:07:10 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 6183   9.1 03-09:59:39 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  914   7.1 03-10:07:10 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1122   5.9 03-10:07:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+58284   3.9    17:29:32 claude
+-- trellis:
+== 19:38:03 after new tex gpu_util=0 load= 3.10 2.96 3.00 
+  PID  %CPU     ELAPSED ARGS
+  953  70.3 03-10:07:30 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  958  59.5 03-10:07:30 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted
+12739  54.7 03-09:56:00 /System/Library/PrivateFrameworks/SafariSafeBrowsing.framework/com.apple.Safari.SafeBrowsing.Service
+  390   8.3 03-10:08:54 /usr/libexec/dasd
+  554   6.9 03-10:08:52 /usr/libexec/triald_system
+  523   4.9 03-10:08:53 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6069   4.8 03-10:00:00 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+-- trellis:
+== 19:38:37 before old tex gpu_util=0 load= 3.81 3.14 3.06 
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 03-10:08:04 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6276  13.1 03-10:00:34 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+90749   4.7 03-02:34:51 claude
+  523   4.3 03-10:09:27 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   3.9 03-10:09:27 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.8 03-10:09:28 /usr/libexec/trustd
+58284   2.5    17:30:27 claude
+-- trellis:
+== 19:39:07 periodic gpu_util=99 load= 3.40 3.10 3.05 
+  PID  %CPU     ELAPSED ARGS
+  953  95.6 03-10:08:34 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749   8.4 03-02:35:21 claude
+  924   7.2 03-10:08:35 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   6.4 03-10:09:57 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 2085   2.5 03-10:08:02 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+58284   1.5    17:30:57 claude
+  465   1.4 03-10:09:57 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+49779   0.1       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 19:39:08 after old tex gpu_util=87 load= 3.40 3.10 3.05 
+  PID  %CPU     ELAPSED ARGS
+  953  94.0 03-10:08:35 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   6.1 03-10:09:58 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   5.1 03-10:09:58 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   4.6 03-10:09:59 /usr/libexec/trustd
+  338   4.4 03-10:09:59 /usr/libexec/smd
+ 6032   3.4 03-10:01:05 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+57915   2.9    17:31:25 claude
+-- trellis:
+== 19:39:54 before new hr gpu_util=0 load= 3.37 3.14 3.07 
+  PID  %CPU     ELAPSED ARGS
+  953  94.7 03-10:09:21 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.5 03-10:10:44 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.9 03-02:36:08 claude
+  465   4.5 03-10:10:44 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.3 03-10:10:45 /usr/libexec/trustd
+  338   2.9 03-10:10:45 /usr/libexec/smd
+ 5923   2.9 03-10:01:51 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+-- trellis:
+== 19:40:10 after new hr gpu_util=0 load= 4.20 3.31 3.13 
+  PID  %CPU     ELAPSED ARGS
+  964 199.4 03-10:09:37 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/coresp
+  953  48.1 03-10:09:37 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+51891  29.7       00:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   7.4 03-10:09:38 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+90749   5.2 03-02:36:24 claude
+  926   4.7 03-10:09:38 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  686   4.5 03-10:10:43 /usr/libexec/sysmond
+-- trellis:
+== 19:40:45 before old hr gpu_util=0 load= 3.31 3.20 3.09 
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 03-10:10:12 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749  19.7 03-02:36:59 claude
+  523   5.7 03-10:11:35 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   5.6 03-10:11:36 /usr/libexec/trustd
+  465   3.4 03-10:11:35 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  412   3.1 03-10:11:36 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd system
+  440   2.8 03-10:11:35 /usr/libexec/syspolicyd
+-- trellis:
+== 19:41:13 after old hr gpu_util=100 load= 2.84 3.10 3.06 
+  PID  %CPU     ELAPSED ARGS
+  953  95.8 03-10:10:40 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924   4.0 03-10:10:41 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749   2.5 03-02:37:27 claude
+59383   2.3    17:32:53 claude
+ 6167   2.2 03-10:03:10 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+  465   2.2 03-10:12:03 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.2 03-10:12:04 /usr/libexec/trustd
+-- trellis:
+== 19:41:49 before new lr gpu_util=0 load= 3.03 3.10 3.06 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-10:11:16 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   8.5 03-10:12:22 /usr/libexec/sysmond
+90749   7.4 03-02:38:03 claude
+  523   7.2 03-10:12:39 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  926   2.5 03-10:11:17 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  924   2.4 03-10:11:17 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+16286   2.0    19:51:34 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 19:41:54 after new lr gpu_util=0 load= 2.86 3.07 3.05 
+  PID  %CPU     ELAPSED ARGS
+  953  94.8 03-10:11:21 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  45.0 03-10:12:27 /usr/libexec/sysmond
+  926  24.7 03-10:11:22 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+29954   9.0    17:46:41 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+90749   8.1 03-02:38:08 claude
+ 6069   5.1 03-10:03:51 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+16286   4.0    19:51:39 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 19:42:32 before old lr gpu_util=0 load= 3.12 3.10 3.06 
+  PID  %CPU     ELAPSED ARGS
+  953  94.4 03-10:11:59 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749   7.3 03-02:38:46 claude
+  523   3.0 03-10:13:22 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+16286   2.6    19:52:17 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  970   1.9 03-10:11:59 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+29954   1.7    17:47:19 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+59383   1.6    17:34:12 claude
+-- trellis:
+== 19:42:42 after old lr gpu_util=0 load= 2.87 3.05 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  92.8 03-10:12:10 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749   9.0 03-02:38:57 claude
+  523   4.3 03-10:13:33 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  914   3.7 03-10:12:11 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1122   3.0 03-10:12:08 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686   2.7 03-10:13:16 /usr/libexec/sysmond
+ 5887   2.2 03-10:04:40 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+-- trellis:
+== 19:43:16 before old tex gpu_util=0 load= 2.55 2.95 3.01 
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 03-10:12:43 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   8.6 03-10:14:06 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   7.3 03-10:12:44 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749   6.2 03-02:39:30 claude
+  465   4.3 03-10:14:06 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  686   3.9 03-10:13:49 /usr/libexec/sysmond
+ 2085   3.5 03-10:12:11 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+-- trellis:
+== 19:43:46 periodic gpu_util=100 load= 2.81 2.96 3.01 
+  PID  %CPU     ELAPSED ARGS
+  953  96.6 03-10:13:14 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924   7.6 03-10:13:15 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749   4.0 03-02:40:01 claude
+  523   1.7 03-10:14:37 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+16286   1.7    19:53:32 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  686   0.8 03-10:14:20 /usr/libexec/sysmond
+ 6069   0.8 03-10:05:44 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+-- trellis:
+55163   0.1       00:31 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 19:43:48 after old tex gpu_util=87 load= 2.81 2.96 3.01 
+  PID  %CPU     ELAPSED ARGS
+  953  95.4 03-10:13:15 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  15.5 03-10:13:15 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  465   4.1 03-10:14:38 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.7 03-10:14:39 /usr/libexec/trustd
+  338   2.2 03-10:14:39 /usr/libexec/smd
+ 6183   1.4 03-10:05:45 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  523   1.3 03-10:14:38 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 19:44:23 before new tex gpu_util=0 load= 3.00 2.98 3.01 
+  PID  %CPU     ELAPSED ARGS
+  953  95.1 03-10:13:50 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749   6.2 03-02:40:37 claude
+  523   4.6 03-10:15:13 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  686   3.3 03-10:14:56 /usr/libexec/sysmond
+  465   3.2 03-10:15:13 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  944   2.9 03-10:13:50 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+  418   2.3 03-10:15:14 /usr/libexec/trustd
+-- trellis:
+== 19:44:43 after new tex gpu_util=0 load= 2.88 2.95 3.00 
+  PID  %CPU     ELAPSED ARGS
+  953  90.7 03-10:14:10 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 5923  73.9 03-10:06:40 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+90749  54.5 03-02:40:57 claude
+  924  20.0 03-10:14:11 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  686  12.0 03-10:15:16 /usr/libexec/sysmond
+  523   9.2 03-10:15:33 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57092   6.0       00:00 /opt/homebrew/bin/git -c core.fsmonitor= -c core.hooksPath=/dev/null -c core.askPass= -c protocol.ext.allow=never -c
+-- trellis:
+== 19:45:18 before old hr gpu_util=0 load= 3.88 3.20 3.09 
+  PID  %CPU     ELAPSED ARGS
+  953  95.8 03-10:14:45 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6227   6.1 03-10:07:15 claude --resume 73f40f78-86d4-4e55-b7b0-d5f1b6d058d5
+  523   5.8 03-10:16:08 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   4.7 03-10:14:46 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749   3.5 03-02:41:32 claude
+59065   2.4 01-03:13:12 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  465   1.8 03-10:16:08 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:45:46 after old hr gpu_util=100 load= 3.36 3.13 3.07 
+  PID  %CPU     ELAPSED ARGS
+  953  94.2 03-10:15:13 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  17.3 03-10:16:19 /usr/libexec/sysmond
+58283  10.6       00:05 /usr/local/jamf/bin/jamf policy -event CLIENT_CHECKIN -stopConsoleLogs -concurrent
+  926   4.8 03-10:15:14 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  383   3.5 03-10:16:37 /usr/sbin/securityd -i
+  418   3.2 03-10:16:37 /usr/libexec/trustd
+  523   3.0 03-10:16:36 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 19:46:29 before new hr gpu_util=0 load= 2.84 3.06 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  95.1 03-10:15:56 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749   8.6 03-02:42:43 claude
+  523   7.6 03-10:17:19 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  686   6.6 03-10:17:02 /usr/libexec/sysmond
+  465   4.0 03-10:17:19 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.4 03-10:17:20 /usr/libexec/trustd
+  926   3.2 03-10:15:57 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+== 19:46:44 after new hr gpu_util=0 load= 2.65 3.01 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  94.4 03-10:16:11 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  20.3 03-10:17:17 /usr/libexec/sysmond
+  926  13.9 03-10:16:12 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  970   6.5 03-10:16:11 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  523   5.4 03-10:17:34 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   3.4 03-02:42:58 claude
+ 6053   3.0 03-10:08:41 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+-- trellis:
+== 19:47:28 before old lr gpu_util=0 load= 2.85 3.02 3.03 
+  PID  %CPU     ELAPSED ARGS
+  953  93.5 03-10:16:55 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   8.3 03-10:18:18 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   5.2 03-10:18:18 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.9 03-10:18:19 /usr/libexec/trustd
+  338   3.6 03-10:18:19 /usr/libexec/smd
+90749   3.0 03-02:43:42 claude
+29954   1.3    17:52:15 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+== 19:47:38 after old lr gpu_util=0 load= 2.87 3.01 3.03 
+  PID  %CPU     ELAPSED ARGS
+  953  92.8 03-10:17:06 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+29954  22.5    17:52:26 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+58284   9.9    17:39:29 claude
+57915   7.1    17:39:56 claude
+  523   7.0 03-10:18:29 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.0 03-02:43:53 claude
+  465   2.9 03-10:18:29 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:48:20 before new lr gpu_util=0 load= 2.35 2.86 2.96 
+  PID  %CPU     ELAPSED ARGS
+  953  92.8 03-10:17:47 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+61289  20.8       00:00 /Users/s25705/.kuberlr/darwin-arm64/kubectl1.34.2 exec aip-c7e97f349409e630-predictor-00001-deployment-57d9989648h6q
+  924  15.3 03-10:17:48 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   6.3 03-10:19:10 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.6 03-10:19:10 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+57915   3.4    17:40:37 claude
+  418   3.3 03-10:19:11 /usr/libexec/trustd
+-- trellis:
+== 19:48:25 after new lr gpu_util=0 load= 2.40 2.86 2.96 
+  PID  %CPU     ELAPSED ARGS
+  953  93.6 03-10:17:53 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  13.2 03-10:18:59 /usr/libexec/sysmond
+  523   6.3 03-10:19:16 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   3.4 03-02:44:40 claude
+  465   2.8 03-10:19:16 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+59383   2.3    17:40:06 claude
+  418   2.1 03-10:19:17 /usr/libexec/trustd
+-- trellis:
+== 19:49:01 before new tex gpu_util=0 load= 2.17 2.75 2.92 
+  PID  %CPU     ELAPSED ARGS
+  953  93.1 03-10:18:28 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  414   9.0 03-10:19:52 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow console
+  465   7.9 03-10:19:51 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  942   6.4 03-10:18:28 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+  418   5.9 03-10:19:52 /usr/libexec/trustd
+  523   5.4 03-10:19:51 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  338   5.2 03-10:19:52 /usr/libexec/smd
+-- trellis:
+== 19:49:22 after new tex gpu_util=0 load= 2.06 2.68 2.89 
+  PID  %CPU     ELAPSED ARGS
+  953  95.2 03-10:18:49 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749  11.0 03-02:45:36 claude
+  523   5.1 03-10:20:12 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6171   4.2 03-10:11:19 claude --resume 80cbf6e5-db05-4032-b65e-5238d104813e
+16286   2.6    19:59:07 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 6062   1.7 03-10:11:19 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+  465   1.5 03-10:20:12 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:50:03 before old tex gpu_util=0 load= 2.10 2.62 2.86 
+  PID  %CPU     ELAPSED ARGS
+  953  93.2 03-10:19:30 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523  18.6 03-10:20:53 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 2531  12.5 03-10:18:10 Raycast Helper (Extensions)         
+ 1464  10.0 03-10:19:13 /Applications/Raycast.app/Contents/MacOS/Raycast
+ 6183   5.2 03-10:12:00 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+90749   4.5 03-02:46:17 claude
+  924   3.1 03-10:19:31 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+== 19:50:33 periodic gpu_util=99 load= 2.72 2.71 2.88 
+  PID  %CPU     ELAPSED ARGS
+  953  97.3 03-10:20:00 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   7.6 03-10:21:23 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  924   6.2 03-10:20:01 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  418   5.1 03-10:21:24 /usr/libexec/trustd
+  338   3.8 03-10:21:24 /usr/libexec/smd
+ 2085   2.5 03-10:19:28 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+ 5782   2.2 03-10:12:30 claude --resume 08526447-a989-4e72-b49e-a874a6e26996
+-- trellis:
+63281   0.1       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 19:50:34 after old tex gpu_util=77 load= 2.72 2.71 2.88 
+  PID  %CPU     ELAPSED ARGS
+  953  96.9 03-10:20:01 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926   5.2 03-10:20:02 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  523   4.4 03-10:21:24 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  970   4.4 03-10:20:01 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  465   3.9 03-10:21:24 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.9 03-10:21:25 /usr/libexec/trustd
+  338   2.5 03-10:21:25 /usr/libexec/smd
+-- trellis:
+== 19:51:14 before new hr gpu_util=0 load= 2.37 2.62 2.84 
+  PID  %CPU     ELAPSED ARGS
+  953  96.1 03-10:20:41 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749  16.4 03-02:47:28 claude
+  686   9.2 03-10:21:47 /usr/libexec/sysmond
+  523   8.3 03-10:22:04 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+58284   4.4    17:43:04 claude
+57915   3.3    17:43:31 claude
+16286   2.5    20:00:59 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 19:51:30 after new hr gpu_util=0 load= 2.43 2.62 2.83 
+  PID  %CPU     ELAPSED ARGS
+  953  87.5 03-10:20:57 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  32.0 03-10:22:03 /usr/libexec/sysmond
+  926  18.5 03-10:20:58 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  465  10.5 03-10:22:20 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   7.3 03-02:47:44 claude
+  338   6.8 03-10:22:21 /usr/libexec/smd
+  523   6.2 03-10:22:20 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 19:52:09 before old hr gpu_util=0 load= 2.44 2.60 2.82 
+  PID  %CPU     ELAPSED ARGS
+  953  95.2 03-10:21:36 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926   9.7 03-10:21:37 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+59383   7.0    17:43:49 claude
+ 6276   6.6 03-10:14:06 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+  523   5.0 03-10:22:59 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   2.9 03-02:48:23 claude
+88460   2.5 01-04:15:32 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+== 19:52:37 after old hr gpu_util=100 load= 2.29 2.54 2.79 
+  PID  %CPU     ELAPSED ARGS
+  953  97.8 03-10:22:05 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+    1  34.0 03-10:26:12 /sbin/launchd
+  523   2.7 03-10:23:28 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6069   1.9 03-10:14:35 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+90749   1.7 03-02:48:52 claude
+ 2085   1.7 03-10:21:33 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+59065   1.1 01-03:20:32 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+== 19:53:17 before new lr gpu_util=0 load= 2.33 2.51 2.76 
+  PID  %CPU     ELAPSED ARGS
+  953  95.1 03-10:22:44 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924   8.5 03-10:22:45 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   7.0 03-10:24:07 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.7 03-02:49:31 claude
+ 6062   3.3 03-10:15:14 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+  465   2.7 03-10:24:07 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   1.7 03-10:24:08 /usr/libexec/trustd
+-- trellis:
+== 19:53:22 after new lr gpu_util=0 load= 2.38 2.51 2.76 
+  PID  %CPU     ELAPSED ARGS
+  953  96.9 03-10:22:50 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 5887   6.9 03-10:15:20 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+  523   5.9 03-10:24:13 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   4.5 03-02:49:37 claude
+ 1193   3.3 03-10:22:46 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+ 2085   2.8 03-10:22:18 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+ 5074   2.7 03-10:15:22 /Users/s25705/.local/bin/herdr server
+-- trellis:
+== 19:54:07 before old lr gpu_util=0 load= 3.47 2.81 2.85 
+  PID  %CPU     ELAPSED ARGS
+  953  81.0 03-10:23:34 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+    1  38.3 03-10:27:41 /sbin/launchd
+  924  21.6 03-10:23:35 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523  16.2 03-10:24:57 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   6.7 03-10:24:57 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  686   4.8 03-10:24:40 /usr/libexec/sysmond
+  418   3.7 03-10:24:58 /usr/libexec/trustd
+-- trellis:
+== 19:54:18 after old lr gpu_util=0 load= 3.33 2.80 2.85 
+  PID  %CPU     ELAPSED ARGS
+  953  95.1 03-10:23:45 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+57872   9.3    19:35:54 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+59065   7.4 01-03:22:12 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  523   6.3 03-10:25:08 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   3.5 03-10:23:46 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749   3.0 03-02:50:32 claude
+58284   2.1    17:46:08 claude
+-- trellis:
+== 19:54:52 before old tex gpu_util=0 load= 3.25 2.85 2.86 
+  PID  %CPU     ELAPSED ARGS
+  953  93.9 03-10:24:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+69155  11.6       00:01 gh pr view 277 --repo CyberAgentAILab/cy3i --json baseRefName,baseRefOid --jq "base=\(.baseRefName) @ \(.baseRefOid)
+90749   9.5 03-02:51:07 claude
+  523   8.8 03-10:25:43 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   5.7 03-10:24:21 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 6062   3.9 03-10:16:50 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+  465   2.7 03-10:25:43 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:55:23 periodic gpu_util=99 load= 4.65 3.28 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  97.3 03-10:24:50 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   4.1 03-10:26:13 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6276   4.0 03-10:17:20 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+  944   2.5 03-10:24:50 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+16286   1.6    20:05:08 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+90749   1.5 03-02:51:37 claude
+59065   1.4 01-03:23:17 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+69184   0.1       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 19:55:24 after old tex gpu_util=72 load= 4.65 3.28 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  94.2 03-10:24:51 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926  10.9 03-10:24:52 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  970   5.8 03-10:24:51 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 2085   4.3 03-10:24:19 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  380   2.7 03-10:26:15 /System/Library/CoreServices/launchservicesd
+16286   2.1    20:05:09 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  465   1.9 03-10:26:14 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:56:06 before new tex gpu_util=0 load= 3.47 3.14 2.98 
+  PID  %CPU     ELAPSED ARGS
+  953  93.5 03-10:25:33 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6032  12.3 03-10:18:03 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+  523   7.1 03-10:26:56 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   6.9 03-10:26:56 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   5.7 03-10:26:57 /usr/libexec/trustd
+  338   5.0 03-10:26:57 /usr/libexec/smd
+90749   4.0 03-02:52:20 claude
+-- trellis:
+== 19:56:27 after new tex gpu_util=0 load= 2.96 3.05 2.96 
+  PID  %CPU     ELAPSED ARGS
+  953  96.4 03-10:25:54 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   5.7 03-10:27:17 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6183   5.5 03-10:18:24 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+ 6069   5.0 03-10:18:24 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+90749   4.0 03-02:52:41 claude
+  957   1.8 03-10:25:54 /Applications/Emacs.app/Contents/MacOS/Emacs-arm64-11
+ 5809   1.8 03-10:18:24 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+-- trellis:
+== 19:57:01 before old hr gpu_util=0 load= 3.53 3.15 2.99 
+  PID  %CPU     ELAPSED ARGS
+  953  94.9 03-10:26:29 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  414  10.3 03-10:27:53 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow console
+  523   6.3 03-10:27:52 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   4.5 03-10:26:30 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+16286   3.4    20:06:47 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  411   2.8 03-10:27:53 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+29954   1.8    18:01:49 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+== 19:57:30 after old hr gpu_util=100 load= 3.77 3.23 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  96.0 03-10:26:57 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  926   8.0 03-10:26:58 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  523   2.4 03-10:28:20 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  686   2.3 03-10:28:03 /usr/libexec/sysmond
+ 6053   2.0 03-10:19:27 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+16286   1.9    20:07:15 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  380   1.7 03-10:28:21 /System/Library/CoreServices/launchservicesd
+-- trellis:
+== 19:58:07 before new hr gpu_util=0 load= 2.61 3.00 2.95 
+  PID  %CPU     ELAPSED ARGS
+  953  90.1 03-10:27:34 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+    1  21.9 03-10:31:41 /sbin/launchd
+  686   6.0 03-10:28:40 /usr/libexec/sysmond
+  523   5.7 03-10:28:57 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1061   5.2 03-10:27:33 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   4.6 03-10:27:35 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  465   4.0 03-10:28:57 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 19:58:23 after new hr gpu_util=0 load= 2.47 2.95 2.93 
+  PID  %CPU     ELAPSED ARGS
+  953  88.8 03-10:27:50 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 1026  81.2 03-10:27:49 /usr/libexec/duetexpertd
+  523   7.0 03-10:29:13 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+29954   3.5    18:03:10 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+  970   2.8 03-10:27:50 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 2446   2.7 03-10:26:47 /System/Library/PrivateFrameworks/AppPredictionFoundation.framework/Versions/A/XPCServices/AppPredictionIntentsHelpe
+  944   2.6 03-10:27:50 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+-- trellis:
+== 19:59:02 before new nafops_LR gpu_util=0 load= 2.45 2.88 2.90 
+  PID  %CPU     ELAPSED ARGS
+  953  92.4 03-10:28:29 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   8.4 03-10:29:52 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  414   6.6 03-10:29:53 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow console
+  465   3.3 03-10:29:52 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  411   2.6 03-10:29:53 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686   2.5 03-10:29:35 /usr/libexec/sysmond
+ 1193   2.4 03-10:28:25 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+== 19:59:07 after new nafops_LR gpu_util=0 load= 2.42 2.86 2.90 
+  PID  %CPU     ELAPSED ARGS
+  953  92.5 03-10:28:34 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970   6.9 03-10:28:34 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+90749   3.2 03-02:55:21 claude
+57915   2.7    17:51:24 claude
+ 5074   2.3 03-10:21:06 /Users/s25705/.local/bin/herdr server
+16286   2.1    20:08:52 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  523   1.9 03-10:29:57 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 19:59:53 before old nafops_LR gpu_util=0 load= 3.55 3.08 2.98 
+  PID  %CPU     ELAPSED ARGS
+  953  92.8 03-10:29:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   7.5 03-10:30:43 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   6.7 03-10:30:43 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   5.6 03-10:30:44 /usr/libexec/trustd
+  338   4.8 03-10:30:44 /usr/libexec/smd
+58284   4.4    17:51:43 claude
+ 6066   4.0 03-10:21:50 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+-- trellis:
+== 20:00:03 after old nafops_LR gpu_util=0 load= 3.24 3.03 2.96 
+  PID  %CPU     ELAPSED ARGS
+  953  94.1 03-10:29:30 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   6.5 03-10:30:53 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+58284   5.9    17:51:53 claude
+  465   3.2 03-10:30:53 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.2 03-10:30:54 /usr/libexec/trustd
+16286   2.0    20:09:48 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+90749   1.7 03-02:56:17 claude
+-- trellis:
+== 20:00:37 before old lr gpu_util=0 load= 3.18 3.03 2.96 
+  PID  %CPU     ELAPSED ARGS
+  953  63.1 03-10:30:05 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  958  55.9 03-10:30:05 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted
+  922  46.2 03-10:30:06 /System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd
+    1  32.9 03-10:34:12 /sbin/launchd
+  554  17.2 03-10:31:27 /usr/libexec/triald_system
+  412  11.9 03-10:31:29 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd system
+  885  11.4 03-10:30:07 /System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd
+-- trellis:
+== 20:00:48 after old lr gpu_util=0 load= 2.99 3.00 2.95 
+  PID  %CPU     ELAPSED ARGS
+  953  96.5 03-10:30:15 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   8.8 03-10:31:21 /usr/libexec/sysmond
+  924   8.6 03-10:30:16 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   7.5 03-10:31:38 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6167   4.6 03-10:22:45 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+ 6183   3.4 03-10:22:45 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+ 6227   3.3 03-10:22:45 claude --resume 73f40f78-86d4-4e55-b7b0-d5f1b6d058d5
+-- trellis:
+== 20:01:32 before new lr gpu_util=0 load= 2.62 2.90 2.91 
+  PID  %CPU     ELAPSED ARGS
+  953  96.8 03-10:30:59 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+90749  14.9 03-02:57:46 claude
+ 6183   5.5 03-10:23:29 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+ 6053   4.3 03-10:23:29 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+  418   3.7 03-10:32:23 /usr/libexec/trustd
+  465   3.7 03-10:32:22 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   3.4 03-10:32:23 /usr/libexec/smd
+-- trellis:
+== 20:01:37 after new lr gpu_util=0 load= 2.49 2.87 2.90 
+  PID  %CPU     ELAPSED ARGS
+  953  94.8 03-10:31:04 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  17.8 03-10:31:04 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  523   5.9 03-10:32:27 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.0 03-10:32:27 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+16286   3.3    20:11:22 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  418   3.0 03-10:32:28 /usr/libexec/trustd
+  338   2.6 03-10:32:28 /usr/libexec/smd
+-- trellis:
+== 20:02:15 before new tex gpu_util=0 load= 2.78 2.90 2.91 
+  PID  %CPU     ELAPSED ARGS
+  953  92.2 03-10:31:42 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  10.9 03-10:31:42 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  926   8.8 03-10:31:43 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  465   8.2 03-10:33:05 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  686   8.0 03-10:32:48 /usr/libexec/sysmond
+  418   5.9 03-10:33:06 /usr/libexec/trustd
+  523   5.2 03-10:33:05 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 20:02:35 after new tex gpu_util=0 load= 3.21 2.97 2.93 
+  PID  %CPU     ELAPSED ARGS
+  953  95.4 03-10:32:02 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   5.7 03-10:33:25 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+16286   2.7    20:12:20 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+90749   2.2 03-02:58:49 claude
+  944   2.0 03-10:32:02 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+57915   1.8    17:54:52 claude
+  465   1.5 03-10:33:25 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 20:03:09 before old tex gpu_util=0 load= 3.04 2.94 2.92 
+  PID  %CPU     ELAPSED ARGS
+  953  96.0 03-10:32:36 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  11.1 03-10:33:42 /usr/libexec/sysmond
+  523   6.7 03-10:33:59 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   3.6 03-10:33:59 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5809   3.4 03-10:25:06 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+ 6182   3.3 03-10:25:06 claude --resume e5905586-eccc-45c3-95a3-c8c62e4e8041
+ 6222   3.1 03-10:25:06 claude --resume d2d9b1b4-5da4-40a3-937c-1d3119f2d87a
+-- trellis:
+== 20:03:39 periodic gpu_util=99 load= 2.61 2.84 2.88 
+  PID  %CPU     ELAPSED ARGS
+  953  96.6 03-10:33:06 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  13.5 03-10:34:12 /usr/libexec/sysmond
+  465   7.1 03-10:34:29 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  926   6.2 03-10:33:07 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  418   5.4 03-10:34:30 /usr/libexec/trustd
+  338   4.0 03-10:34:30 /usr/libexec/smd
+  523   2.0 03-10:34:29 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+78032   0.1       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 20:03:41 after old tex gpu_util=86 load= 2.61 2.84 2.88 
+  PID  %CPU     ELAPSED ARGS
+  953  95.7 03-10:33:08 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  944   4.6 03-10:33:08 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+  523   4.2 03-10:34:31 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   3.9 03-10:34:31 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+16286   2.8    20:13:26 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  338   2.8 03-10:34:32 /usr/libexec/smd
+  418   2.7 03-10:34:32 /usr/libexec/trustd
+-- trellis:
+== 20:04:21 before new hr gpu_util=0 load= 2.09 2.67 2.82 
+  PID  %CPU     ELAPSED ARGS
+  953  96.3 03-10:33:48 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   6.9 03-10:35:11 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6167   4.9 03-10:26:18 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+16286   3.6    20:14:06 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 5809   1.1 03-10:26:18 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+ 6062   1.0 03-10:26:18 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+57915   1.0    17:56:38 claude
+-- trellis:
+== 20:04:36 after new hr gpu_util=0 load= 2.13 2.65 2.81 
+  PID  %CPU     ELAPSED ARGS
+  953  94.6 03-10:34:03 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   6.0 03-10:35:26 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   5.5 03-10:35:26 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   4.8 03-10:35:27 /usr/libexec/trustd
+  338   4.3 03-10:35:27 /usr/libexec/smd
+ 5809   4.2 03-10:26:33 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+ 6066   4.2 03-10:26:33 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+-- trellis:
+== 20:05:15 before old hr gpu_util=0 load= 2.10 2.57 2.77 
+  PID  %CPU     ELAPSED ARGS
+  953  90.2 03-10:34:42 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   8.5 03-10:36:05 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  926   5.7 03-10:34:43 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+79396   5.1       00:00 /usr/local/jamf/bin/jamf policy -event CLIENT_CHECKIN -stopConsoleLogs -concurrent
+ 6183   3.8 03-10:27:12 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+57872   2.9    19:46:51 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+40050   2.5 02-04:28:28 claude
+-- trellis:
+== 20:05:43 after old hr gpu_util=100 load= 2.71 2.67 2.80 
+  PID  %CPU     ELAPSED ARGS
+  953  96.4 03-10:35:10 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  914   2.9 03-10:35:11 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  523   2.8 03-10:36:33 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1122   2.5 03-10:35:08 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2085   2.3 03-10:34:38 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  465   0.8 03-10:36:33 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  378   0.8 03-10:36:34 /usr/libexec/opendirectoryd
+-- trellis:
+== 20:06:24 before new lr gpu_util=0 load= 2.92 2.73 2.81 
+  PID  %CPU     ELAPSED ARGS
+  953  95.8 03-10:35:51 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   5.4 03-10:37:14 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   4.5 03-10:35:52 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 5782   1.7 03-10:28:21 claude --resume 08526447-a989-4e72-b49e-a874a6e26996
+40050   1.4 02-04:29:37 claude
+ 6032   1.1 03-10:28:21 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+  517   1.0 03-10:37:14 /Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-D
+-- trellis:
+== 20:06:29 after new lr gpu_util=0 load= 2.76 2.70 2.80 
+  PID  %CPU     ELAPSED ARGS
+  953  94.5 03-10:35:56 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  16.1 03-10:35:56 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  523   7.0 03-10:37:19 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  686   5.4 03-10:37:02 /usr/libexec/sysmond
+ 6032   3.1 03-10:28:26 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+ 2085   2.8 03-10:35:24 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  944   2.4 03-10:35:56 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+-- trellis:
+== 20:07:08 before old lr gpu_util=0 load= 2.59 2.66 2.78 
+  PID  %CPU     ELAPSED ARGS
+  953  92.8 03-10:36:35 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+    1  24.3 03-10:40:42 /sbin/launchd
+90749  18.6 03-03:03:22 claude
+ 5923  17.8 03-10:29:05 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+  523   7.2 03-10:37:58 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   5.8 03-10:37:58 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5809   3.3 03-10:29:05 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+-- trellis:
+== 20:07:18 after old lr gpu_util=0 load= 2.49 2.64 2.77 
+  PID  %CPU     ELAPSED ARGS
+  953  97.5 03-10:36:45 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924  11.6 03-10:36:46 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   6.7 03-10:38:08 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6066   4.7 03-10:29:15 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+ 5923   4.3 03-10:29:15 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+16286   1.4    20:17:03 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+40050   1.3 02-04:30:31 claude
+-- trellis:
+== 20:07:57 before old tex gpu_util=0 load= 3.31 2.82 2.83 
+  PID  %CPU     ELAPSED ARGS
+  953  95.1 03-10:37:24 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   8.1 03-10:38:47 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  686   5.2 03-10:38:30 /usr/libexec/sysmond
+ 6066   4.8 03-10:29:54 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+ 6032   4.1 03-10:29:54 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+ 6183   1.9 03-10:29:54 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  465   1.6 03-10:38:47 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 20:08:27 periodic gpu_util=99 load= 4.30 3.09 2.93 
+  PID  %CPU     ELAPSED ARGS
+  953  98.4 03-10:37:54 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   2.2 03-10:39:17 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+58284   2.1    18:00:17 claude
+  338   1.3 03-10:39:18 /usr/libexec/smd
+16286   1.2    20:18:12 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  560   0.9 03-10:39:16 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN com.apple.bc
+  523   0.8 03-10:39:17 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+81192   0.1       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 20:08:29 after old tex gpu_util=87 load= 4.12 3.07 2.92 
+  PID  %CPU     ELAPSED ARGS
+  953  98.4 03-10:37:56 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 1193   3.6 03-10:37:52 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+  970   3.2 03-10:37:56 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 6182   2.5 03-10:30:26 claude --resume e5905586-eccc-45c3-95a3-c8c62e4e8041
+ 2085   2.3 03-10:37:24 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+57915   1.7    18:00:46 claude
+  465   1.3 03-10:39:19 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 20:09:10 before new tex gpu_util=0 load= 3.66 3.08 2.93 
+  PID  %CPU     ELAPSED ARGS
+  953  94.1 03-10:38:37 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.7 03-10:40:00 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  926   4.9 03-10:38:38 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  465   4.3 03-10:40:00 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.8 03-10:40:01 /usr/libexec/trustd
+29954   2.6    18:13:57 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+  338   2.3 03-10:40:01 /usr/libexec/smd
+-- trellis:
+== 20:09:30 after new tex gpu_util=0 load= 4.02 3.20 2.98 
+  PID  %CPU     ELAPSED ARGS
+  953  93.5 03-10:38:57 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   9.9 03-10:40:03 /usr/libexec/sysmond
+  523   4.5 03-10:40:20 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1193   4.1 03-10:38:53 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+ 6183   2.6 03-10:31:27 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+16286   2.1    20:19:15 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  926   1.9 03-10:38:58 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+== 20:10:15 before old hr gpu_util=0 load= 4.11 3.37 3.05 
+  PID  %CPU     ELAPSED ARGS
+  953  91.4 03-10:39:42 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  34.7 03-10:40:48 /usr/libexec/sysmond
+ 5782   5.5 03-10:32:12 claude --resume 08526447-a989-4e72-b49e-a874a6e26996
+  465   5.5 03-10:41:05 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   5.4 03-10:41:05 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   4.1 03-10:41:06 /usr/libexec/trustd
+ 6227   3.7 03-10:32:12 claude --resume 73f40f78-86d4-4e55-b7b0-d5f1b6d058d5
+-- trellis:
+== 20:10:43 after old hr gpu_util=100 load= 3.74 3.36 3.06 
+  PID  %CPU     ELAPSED ARGS
+  953  98.1 03-10:40:10 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   6.6 03-10:41:16 /usr/libexec/sysmond
+  465   2.8 03-10:41:33 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   2.7 03-10:41:34 /usr/libexec/trustd
+  338   2.5 03-10:41:34 /usr/libexec/smd
+57915   2.1    18:03:00 claude
+  523   2.1 03-10:41:33 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 20:11:24 before new hr gpu_util=0 load= 3.22 3.28 3.04 
+  PID  %CPU     ELAPSED ARGS
+  953  87.3 03-10:40:51 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  29.5 03-10:41:57 /usr/libexec/sysmond
+  465  14.8 03-10:42:14 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  926  12.7 03-10:40:52 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  418  10.0 03-10:42:15 /usr/libexec/trustd
+  338   8.5 03-10:42:15 /usr/libexec/smd
+  523   5.6 03-10:42:14 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+== 20:11:39 after new hr gpu_util=0 load= 3.44 3.33 3.06 
+  PID  %CPU     ELAPSED ARGS
+  953  95.3 03-10:41:06 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  970  29.5 03-10:41:06 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 2085   5.0 03-10:40:34 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+ 6062   4.1 03-10:33:36 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+  523   3.2 03-10:42:29 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   2.7 03-10:42:29 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6276   2.2 03-10:33:36 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+-- trellis:
+== 20:12:20 before old lr gpu_util=0 load= 2.81 3.18 3.02 
+  PID  %CPU     ELAPSED ARGS
+  953  93.9 03-10:41:47 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   3.9 03-10:43:10 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  926   3.8 03-10:41:48 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  523   3.4 03-10:43:10 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   3.2 03-10:43:11 /usr/libexec/trustd
+59065   3.2 01-03:40:14 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+29954   2.8    18:17:07 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+== 20:12:30 after old lr gpu_util=0 load= 2.61 3.12 3.00 
+  PID  %CPU     ELAPSED ARGS
+  953  92.9 03-10:41:57 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  465   5.1 03-10:43:20 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6032   4.1 03-10:34:27 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+  686   3.7 03-10:43:03 /usr/libexec/sysmond
+  418   3.7 03-10:43:21 /usr/libexec/trustd
+  523   3.6 03-10:43:20 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  338   2.9 03-10:43:21 /usr/libexec/smd
+-- trellis:
+== 20:13:12 before new lr gpu_util=0 load= 2.78 3.09 2.99 
+  PID  %CPU     ELAPSED ARGS
+  953  94.8 03-10:42:39 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+29954   4.9    18:17:59 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+  523   4.1 03-10:44:02 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57915   3.9    18:05:29 claude
+  465   3.6 03-10:44:02 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   3.2 03-03:09:26 claude
+  418   2.8 03-10:44:03 /usr/libexec/trustd
+-- trellis:
+== 20:13:17 after new lr gpu_util=0 load= 2.63 3.06 2.98 
+  PID  %CPU     ELAPSED ARGS
+  953  96.0 03-10:42:44 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+ 6183  10.4 03-10:35:14 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+ 6032   8.7 03-10:35:14 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+  523   5.9 03-10:44:07 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   3.9 03-10:44:07 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6167   3.3 03-10:35:14 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+  418   2.8 03-10:44:08 /usr/libexec/trustd
+-- trellis:

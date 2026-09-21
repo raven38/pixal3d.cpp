@@ -1,0 +1,35 @@
+ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
+ggml_metal_library_init: using embedded metal library
+ggml_metal_library_init: loaded in 7.127 sec
+ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
+ggml_metal_device_init: GPU name:   MTL0 (Apple M4 Max)
+ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
+ggml_metal_device_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_device_init: GPU family: MTLGPUFamilyMetal4  (5002)
+ggml_metal_device_init: simdgroup reduction   = true
+ggml_metal_device_init: simdgroup matrix mul. = true
+ggml_metal_device_init: has unified memory    = true
+ggml_metal_device_init: has bfloat            = true
+ggml_metal_device_init: has tensor            = false
+ggml_metal_device_init: use residency sets    = true
+ggml_metal_device_init: use shared buffers    = true
+ggml_metal_device_init: recommendedMaxWorkingSetSize  = 55662.79 MB
+ggml_metal_init: allocating
+ggml_metal_init: found device: Apple M4 Max
+ggml_metal_init: picking default device: Apple M4 Max
+ggml_metal_init: use fusion         = true
+ggml_metal_init: use concurrency    = true
+ggml_metal_init: use graph optimize = true
+[trellis] using MTL0 (53084 MB)
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_group_norm_f32', name = 'kernel_group_norm_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_group_norm_f32                         0x100f29af0 | th_max = 1024 | th_width =   32
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_norm_f32_4', name = 'kernel_norm_f32_4'
+ggml_metal_library_compile_pipeline: loaded kernel_norm_f32_4                             0x100ef8200 | th_max = 1024 | th_width =   32
+ggml_metal_free: deallocating
+=== gn-oracle: [1024,1024,128] f32 on MTL0 (groups=8, eps=1e-5) ===
+  ggml_group_norm    per-group offset / slope: g0 -4.1e-09/7.5e-07 g1 5.3e-08/1.6e-06 g2 -1.3e-08/4.8e-07 g3 2.8e-09/4.4e-07 g4 -1.6e-08/5.8e-07 g5 -3.6e-09/3.4e-07 g6 7.9e-09/7.3e-07 g7 3.4e-09/6.0e-07
+  ggml_norm[n/8,8]   per-group offset / slope: g0 7.8e-09/4.7e-08 g1 -2.8e-08/1.4e-08 g2 -8.7e-10/-1.6e-08 g3 2.8e-09/6.9e-08 g4 -3.4e-09/7.1e-09 g5 -3.6e-09/2.0e-08 g6 -5.0e-09/-2.3e-08 g7 3.4e-09/6.0e-08
+  formulation              max|d|      mean|d|        L2rel         ms   worst
+  ggml_group_norm      1.2398e-05   5.1588e-07   7.7359e-07       16.1   @19943128
+  ggml_norm[n/8,8]     9.5367e-07   3.1082e-08   6.0566e-08       10.8   @52488586
+  N1: selected on this backend = ggml_norm[n/8,8]: max|d| 9.537e-07 <= 1e-3 and <= 1.5 x other 1.240e-05  -> PASS

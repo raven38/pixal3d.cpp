@@ -1,0 +1,12 @@
+legacy: V=666366 F=960030 tex=918542B
+legacy: bbox min=(-0.37819,-0.42285,-0.49141) max=(0.37835,0.42279,0.49220)
+legacy: extents=(0.75654,0.84564,0.98361) centroid=(-0.00070,-0.04643,0.00060)
+legacy: UV in [0.0000,0.9996] nonfinite verts=0
+new   : V=656387 F=951638 tex=895340B
+new   : bbox min=(-0.37819,-0.42284,-0.49324) max=(0.37834,0.42273,0.49209)
+new   : extents=(0.75652,0.84557,0.98532) centroid=(0.00202,-0.04880,0.00155)
+new   : UV in [0.0000,0.9996] nonfinite verts=0
+extent rel diff = [1.92237755e-05 7.89080174e-05 1.74467848e-03]
+nn legacy->new : mean 0.001715 p95 0.003000 max 0.009132  (0.1142% of bbox diag 1.5016)
+nn new->legacy : mean 0.001696 p95 0.002918 max 0.009192
+chamfer-ish (mean of both) = 0.001706

@@ -1,0 +1,1496 @@
+== 16:40:56 before old gpu_util=9 load= 3.19 8.26 12.64 
+  PID  %CPU     ELAPSED ARGS
+  411  41.0 03-07:11:47 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  970  17.9 03-07:10:23 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 1061  17.2 03-07:10:22 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686   7.2 03-07:11:29 /usr/libexec/sysmond
+  924   7.1 03-07:10:24 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212   6.3       04:22 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1688   5.0 03-07:09:59 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+== 16:41:27 periodic gpu_util=99 load= 3.43 7.83 12.33 
+  PID  %CPU     ELAPSED ARGS
+  411  37.6 03-07:12:18 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  21.5 03-07:10:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212   8.7       04:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1688   6.3 03-07:10:30 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+90749   5.2 02-23:37:41 claude
+ 1193   3.9 03-07:10:50 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+  523   2.9 03-07:12:17 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+ 7752   0.5       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:41:57 periodic gpu_util=99 load= 2.47 7.10 11.88 
+  PID  %CPU     ELAPSED ARGS
+  411  25.1 03-07:12:48 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  12.7 03-07:11:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212   7.5       05:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+16286   6.9    16:51:42 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+90749   6.7 02-23:38:11 claude
+ 1688   4.9 03-07:11:00 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+58284   4.9    14:33:47 claude
+-- trellis:
+ 7752   2.5       01:00 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:42:27 periodic gpu_util=99 load= 2.49 6.66 11.56 
+  PID  %CPU     ELAPSED ARGS
+  411  38.0 03-07:13:18 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  14.4 03-07:11:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  13.4       05:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924   9.7 03-07:11:55 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914   8.7 03-07:11:55 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   7.4 03-07:11:56 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  465   6.9 03-07:13:17 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+ 7752   0.6       01:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:42:57 periodic gpu_util=100 load= 2.36 6.24 11.23 
+  PID  %CPU     ELAPSED ARGS
+  411  21.1 03-07:13:48 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  11.3       06:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881   8.7 03-07:12:26 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   7.3 03-07:12:07 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  914   6.7 03-07:12:25 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  465   5.7 03-07:13:47 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   4.9 02-23:39:11 claude
+-- trellis:
+ 7752   0.3       02:00 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:43:27 periodic gpu_util=65 load= 4.14 6.29 11.08 
+  PID  %CPU     ELAPSED ARGS
+  411  42.3 03-07:14:18 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  34.1 03-07:12:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  26.6       06:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   7.9 03-07:14:17 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6053   5.9 03-07:05:24 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+  418   5.6 03-07:14:18 /usr/libexec/trustd
+  338   5.3 03-07:14:18 /usr/libexec/smd
+-- trellis:
+ 7752   0.2       02:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:43:58 periodic gpu_util=99 load= 30.23 11.81 12.87 
+  PID  %CPU     ELAPSED ARGS
+  914 108.9 03-07:13:29 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  411  54.5 03-07:14:52 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  44.4 03-07:13:27 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  33.4       07:27 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+10420  31.2       00:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  341  28.2 03-07:14:52 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseven
+29954  24.2    14:48:48 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+ 7752   0.1       03:08 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:44:35 periodic gpu_util=100 load= 56.17 21.57 16.46 
+  PID  %CPU     ELAPSED ARGS
+  411  61.7 03-07:15:26 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  24.8 03-07:14:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+10420  21.3       00:43 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  21.2       08:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  14.8 03-07:14:03 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881  10.7 03-07:14:04 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   7.9 03-07:13:45 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+ 7752  23.4       03:39 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:45:06 periodic gpu_util=42 load= 42.01 21.23 16.51 
+  PID  %CPU     ELAPSED ARGS
+  411  47.1 03-07:15:57 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  17.4 03-07:14:32 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  14.6 03-07:14:35 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 2212  14.5       08:32 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  13.1 03-07:14:34 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475   8.2 03-07:14:16 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+29954   8.1    14:49:53 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+ 7752   0.1       04:09 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:45:36 periodic gpu_util=24 load= 30.28 20.41 16.37 
+  PID  %CPU     ELAPSED ARGS
+ 2212  86.5       09:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  49.4 03-07:16:27 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  27.1 03-07:15:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  18.3 03-07:16:09 /usr/libexec/sysmond
+90749  10.1 02-23:41:50 claude
+57915   8.8    14:37:53 claude
+29954   8.0    14:50:23 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+ 7752   0.2       04:40 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:46:07 periodic gpu_util=0 load= 94.66 36.83 22.45 
+  PID  %CPU     ELAPSED ARGS
+59383   9.9    14:37:47 claude
+  411   7.8 03-07:16:58 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686   7.3 03-07:16:40 /usr/libexec/sysmond
+  465   7.3 03-07:16:57 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   5.5 03-07:16:58 /usr/libexec/trustd
+90749   5.4 02-23:42:21 claude
+ 5782   5.3 03-07:08:04 claude --resume 08526447-a989-4e72-b49e-a874a6e26996
+-- trellis:
+ 7752   0.2       05:10 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:46:37 periodic gpu_util=24 load= 58.57 33.62 21.78 
+  PID  %CPU     ELAPSED ARGS
+  411  36.2 03-07:17:28 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686  30.0 03-07:17:10 /usr/libexec/sysmond
+  926  19.6 03-07:16:05 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+37511  16.3    04:29:59 /usr/libexec/spotlightknowledged.updater -u
+  914   7.5 03-07:16:05 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  924   7.2 03-07:16:05 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212   6.4       10:03 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.1       05:40 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:47:07 periodic gpu_util=6 load= 34.84 30.45 21.11 
+  PID  %CPU     ELAPSED ARGS
+  411  36.7 03-07:17:58 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+15813  10.4       00:06 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  10.2 03-07:16:36 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914  10.1 03-07:16:35 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+29954   7.9    14:51:54 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+ 1061   7.3 03-07:16:33 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+59065   6.7 01-00:15:01 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+ 7752   0.2       06:10 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:47:37 periodic gpu_util=12 load= 22.06 27.78 20.46 
+  PID  %CPU     ELAPSED ARGS
+  411  35.7 03-07:18:28 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+    1  34.3 03-07:21:11 /sbin/launchd
+29954  12.5    14:52:24 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+ 2212  12.0       11:03 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  11.2 03-07:17:03 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  10.7 03-07:17:05 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   9.2 03-07:17:06 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+-- trellis:
+ 7752   0.2       06:40 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:48:07 periodic gpu_util=28 load= 15.41 25.60 19.92 
+  PID  %CPU     ELAPSED ARGS
+  411  50.2 03-07:18:59 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+    1  41.5 03-07:21:42 /sbin/launchd
+ 2212  23.6       11:34 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  19.7 03-07:17:34 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  10.9 03-07:17:36 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 6066   6.9 03-07:10:05 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+ 1688   6.5 03-07:17:11 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+ 7752   0.2       07:11 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:48:38 periodic gpu_util=0 load= 9.82 23.27 19.27 
+  PID  %CPU     ELAPSED ARGS
+    1  14.0 03-07:22:12 /sbin/launchd
+  465  10.3 03-07:19:28 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  411   8.2 03-07:19:29 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  418   6.4 03-07:19:29 /usr/libexec/trustd
+90749   6.3 02-23:44:52 claude
+  970   6.2 03-07:18:05 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 1193   6.1 03-07:18:01 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+ 7752   0.3       07:41 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:49:08 periodic gpu_util=85 load= 6.80 21.25 18.68 
+  PID  %CPU     ELAPSED ARGS
+  411  32.5 03-07:19:59 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  881  17.2 03-07:18:37 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475  14.1 03-07:18:18 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+    1  10.5 03-07:22:42 /sbin/launchd
+  914   9.2 03-07:18:36 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  465   8.7 03-07:19:58 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   6.0 02-23:45:22 claude
+-- trellis:
+ 7752   0.3       08:11 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:49:38 periodic gpu_util=0 load= 4.94 19.41 18.10 
+  PID  %CPU     ELAPSED ARGS
+ 2126  15.6 03-07:18:32 /Users/s25705/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3.12 -u /Users/s25705/.codex
+ 5887  12.6 03-07:11:35 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+ 2212   8.6       13:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  560   6.8 03-07:20:27 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN com.apple.bc
+  411   6.7 03-07:20:29 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749   6.6 02-23:45:52 claude
+    1   4.5 03-07:23:12 /sbin/launchd
+-- trellis:
+ 7752   0.2       08:41 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:50:08 periodic gpu_util=10 load= 9.10 18.93 17.96 
+  PID  %CPU     ELAPSED ARGS
+57915  11.2    14:42:25 claude
+  411   6.1 03-07:20:59 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+16286   4.3    16:59:53 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+90749   3.5 02-23:46:22 claude
+    1   3.0 03-07:23:42 /sbin/launchd
+ 6069   2.8 03-07:12:05 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+ 1688   2.8 03-07:19:11 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+ 7752   0.1       09:11 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:50:38 periodic gpu_util=100 load= 7.38 17.57 17.50 
+  PID  %CPU     ELAPSED ARGS
+58284   5.9    14:42:28 claude
+ 6183   5.7 03-07:12:35 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+ 2212   4.2       14:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523   4.1 03-07:21:28 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  411   3.8 03-07:21:29 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749   2.8 02-23:46:52 claude
+ 1688   2.6 03-07:19:41 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+ 7752   0.1       09:42 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:51:09 periodic gpu_util=0 load= 5.66 16.18 17.00 
+  PID  %CPU     ELAPSED ARGS
+90749   7.1 02-23:47:23 claude
+  411   5.6 03-07:22:00 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212   4.3       14:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1688   4.0 03-07:20:12 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  523   3.9 03-07:21:59 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57872   2.6    16:32:45 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+ 1193   2.0 03-07:20:32 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+ 7752   0.2       10:12 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:51:39 periodic gpu_util=21 load= 4.60 14.89 16.50 
+  PID  %CPU     ELAPSED ARGS
+  411  30.2 03-07:22:30 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686  20.3 03-07:22:12 /usr/libexec/sysmond
+18905  19.4       00:01 (kubectl1.34.2)
+  924  13.8 03-07:21:07 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914  11.9 03-07:21:07 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881  10.8 03-07:21:08 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   8.5 03-07:20:49 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+ 7752   0.1       10:42 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:52:09 periodic gpu_util=36 load= 6.68 14.47 16.30 
+  PID  %CPU     ELAPSED ARGS
+  411  21.7 03-07:23:00 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+19234  18.4       00:00 (cycloud)
+  465   9.7 03-07:22:59 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 2212   9.3       15:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   9.0 03-07:21:37 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   7.8 03-07:21:38 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1061   7.8 03-07:21:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.2       11:12 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:52:39 periodic gpu_util=7 load= 4.96 13.31 15.81 
+  PID  %CPU     ELAPSED ARGS
+90749  20.7 02-23:48:53 claude
+ 2212  17.1       16:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  10.8 03-07:22:07 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  411   7.8 03-07:23:30 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2178   6.8       16:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   4.5 03-07:23:29 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1062   3.5 03-07:22:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.2       11:42 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:53:09 periodic gpu_util=24 load= 3.57 12.18 15.31 
+  PID  %CPU     ELAPSED ARGS
+ 1061  39.6 03-07:22:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  37.8       16:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  29.5 03-07:24:00 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686  22.7 03-07:23:42 /usr/libexec/sysmond
+  926  14.0 03-07:22:37 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+90749   5.2 02-23:49:23 claude
+ 1193   4.3 03-07:22:32 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+ 7752   0.2       12:12 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:53:39 periodic gpu_util=62 load= 3.57 11.36 14.91 
+  PID  %CPU     ELAPSED ARGS
+ 2212  51.7       17:06 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  28.1 03-07:24:31 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  28.0 03-07:23:06 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  926   6.5 03-07:23:08 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 1688   6.1 03-07:22:43 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+53350   5.2    04:00:06 /usr/libexec/PerfPowerServices
+ 6182   4.1 03-07:15:37 claude --resume e5905586-eccc-45c3-95a3-c8c62e4e8041
+-- trellis:
+ 7752   0.2       12:43 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:54:10 periodic gpu_util=2 load= 3.50 10.59 14.51 
+  PID  %CPU     ELAPSED ARGS
+ 2212  91.2       17:36 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+18829  37.9       02:41 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  21.1 03-07:25:01 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061   8.6 03-07:23:36 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   8.3 03-07:23:38 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   6.2 03-07:23:39 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  924   6.0 03-07:23:38 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+ 7752   0.3       13:13 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:54:40 periodic gpu_util=11 load= 5.26 10.37 14.29 
+  PID  %CPU     ELAPSED ARGS
+ 2212 109.5       18:06 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  958  76.5 03-07:24:07 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted
+ 1026  72.4 03-07:24:06 /usr/libexec/duetexpertd
+  411  38.6 03-07:25:31 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  17.7 03-07:24:06 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  14.8 03-07:25:13 /usr/libexec/sysmond
+  465  10.2 03-07:25:30 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+ 7752   0.3       13:43 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:55:10 periodic gpu_util=2 load= 10.91 11.46 14.56 
+  PID  %CPU     ELAPSED ARGS
+  465   8.1 03-07:26:00 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+57915   7.1    14:47:27 claude
+  411   7.0 03-07:26:01 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  418   6.4 03-07:26:01 /usr/libexec/trustd
+ 6183   6.2 03-07:17:07 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  338   5.6 03-07:26:01 /usr/libexec/smd
+ 1688   3.3 03-07:24:13 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+ 7752   0.1       14:13 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:55:40 periodic gpu_util=6 load= 7.73 10.62 14.15 
+  PID  %CPU     ELAPSED ARGS
+  411  32.5 03-07:26:31 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  881  16.8 03-07:25:09 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475  14.4 03-07:24:50 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  465   9.5 03-07:26:30 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  914   8.9 03-07:25:08 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+90749   8.9 02-23:51:54 claude
+  418   7.0 03-07:26:31 /usr/libexec/trustd
+-- trellis:
+ 7752   0.3       14:44 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:56:11 periodic gpu_util=16 load= 6.48 10.01 13.80 
+  PID  %CPU     ELAPSED ARGS
+  411  20.3 03-07:27:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+21695   9.1       00:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   8.3 02-23:52:25 claude
+  419   8.2 03-07:27:02 /usr/libexec/runningboardd
+  914   7.6 03-07:25:39 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 6032   7.5 03-07:18:08 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+  970   4.9 03-07:25:38 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+-- trellis:
+ 7752   0.2       15:14 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:56:41 periodic gpu_util=11 load= 5.43 9.43 13.46 
+  PID  %CPU     ELAPSED ARGS
+  411  30.3 03-07:27:32 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  881  13.1 03-07:26:10 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914  11.5 03-07:26:09 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475   7.2 03-07:25:51 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  465   5.7 03-07:27:31 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5887   5.5 03-07:18:38 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+17893   4.8       06:40 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.2       15:44 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:57:11 periodic gpu_util=8 load= 4.96 8.93 13.14 
+  PID  %CPU     ELAPSED ARGS
+ 2212  75.2       20:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+21453  31.8 02-01:44:58 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  29.9 03-07:28:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+37511  10.6    04:40:33 /usr/libexec/spotlightknowledged.updater -u
+  914  10.2 03-07:26:39 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  465   8.0 03-07:28:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   6.1 03-07:28:02 /usr/libexec/trustd
+-- trellis:
+ 7752   0.2       16:14 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:57:41 periodic gpu_util=10 load= 4.37 8.42 12.81 
+  PID  %CPU     ELAPSED ARGS
+ 2212  92.6       21:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  40.5 03-07:28:32 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  881  16.8 03-07:27:10 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914  13.8 03-07:27:09 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475  11.8 03-07:26:51 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+ 1061   7.5 03-07:27:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+23085   6.5       00:34 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.4       16:45 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:58:12 periodic gpu_util=16 load= 3.81 7.92 12.48 
+  PID  %CPU     ELAPSED ARGS
+  914  60.7 03-07:27:40 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  411  14.4 03-07:29:03 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  13.5 01-01:21:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061   5.7 03-07:27:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 4930   5.4 03-07:20:18 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 6167   5.4 03-07:20:09 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+ 1688   5.0 03-07:27:15 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+ 7752   0.2       17:15 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:58:42 periodic gpu_util=12 load= 3.62 7.50 12.16 
+  PID  %CPU     ELAPSED ARGS
+  411  48.1 03-07:29:33 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914  26.4 03-07:28:10 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881  16.0 03-07:28:11 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1122  14.0 03-07:28:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1475  13.9 03-07:27:52 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+ 1061  13.4 03-07:28:08 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  11.1 03-07:29:15 /usr/libexec/sysmond
+-- trellis:
+ 7752   0.3       17:45 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:59:12 periodic gpu_util=11 load= 3.70 7.12 11.86 
+  PID  %CPU     ELAPSED ARGS
+  914  31.0 03-07:28:40 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  411  22.5 03-07:30:03 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  15.1 03-07:28:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+23805  12.9       00:48 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465  10.0 03-07:30:02 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+40974   6.5 02-01:21:20 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460   6.3 01-01:22:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.3       18:15 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 16:59:42 periodic gpu_util=10 load= 2.89 6.61 11.51 
+  PID  %CPU     ELAPSED ARGS
+ 2212  13.9       23:08 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  11.9 03-07:30:33 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914  11.5 03-07:29:10 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+57915  10.3    14:51:59 claude
+  419   8.3 03-07:30:33 /usr/libexec/runningboardd
+88460   7.2 01-01:23:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   6.8 03-07:30:32 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+ 7752   0.2       18:45 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:00:12 periodic gpu_util=8 load= 2.80 6.24 11.21 
+  PID  %CPU     ELAPSED ARGS
+  411  35.3 03-07:31:04 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  32.1       23:39 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  15.3 03-07:29:39 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1688   4.5 03-07:29:16 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+ 5923   4.5 03-07:22:10 claude --resume 6fbabb0a-0566-469e-aa60-b4c7b8b56213
+  465   4.0 03-07:31:03 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   3.9 03-07:31:03 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+ 7752   0.1       19:16 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:00:43 periodic gpu_util=24 load= 2.47 5.82 10.89 
+  PID  %CPU     ELAPSED ARGS
+  411  33.8 03-07:31:34 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  20.6       24:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  18.6 03-07:30:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   9.2 03-07:30:11 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1688   4.6 03-07:29:46 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  465   4.5 03-07:31:33 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   4.4 02-23:56:57 claude
+-- trellis:
+ 7752   0.2       19:46 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:01:13 periodic gpu_util=28 load= 5.45 6.08 10.77 
+  PID  %CPU     ELAPSED ARGS
+ 2212  73.0       24:39 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  53.2 03-07:32:04 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914  16.8 03-07:30:41 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1061  15.2 03-07:30:39 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  921  10.0 03-07:30:41 /usr/libexec/networkserviceproxy
+53303   9.7    01:41:07 /System/Applications/Weather.app/Contents/PlugIns/WeatherWidget.appex/Contents/MacOS/WeatherWidget -LaunchArguments 
+ 6053   8.1 03-07:23:10 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+-- trellis:
+ 7752   0.3       20:16 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:01:43 periodic gpu_util=18 load= 5.52 6.06 10.60 
+  PID  %CPU     ELAPSED ARGS
+ 2212  65.5       25:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  18.1 03-07:32:34 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914   6.7 03-07:31:11 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   6.3 03-07:31:12 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   5.2 03-07:30:53 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  941   5.0 03-07:31:10 /Applications/Bitwarden.app/Contents/MacOS/Bitwarden
+ 1061   4.3 03-07:31:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.3       20:46 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:02:13 periodic gpu_util=89 load= 4.20 5.69 10.31 
+  PID  %CPU     ELAPSED ARGS
+  411  25.7 03-07:33:05 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2085  24.9 03-07:31:09 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+ 1061   9.6 03-07:31:40 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   9.5 03-07:31:42 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   7.2 03-07:31:43 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   6.1 03-07:31:24 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+ 1842   6.0 03-07:31:13 clawdbot-gateway    
+-- trellis:
+ 7752   0.3       21:17 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:02:44 periodic gpu_util=99 load= 3.71 5.43 10.05 
+  PID  %CPU     ELAPSED ARGS
+  686  34.4 03-07:33:17 /usr/libexec/sysmond
+  411  32.5 03-07:33:35 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  881  13.2 03-07:32:13 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914  12.5 03-07:32:12 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475  11.2 03-07:31:54 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+88460   8.3 01-01:26:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  926   7.9 03-07:32:12 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+ 7752   0.3       21:47 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:03:14 periodic gpu_util=68 load= 7.56 6.16 10.15 
+  PID  %CPU     ELAPSED ARGS
+90749   7.8 02-23:59:28 claude
+  465   6.0 03-07:34:04 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  411   5.6 03-07:34:05 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  418   5.4 03-07:34:05 /usr/libexec/trustd
+  338   4.4 03-07:34:05 /usr/libexec/smd
+  523   3.1 03-07:34:04 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+26501   3.1       00:00 (Karabiner-Elemen)
+-- trellis:
+ 7752   0.2       22:17 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:03:44 periodic gpu_util=13 load= 8.10 6.42 10.11 
+  PID  %CPU     ELAPSED ARGS
+ 2212  18.1       27:10 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 5887  10.1 03-07:25:41 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+90749   6.5 02-23:59:58 claude
+  411   5.5 03-07:34:35 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  465   5.1 03-07:34:34 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   4.0 03-07:34:35 /usr/libexec/trustd
+  338   3.6 03-07:34:35 /usr/libexec/smd
+-- trellis:
+ 7752   0.1       22:47 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:04:14 periodic gpu_util=0 load= 6.99 6.31 9.94 
+  PID  %CPU     ELAPSED ARGS
+  686  44.5 03-07:34:47 /usr/libexec/sysmond
+  424  13.5 03-07:35:05 /usr/sbin/coreaudiod
+  914   9.7 03-07:33:42 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  411   9.3 03-07:35:05 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+26316   7.9       01:14 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  342   7.6 03-07:35:05 /System/Library/PrivateFrameworks/MediaRemote.framework/Support/mediaremoted
+88460   6.1 01-01:27:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.1       23:17 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:04:44 periodic gpu_util=23 load= 5.66 6.06 9.72 
+  PID  %CPU     ELAPSED ARGS
+  411  32.7 03-07:35:36 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  881  13.9 03-07:34:14 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914  10.4 03-07:34:13 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475   9.9 03-07:33:55 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+15233   6.4 01-23:06:21 /Applications/Claude.app/Contents/MacOS/Claude
+90749   5.8 03-00:00:59 claude
+  926   5.6 03-07:34:13 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+ 7752   0.3       23:48 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:05:15 periodic gpu_util=24 load= 4.89 5.83 9.51 
+  PID  %CPU     ELAPSED ARGS
+  958  57.8 03-07:34:42 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted
+  949  43.1 03-07:34:42 /usr/libexec/pkd
+ 2212  35.8       28:41 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2244  25.0 03-07:34:05 /usr/libexec/pkd
+  411  22.0 03-07:36:06 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914  10.2 03-07:34:43 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   8.7 03-07:34:44 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+-- trellis:
+ 7752   0.2       24:18 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:05:45 periodic gpu_util=19 load= 4.66 5.69 9.33 
+  PID  %CPU     ELAPSED ARGS
+  686  26.0 03-07:36:18 /usr/libexec/sysmond
+  411  23.8 03-07:36:36 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  926  11.3 03-07:35:13 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  881   8.2 03-07:35:14 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914   7.7 03-07:35:13 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  465   6.9 03-07:36:35 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1475   6.8 03-07:34:55 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+ 7752   0.2       24:48 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:06:15 periodic gpu_util=19 load= 3.93 5.42 9.11 
+  PID  %CPU     ELAPSED ARGS
+  523  24.6 03-07:37:05 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924  13.1 03-07:35:43 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  411  12.6 03-07:37:06 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  465   9.1 03-07:37:05 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+28336   8.8       00:01 /bin/bash /Users/s25705/.claude/hooks/log-command.sh
+ 2212   8.1       29:41 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  418   7.1 03-07:37:06 /usr/libexec/trustd
+-- trellis:
+ 7752   0.1       25:18 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:06:45 periodic gpu_util=7 load= 6.51 5.81 9.12 
+  PID  %CPU     ELAPSED ARGS
+  411  40.6 03-07:37:37 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+58284  26.0    14:58:36 claude
+  924  17.1 03-07:36:14 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212  17.1       30:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+29595  16.8       00:01 (diskutil)
+59383  12.4    14:58:26 claude
+  914  11.9 03-07:36:14 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+-- trellis:
+ 7752   0.3       25:49 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:07:16 periodic gpu_util=10 load= 6.32 5.86 9.02 
+  PID  %CPU     ELAPSED ARGS
+ 2212  50.8       30:42 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+30341  37.3       00:21 /usr/bin/du -sh /Users/s25705
+  411  35.4 03-07:38:07 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061   6.0 03-07:36:42 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 5809   4.9 03-07:29:13 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+  914   4.4 03-07:36:44 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+90749   4.3 03-00:03:30 claude
+-- trellis:
+ 7752   0.2       26:19 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:07:46 periodic gpu_util=34 load= 4.76 5.52 8.78 
+  PID  %CPU     ELAPSED ARGS
+30341  38.2       00:51 /usr/bin/du -sh /Users/s25705
+ 2212  10.1       31:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411   6.9 03-07:38:37 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749   5.0 03-00:04:00 claude
+  914   4.3 03-07:37:14 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1193   3.2 03-07:37:09 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+ 1061   2.2 03-07:37:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.2       26:49 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:08:16 periodic gpu_util=7 load= 4.11 5.29 8.59 
+  PID  %CPU     ELAPSED ARGS
+ 2212  35.3       31:42 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  27.0 03-07:39:07 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061   9.1 03-07:37:42 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881   7.7 03-07:37:45 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914   6.6 03-07:37:44 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475   6.5 03-07:37:26 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+90749   4.9 03-00:04:30 claude
+-- trellis:
+ 7752   0.1       27:19 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:08:46 periodic gpu_util=11 load= 2.95 4.90 8.33 
+  PID  %CPU     ELAPSED ARGS
+  411   9.9 03-07:39:38 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749   7.8 03-00:05:01 claude
+  523   6.5 03-07:39:37 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  440   5.7 03-07:39:37 /usr/libexec/syspolicyd
+  914   5.1 03-07:38:15 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 5887   4.6 03-07:30:44 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+ 6167   3.1 03-07:30:44 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+-- trellis:
+ 7752   0.1       27:50 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:09:17 periodic gpu_util=10 load= 2.16 4.52 8.07 
+  PID  %CPU     ELAPSED ARGS
+  411   7.7 03-07:40:08 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749   6.2 03-00:05:31 claude
+  523   4.9 03-07:40:07 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   4.6 03-07:40:08 /usr/libexec/trustd
+  465   4.2 03-07:40:07 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   4.1 03-07:40:08 /usr/libexec/smd
+  944   3.0 03-07:38:44 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+-- trellis:
+ 7752   0.2       28:20 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:09:47 periodic gpu_util=14 load= 1.91 4.24 7.85 
+  PID  %CPU     ELAPSED ARGS
+  924  12.5 03-07:39:15 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   7.5 03-07:40:37 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  411   6.4 03-07:40:38 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  523   6.1 03-07:40:37 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   5.7 03-07:40:38 /usr/libexec/trustd
+  338   4.9 03-07:40:38 /usr/libexec/smd
+57915   3.1    15:02:04 claude
+-- trellis:
+ 7752   0.1       28:50 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:10:17 periodic gpu_util=8 load= 1.99 4.04 7.65 
+  PID  %CPU     ELAPSED ARGS
+  924   9.2 03-07:39:45 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  411   5.0 03-07:41:08 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+57915   4.9    15:02:34 claude
+  942   4.4 03-07:39:44 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+90749   2.7 03-00:06:31 claude
+ 2085   2.4 03-07:39:12 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  465   2.2 03-07:41:07 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+ 7752   0.1       29:20 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:10:47 periodic gpu_util=13 load= 2.09 3.86 7.46 
+  PID  %CPU     ELAPSED ARGS
+  411  21.4 03-07:41:38 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  16.2 03-07:40:15 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   8.4 03-07:41:37 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  914   8.2 03-07:40:15 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+57915   6.4    15:03:04 claude
+  881   6.0 03-07:40:16 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 2212   5.4       34:13 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.1       29:50 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:11:17 periodic gpu_util=21 load= 2.50 3.81 7.32 
+  PID  %CPU     ELAPSED ARGS
+  411  16.0 03-07:42:09 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  10.1       34:44 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061   7.5 03-07:40:44 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   6.6 03-00:07:32 claude
+57915   5.9    15:03:35 claude
+  924   5.3 03-07:40:46 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   4.0 03-07:42:08 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+ 7752   0.1       30:21 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:11:48 periodic gpu_util=16 load= 2.68 3.73 7.17 
+  PID  %CPU     ELAPSED ARGS
+  411  15.1 03-07:42:39 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  12.9 03-07:41:16 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212  11.3       35:14 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686   8.6 03-07:42:21 /usr/libexec/sysmond
+  914   6.8 03-07:41:16 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  465   3.5 03-07:42:38 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1061   3.2 03-07:41:14 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+ 7752   0.1       30:51 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:12:18 periodic gpu_util=22 load= 2.47 3.56 6.98 
+  PID  %CPU     ELAPSED ARGS
+  411  16.9 03-07:43:09 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  14.5 03-07:41:46 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212  13.2       35:44 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  10.7 03-07:41:44 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   5.4 03-00:08:32 claude
+57915   3.2    15:04:35 claude
+ 1688   2.0 03-07:41:21 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+ 7752   0.1       31:21 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:12:48 periodic gpu_util=30 load= 2.28 3.41 6.81 
+  PID  %CPU     ELAPSED ARGS
+ 2212  46.7       36:14 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  16.1 03-07:43:39 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061   9.2 03-07:42:14 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924   7.2 03-07:42:16 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   6.0 03-07:43:38 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   5.0 03-07:43:38 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.9 03-07:43:39 /usr/libexec/trustd
+-- trellis:
+ 7752   0.1       31:51 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:13:18 periodic gpu_util=18 load= 2.97 3.48 6.72 
+  PID  %CPU     ELAPSED ARGS
+  411  36.1 03-07:44:09 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1475  12.1 03-07:42:28 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  881  11.7 03-07:42:47 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914   9.1 03-07:42:46 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 2212   6.4       36:44 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+15233   5.5 01-23:14:54 /Applications/Claude.app/Contents/MacOS/Claude
+  465   5.2 03-07:44:08 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+ 7752   0.2       32:21 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:13:48 periodic gpu_util=20 load= 2.74 3.37 6.56 
+  PID  %CPU     ELAPSED ARGS
+  411  44.3 03-07:44:40 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  970  27.9 03-07:43:16 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+38046  27.8       00:04 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin
+ 2212  22.7       37:15 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  21.1 03-07:43:17 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914  12.9 03-07:43:17 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   8.6 03-07:43:18 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+-- trellis:
+ 7752   0.2       32:52 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:14:19 periodic gpu_util=12 load= 9.01 4.71 6.91 
+  PID  %CPU     ELAPSED ARGS
+  411  21.0 03-07:45:10 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  14.8 03-07:43:47 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212  11.0       37:45 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061   9.0 03-07:43:45 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   5.8 03-07:43:47 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   4.3 03-07:43:48 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  523   3.9 03-07:45:09 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+ 7752   0.1       33:22 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:14:49 periodic gpu_util=19 load= 6.51 4.51 6.76 
+  PID  %CPU     ELAPSED ARGS
+ 7752  38.6       33:52 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+ 2212  31.7       38:15 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  24.9 03-07:45:40 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  523  20.8 03-07:45:39 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924  14.6 03-07:44:17 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 1061   8.0 03-07:44:15 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881   6.7 03-07:44:18 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+-- trellis:
+ 7752  44.7       33:52 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:15:19 periodic gpu_util=75 load= 5.21 4.40 6.64 
+  PID  %CPU     ELAPSED ARGS
+ 7752  77.0       34:22 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+ 2212  24.7       38:45 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  19.2 03-07:46:10 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  10.4 03-07:44:47 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+57915   7.3    15:07:36 claude
+ 1061   6.2 03-07:44:45 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523   4.6 03-07:46:09 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+ 7752  77.0       34:22 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:15:49 periodic gpu_util=0 load= 9.33 5.34 6.90 
+  PID  %CPU     ELAPSED ARGS
+ 7752 1299.4       34:52 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-met
+  411  14.6 03-07:46:40 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  10.1       39:15 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 6183   5.3 03-07:37:46 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+90749   4.9 03-00:12:03 claude
+ 1061   3.8 03-07:45:15 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   3.7 03-07:46:39 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+ 7752 1269.0       34:52 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-met
+== 17:16:20 periodic gpu_util=0 load= 12.27 6.45 7.25 
+  PID  %CPU     ELAPSED ARGS
+ 7752  99.4       35:23 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+  411  21.2 03-07:47:11 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  465   7.9 03-07:47:10 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+53350   7.3    04:22:46 /usr/libexec/PerfPowerServices
+  914   6.1 03-07:45:48 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   5.9 03-07:45:49 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  418   5.6 03-07:47:11 /usr/libexec/trustd
+-- trellis:
+ 7752  99.4       35:23 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:16:50 periodic gpu_util=0 load= 35.01 12.03 9.21 
+  PID  %CPU     ELAPSED ARGS
+ 7752 634.0       35:53 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+ 2212  34.8       40:16 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+45924  33.5       00:55 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  418  24.7 03-07:47:41 /usr/libexec/trustd
+  440  20.8 03-07:47:40 /usr/libexec/syspolicyd
+  412  19.8 03-07:47:41 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd system
+  465  16.1 03-07:47:40 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+ 7752 634.0       35:53 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:17:20 periodic gpu_util=0 load= 22.41 11.16 9.00 
+  PID  %CPU     ELAPSED ARGS
+ 7752  98.8       36:23 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+29954  14.4    15:22:07 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+  424   7.8 03-07:48:11 /usr/sbin/coreaudiod
+ 2212   3.7       40:46 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   3.3 03-00:13:34 claude
+53350   3.0    04:23:46 /usr/libexec/PerfPowerServices
+  924   2.6 03-07:46:48 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+ 7752  98.8       36:23 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:17:25 after old gpu_util=0 load= 20.86 11.03 8.96 
+  PID  %CPU     ELAPSED ARGS
+  970  21.1 03-07:46:52 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 5887   8.2 03-07:39:22 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+  686   6.0 03-07:47:58 /usr/libexec/sysmond
+  523   4.6 03-07:48:15 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 2212   3.9       40:51 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411   3.4 03-07:48:16 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  465   2.8 03-07:48:15 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 17:18:57 before new gpu_util=0 load= 6.66 8.84 8.32 
+  PID  %CPU     ELAPSED ARGS
+  411  36.2 03-07:49:48 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  11.6 03-07:48:25 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914   8.2 03-07:48:25 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+49815   6.8       00:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+29954   6.2    15:23:44 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+37511   6.1    05:02:19 /usr/libexec/spotlightknowledged.updater -u
+ 2212   4.8       42:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+== 17:19:28 periodic gpu_util=17 load= 5.82 8.45 8.20 
+  PID  %CPU     ELAPSED ARGS
+ 1026  90.3 03-07:48:54 /usr/libexec/duetexpertd
+  411  22.9 03-07:50:19 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  13.9 03-07:48:56 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914   7.9 03-07:48:56 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   6.7 03-07:48:57 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   6.7 03-07:48:38 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+49872   5.3       00:27 /Users/s25705/Downloads/pixal3d-cond-sparse/out/bin-main-d581aac/trellis-test-pixal3d-cond-tex /Users/s25705/data/we
+-- trellis:
+49872   5.3       00:27 /Users/s25705/Downloads/pixal3d-cond-sparse/out/bin-main-d581aac/trellis-test-pixal3d-cond-tex /Users/s25705/data/we
+49842   0.1       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:19:58 periodic gpu_util=10 load= 4.22 7.81 7.98 
+  PID  %CPU     ELAPSED ARGS
+ 2212  74.7       43:24 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 6183  11.9 03-07:41:55 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  411  10.4 03-07:50:49 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686   9.3 03-07:50:31 /usr/libexec/sysmond
+  523   5.0 03-07:50:48 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924   4.8 03-07:49:26 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914   4.6 03-07:49:26 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+-- trellis:
+49872   1.4       00:57 /Users/s25705/Downloads/pixal3d-cond-sparse/out/bin-main-d581aac/trellis-test-pixal3d-cond-tex /Users/s25705/data/we
+49842   0.7       01:00 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:20:28 periodic gpu_util=99 load= 9.17 8.95 8.40 
+  PID  %CPU     ELAPSED ARGS
+  686  31.2 03-07:51:01 /usr/libexec/sysmond
+  411  10.6 03-07:51:19 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924   7.4 03-07:49:56 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212   5.8       43:54 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   4.8 03-00:16:42 claude
+57915   3.9    15:12:45 claude
+  523   3.5 03-07:51:18 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+49842   0.2       01:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+51294   0.0       00:25 /bin/zsh -c source /Users/s25705/.claude/shell-snapshots/snapshot-zsh-1789632311444-ec4bo3.sh 2>/dev/null || true &&
+== 17:20:58 periodic gpu_util=95 load= 8.81 8.84 8.37 
+  PID  %CPU     ELAPSED ARGS
+  914  77.0 03-07:50:27 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+52592  44.7       00:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  970  29.0 03-07:50:26 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 1062  27.0 03-07:50:24 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+53010  26.3       00:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+52502  24.0       00:16 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+52979  22.3       00:02 /Users/s25705/.local/bin/claude --output-format stream-json --verbose --system-prompt You are a senior application-s
+-- trellis:
+49842   0.7       02:01 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+51294   0.0       00:56 /bin/zsh -c source /Users/s25705/.claude/shell-snapshots/snapshot-zsh-1789632311444-ec4bo3.sh 2>/dev/null || true &&
+== 17:21:29 periodic gpu_util=100 load= 14.54 10.32 8.94 
+  PID  %CPU     ELAPSED ARGS
+  411  28.3 03-07:52:20 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+52564  17.1       00:42 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  12.8 03-07:50:55 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  12.7 03-07:50:57 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+58284  11.5    15:13:19 claude
+  881  10.1 03-07:50:58 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  924   9.6 03-07:50:57 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+49842   0.1       02:31 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:22:00 periodic gpu_util=53 load= 10.11 9.65 8.74 
+  PID  %CPU     ELAPSED ARGS
+ 2212  94.5       45:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  60.7 03-07:52:51 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914  27.7 03-07:51:28 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1061  23.1 03-07:51:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  14.7 03-07:51:29 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475  12.1 03-07:51:10 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+15233  10.0 01-23:23:36 /Applications/Claude.app/Contents/MacOS/Claude
+-- trellis:
+49842   0.3       03:02 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:22:30 periodic gpu_util=100 load= 7.00 8.95 8.52 
+  PID  %CPU     ELAPSED ARGS
+ 2212  76.0       45:56 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  57.0 03-07:53:21 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  16.9 03-07:51:56 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  16.9 03-07:51:58 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881  11.4 03-07:51:59 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   9.3 03-07:51:40 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+15233   7.7 01-23:24:06 /Applications/Claude.app/Contents/MacOS/Claude
+-- trellis:
+49842   0.3       03:32 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:23:00 periodic gpu_util=96 load= 6.11 8.57 8.39 
+  PID  %CPU     ELAPSED ARGS
+49842  29.9       04:02 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+  411  14.1 03-07:53:51 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061   8.7 03-07:52:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   5.5 03-07:52:28 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 2212   4.4       46:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523   4.3 03-07:53:50 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.1 03-07:53:50 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+49842  29.2       04:02 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:23:30 periodic gpu_util=8 load= 5.67 8.21 8.27 
+  PID  %CPU     ELAPSED ARGS
+  924  16.1 03-07:52:59 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+57915   5.3    15:15:48 claude
+  411   4.3 03-07:54:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  465   3.7 03-07:54:21 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   2.9 03-00:19:45 claude
+16286   2.8    17:33:16 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 2212   2.6       46:57 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.1       04:33 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:24:01 periodic gpu_util=7 load= 4.42 7.66 8.07 
+  PID  %CPU     ELAPSED ARGS
+  942  10.6 03-07:53:28 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+  411   7.7 03-07:54:52 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924   7.3 03-07:53:29 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+57915   6.4    15:16:18 claude
+  523   4.5 03-07:54:51 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   3.9 03-00:20:15 claude
+ 2212   3.1       47:27 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.1       05:03 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:24:31 periodic gpu_util=11 load= 3.58 7.15 7.87 
+  PID  %CPU     ELAPSED ARGS
+  411  13.6 03-07:55:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  10.3 03-07:53:59 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212   6.7       47:57 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 6062   4.8 03-07:46:28 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+16286   4.1    17:34:16 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+90749   4.0 03-00:20:45 claude
+  914   3.8 03-07:53:59 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+-- trellis:
+49842   0.1       05:33 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:25:01 periodic gpu_util=10 load= 6.83 7.69 8.04 
+  PID  %CPU     ELAPSED ARGS
+  411  35.8 03-07:55:52 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  24.8 03-07:54:29 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+57915  13.2    15:17:18 claude
+  914  10.7 03-07:54:29 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881  10.2 03-07:54:30 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   8.5 03-07:54:11 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  523   7.9 03-07:55:51 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+49842   0.2       06:03 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:25:31 periodic gpu_util=8 load= 7.34 7.74 8.05 
+  PID  %CPU     ELAPSED ARGS
+52502  86.4       04:48 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  11.5 03-07:54:59 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  411   7.8 03-07:56:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749   6.5 03-00:21:45 claude
+  465   5.5 03-07:56:21 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6183   5.3 03-07:47:28 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  523   5.2 03-07:56:21 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+49842   0.1       06:34 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:26:02 periodic gpu_util=12 load= 6.65 7.52 7.95 
+  PID  %CPU     ELAPSED ARGS
+  411  53.9 03-07:56:53 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  29.7 03-07:55:30 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212  26.7       49:28 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+58284  18.8    15:17:52 claude
+  914  18.2 03-07:55:30 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  949  14.2 03-07:55:29 /usr/libexec/pkd
+  881  12.7 03-07:55:31 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+-- trellis:
+49842   0.3       07:05 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:26:33 periodic gpu_util=28 load= 7.02 7.59 7.97 
+  PID  %CPU     ELAPSED ARGS
+90749  35.6 03-00:22:47 claude
+  411  16.3 03-07:57:24 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  14.1 03-07:56:01 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 2212  14.0       49:59 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465  11.3 03-07:57:23 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1061  11.1 03-07:55:59 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  418   8.8 03-07:57:24 /usr/libexec/trustd
+-- trellis:
+49842   0.1       07:35 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:27:03 periodic gpu_util=13 load= 5.15 7.07 7.77 
+  PID  %CPU     ELAPSED ARGS
+40050  20.4 02-01:50:16 claude
+  970  18.6 03-07:56:30 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  411  13.9 03-07:57:54 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  10.1       50:29 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061   9.3 03-07:56:29 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+57915   5.9    15:19:20 claude
+  523   4.5 03-07:57:53 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+49842   0.1       08:05 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:27:33 periodic gpu_util=2 load= 3.71 6.54 7.55 
+  PID  %CPU     ELAPSED ARGS
+90749   5.8 03-00:23:47 claude
+  411   4.6 03-07:58:24 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  523   4.1 03-07:58:23 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 2212   3.6       50:59 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2085   3.5 03-07:56:28 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+ 1688   2.4 03-07:56:36 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+ 1061   1.9 03-07:56:59 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.1       08:36 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:28:04 periodic gpu_util=29 load= 3.40 6.20 7.39 
+  PID  %CPU     ELAPSED ARGS
+  411  10.2 03-07:58:55 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212   5.5       51:30 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914   4.8 03-07:57:32 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1688   4.1 03-07:57:07 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  523   2.7 03-07:58:54 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1061   2.2 03-07:57:30 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  390   2.1 03-07:58:55 /usr/libexec/dasd
+-- trellis:
+49842   0.1       09:06 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:28:34 periodic gpu_util=6 load= 18.86 9.10 8.36 
+  PID  %CPU     ELAPSED ARGS
+  411  88.6 03-07:59:28 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  54.7 03-07:58:03 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  35.6       52:03 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749  15.3 03-00:24:51 claude
+  924  11.3 03-07:58:05 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914  10.2 03-07:58:05 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1688   6.7 03-07:57:40 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+49842   0.3       09:40 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:29:11 periodic gpu_util=8 load= 95.90 28.12 15.24 
+  PID  %CPU     ELAPSED ARGS
+52502 138.3       08:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2531  46.0 03-07:57:28 Raycast Helper (Extensions)         
+63730  34.5       00:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  12.7 03-08:00:12 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  927  11.6 03-07:58:49 /System/Library/Frameworks/ApplicationServices.framework/Frameworks/ATS.framework/Support/fontd
+ 6183  11.4 03-07:51:18 claude --resume 15f800c8-e9bc-4140-8a85-08488c66fa45
+  924  10.0 03-07:58:49 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+49842   0.0       10:32 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:30:10 periodic gpu_util=1 load= 283.05 93.34 40.40 
+  PID  %CPU     ELAPSED ARGS
+  411  21.7 03-08:01:10 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+15812  19.9       43:18 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1464  19.0 03-07:59:29 /Applications/Raycast.app/Contents/MacOS/Raycast
+ 6032  14.6 03-07:52:16 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+  924  13.5 03-07:59:47 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  380  12.7 03-08:01:10 /System/Library/CoreServices/launchservicesd
+  914  12.4 03-07:59:47 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+-- trellis:
+49842   0.0       11:24 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:30:54 periodic gpu_util=4 load= 315.20 125.19 54.48 
+  PID  %CPU     ELAPSED ARGS
+64070  34.1       00:39 /opt/homebrew/Cellar/python@3.13/3.13.9_1/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/Ma
+64414  27.6       00:02 (cycloud)
+  411  23.5 03-08:01:47 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  15.7 03-08:00:24 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749   9.1 03-00:27:10 claude
+  914   8.7 03-08:00:24 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  418   7.0 03-08:01:47 /usr/libexec/trustd
+-- trellis:
+49842   0.3       12:08 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:31:46 periodic gpu_util=6 load= 359.28 169.39 75.35 
+  PID  %CPU     ELAPSED ARGS
+  926  98.1 03-08:01:16 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  465  17.1 03-08:02:38 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   9.1 03-00:28:02 claude
+  418   9.0 03-08:02:39 /usr/libexec/trustd
+ 1688   5.9 03-08:00:51 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  338   5.3 03-08:02:39 /usr/libexec/smd
+ 2085   4.7 03-08:00:43 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+-- trellis:
+49842   0.2       12:52 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:32:28 periodic gpu_util=6 load= 299.80 178.52 83.06 
+  PID  %CPU     ELAPSED ARGS
+90749  38.7 03-00:28:43 claude
+  465  20.0 03-08:03:19 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418  18.5 03-08:03:20 /usr/libexec/trustd
+ 6066  13.6 03-07:54:26 claude --resume 9d00fbc9-3177-4400-8091-2b8f15615290
+58284  13.1    15:24:19 claude
+  338  13.0 03-08:03:20 /usr/libexec/smd
+59383  10.4    15:24:09 claude
+-- trellis:
+49842   0.3       13:31 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:33:03 periodic gpu_util=5 load= 248.07 178.73 86.96 
+  PID  %CPU     ELAPSED ARGS
+90749  43.5 03-00:29:18 claude
+66015  23.7       00:01 /opt/homebrew/Cellar/python@3.13/3.13.9_1/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/Ma
+  411  16.8 03-08:03:55 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 6032  13.2 03-07:55:01 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+57872  12.3    17:14:40 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+  418  10.3 03-08:03:55 /usr/libexec/trustd
+29954   8.9    15:37:51 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+49842   0.2       14:06 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:33:34 periodic gpu_util=2 load= 297.56 196.67 96.60 
+  PID  %CPU     ELAPSED ARGS
+66350  40.2       00:03 /opt/homebrew/Cellar/python@3.13/3.13.9_1/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/Ma
+  970  31.8 03-08:03:02 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  465  18.4 03-08:04:25 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  411  16.2 03-08:04:26 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  418  15.3 03-08:04:26 /usr/libexec/trustd
+53303  14.7    02:13:29 /System/Applications/Weather.app/Contents/PlugIns/WeatherWidget.appex/Contents/MacOS/WeatherWidget -LaunchArguments 
+90749  14.1 03-00:29:49 claude
+-- trellis:
+49842   0.3       14:37 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:34:06 periodic gpu_util=8 load= 250.76 195.34 100.10 
+  PID  %CPU     ELAPSED ARGS
+  411  76.1 03-08:05:00 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+66627  69.5       00:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  22.0 03-08:03:37 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  686  12.1 03-08:04:42 /usr/libexec/sysmond
+ 1061   9.4 03-08:03:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881   8.1 03-08:03:38 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   7.0 03-08:03:19 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+49842   0.2       15:11 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:34:39 periodic gpu_util=17 load= 183.68 184.44 99.45 
+  PID  %CPU     ELAPSED ARGS
+66627  55.4       00:56 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  48.1 03-08:04:07 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+27187  44.4       30:19 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  28.4 03-08:05:30 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  19.5 03-08:04:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+67591  15.2       00:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749  13.4 03-00:30:53 claude
+-- trellis:
+49842   0.3       15:42 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:35:10 periodic gpu_util=0 load= 112.44 166.65 96.40 
+  PID  %CPU     ELAPSED ARGS
+68404 125.6       00:00 ffmpeg -v error -i results/task096/a100/a100_ref2va_R1_res0.mp4 -f rawvideo -pix_fmt rgb24 -
+68397  29.2       00:01 /opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacO
+66510  19.7       01:32 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+29954  10.1    15:39:57 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+  523   5.2 03-08:06:00 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.7 03-08:06:00 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+57872   4.4    17:16:46 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+-- trellis:
+49842   0.4       16:12 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:35:40 periodic gpu_util=27 load= 70.01 151.21 93.23 
+  PID  %CPU     ELAPSED ARGS
+  411  42.8 03-08:06:31 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  970   9.7 03-08:05:07 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  412   6.1 03-08:06:31 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd system
+  440   5.9 03-08:06:30 /usr/libexec/syspolicyd
+  418   4.9 03-08:06:31 /usr/libexec/trustd
+  896   4.7 03-08:05:08 /System/Library/PrivateFrameworks/BiomeStreams.framework/Support/BiomeAgent
+ 5887   4.5 03-07:57:37 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+-- trellis:
+49842   0.2       16:42 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:36:11 periodic gpu_util=100 load= 43.95 137.12 90.13 
+  PID  %CPU     ELAPSED ARGS
+  411  31.7 03-08:07:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+37511  16.1    05:19:33 /usr/libexec/spotlightknowledged.updater -u
+  881  10.1 03-08:05:40 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914   8.3 03-08:05:39 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1688   4.3 03-08:05:14 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+ 1133   3.4 03-08:05:35 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Cont
+  465   2.8 03-08:07:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+49842   0.1       17:13 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:36:41 periodic gpu_util=100 load= 27.79 124.33 87.12 
+  PID  %CPU     ELAPSED ARGS
+  411  45.1 03-08:07:32 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  34.4    01:00:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  30.3 03-08:06:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   5.6 03-08:07:31 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1688   4.6 03-08:05:44 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  338   3.6 03-08:07:32 /usr/libexec/smd
+  523   3.6 03-08:07:31 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+49842   0.1       17:43 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:37:11 periodic gpu_util=100 load= 18.53 112.86 84.26 
+  PID  %CPU     ELAPSED ARGS
+29954  98.9    15:41:58 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+70944  61.0       00:02 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.quotePath=false diff --no-color --no-ext-diff --no-t
+  411  31.3 03-08:08:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  686  26.4 03-08:07:44 /usr/libexec/sysmond
+ 2212  23.5    01:00:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  926  18.0 03-08:06:39 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 1061  14.8 03-08:06:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.1       18:13 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:37:41 periodic gpu_util=100 load= 11.98 102.26 81.40 
+  PID  %CPU     ELAPSED ARGS
+  411  30.0 03-08:08:32 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  12.1    01:01:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  11.2 03-08:07:10 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   8.8 03-08:06:51 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  914   7.9 03-08:07:09 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  998   5.5 03-08:07:08 /System/Library/PrivateFrameworks/AMPDevices.framework/Versions/A/Support/AMPDeviceDiscoveryAgent --launchd
+  465   4.7 03-08:08:31 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+49842   0.1       18:43 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:38:11 periodic gpu_util=14 load= 8.05 92.68 78.65 
+  PID  %CPU     ELAPSED ARGS
+  411  44.2 03-08:09:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914  39.2 03-08:07:39 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 6053   3.7 03-08:00:08 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+ 1688   3.2 03-08:07:14 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+ 1061   2.2 03-08:07:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  902   2.2 03-08:07:39 /System/Library/PrivateFrameworks/UniversalAccess.framework/Versions/A/Resources/AXVisualSupportAgent.app/Contents/M
+ 1193   1.9 03-08:07:34 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+49842   0.1       19:13 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:38:41 periodic gpu_util=42 load= 5.33 83.93 75.97 
+  PID  %CPU     ELAPSED ARGS
+  411  46.5 03-08:09:32 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  37.5    01:02:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  34.9 03-08:08:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  33.6 03-08:09:14 /usr/libexec/sysmond
+  926  19.5 03-08:08:09 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 1688   4.2 03-08:07:44 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+90749   3.9 03-00:34:55 claude
+-- trellis:
+49842   0.1       19:43 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:39:11 periodic gpu_util=1 load= 4.39 76.21 73.44 
+  PID  %CPU     ELAPSED ARGS
+ 2212   4.9    01:02:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1688   4.8 03-08:08:15 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+ 2085   4.1 03-08:08:07 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  411   3.8 03-08:10:03 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1193   3.6 03-08:08:35 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+ 1061   2.2 03-08:08:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+16286   1.9    17:48:57 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+49842   0.1       20:14 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:39:42 periodic gpu_util=2 load= 3.21 69.05 70.94 
+  PID  %CPU     ELAPSED ARGS
+  411   8.1 03-08:10:33 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  942   5.5 03-08:09:09 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+  914   5.1 03-08:09:10 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1688   3.9 03-08:08:45 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+ 2212   3.8    01:03:08 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1122   3.5 03-08:09:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+16286   2.1    17:49:27 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+-- trellis:
+49842   0.1       20:44 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:40:12 periodic gpu_util=24 load= 5.20 63.30 68.79 
+  PID  %CPU     ELAPSED ARGS
+  924  63.8 03-08:09:40 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  926  35.1 03-08:09:40 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  686  24.6 03-08:10:45 /usr/libexec/sysmond
+  523  15.1 03-08:11:02 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57915  12.5    15:32:29 claude
+  411  12.3 03-08:11:03 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  942   8.2 03-08:09:39 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+-- trellis:
+49842   0.1       21:14 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:40:42 periodic gpu_util=11 load= 4.41 57.56 66.52 
+  PID  %CPU     ELAPSED ARGS
+  411  31.0 03-08:11:33 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914  17.7 03-08:10:10 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  465  11.1 03-08:11:32 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1122   8.3 03-08:10:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881   6.7 03-08:10:11 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  418   6.6 03-08:11:33 /usr/libexec/trustd
+ 1475   6.0 03-08:09:52 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+49842   0.1       21:44 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:41:12 periodic gpu_util=4 load= 4.42 52.49 64.37 
+  PID  %CPU     ELAPSED ARGS
+  924  26.5 03-08:10:40 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  885  19.6 03-08:10:41 /System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd
+  390  19.3 03-08:12:03 /usr/libexec/dasd
+  411  18.1 03-08:12:03 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+73996  15.0       00:00 /System/Library/Frameworks/AddressBook.framework/Versions/A/Helpers/AddressBookSourceSync.app/Contents/MacOS/Address
+73995  12.4       00:00 /System/Library/PrivateFrameworks/CoreParsec.framework/parsec-fbf
+ 1026   9.0 03-08:10:38 /usr/libexec/duetexpertd
+-- trellis:
+49842   0.1       22:14 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:41:42 periodic gpu_util=94 load= 17.79 50.75 63.31 
+  PID  %CPU     ELAPSED ARGS
+  914  92.4 03-08:11:15 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+74252  68.5       00:19 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1062  44.1 03-08:11:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+59383  31.4    15:33:27 claude
+ 1061  24.3 03-08:11:13 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+74553  19.6       00:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  927  16.0 03-08:11:15 /System/Library/Frameworks/ApplicationServices.framework/Frameworks/ATS.framework/Support/fontd
+-- trellis:
+49842  31.6       22:49 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:42:17 periodic gpu_util=95 load= 25.07 49.42 62.35 
+  PID  %CPU     ELAPSED ARGS
+  914 129.2 03-08:11:47 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  411  69.3 03-08:13:10 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+74252  56.5       00:51 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+75306  44.8       00:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+49842  43.8       23:21 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+75324  29.6       00:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1062  23.1 03-08:11:44 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842  13.2       23:22 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:42:50 periodic gpu_util=37 load= 27.42 47.94 61.33 
+  PID  %CPU     ELAPSED ARGS
+  411  57.9 03-08:13:42 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+74252  47.8       01:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  23.2 03-08:12:19 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1061  17.2 03-08:12:17 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  16.7 03-08:12:20 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+75396  12.2       00:30 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  10.9 03-08:13:24 /usr/libexec/sysmond
+-- trellis:
+49842   0.2       23:53 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:43:21 periodic gpu_util=26 load= 48.20 50.23 61.65 
+  PID  %CPU     ELAPSED ARGS
+  411  58.3 03-08:14:12 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+75887  43.7       00:19 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  39.8 03-08:12:47 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+75958  23.7       00:13 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  19.5 03-08:12:49 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+90749  19.1 03-00:39:35 claude
+  465  15.5 03-08:14:11 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+49842   0.4       24:23 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:43:52 periodic gpu_util=49 load= 50.71 50.03 61.14 
+  PID  %CPU     ELAPSED ARGS
+  411  85.2 03-08:14:47 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  55.8 03-08:13:22 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  38.4 03-08:13:24 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  686  37.9 03-08:14:29 /usr/libexec/sysmond
+76557  32.8       00:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+76807  21.6       00:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+76721  20.6       00:17 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.1       24:59 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:44:27 periodic gpu_util=100 load= 74.86 55.91 62.82 
+  PID  %CPU     ELAPSED ARGS
+76557  79.5       01:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  64.9 03-08:15:23 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  31.9 03-08:13:58 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  29.6 03-08:14:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+16286  25.6    17:54:17 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+76986  18.7       00:22 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+77246  13.0       00:02 /opt/homebrew/bin/git -c core.fsmonitor= -c core.hooksPath=/dev/null -c core.askPass= -c protocol.ext.allow=never -c
+-- trellis:
+49842   0.3       25:36 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:45:07 periodic gpu_util=100 load= 101.01 66.16 66.32 
+  PID  %CPU     ELAPSED ARGS
+76557  88.6       01:40 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  60.8 03-08:16:01 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  39.6 03-08:14:36 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  23.5 03-08:14:38 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+76986  19.6       01:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465  15.2 03-08:16:00 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  970  13.6 03-08:14:37 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+-- trellis:
+49842   0.3       26:16 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:45:44 periodic gpu_util=90 load= 101.19 70.05 67.74 
+  PID  %CPU     ELAPSED ARGS
+  411  90.4 03-08:16:36 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+78006  83.7       00:20 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  48.7 03-08:15:11 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  970  22.5 03-08:15:12 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  465  19.6 03-08:16:35 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  914  18.0 03-08:15:13 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  671  17.6 03-08:16:19 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com
+-- trellis:
+49842   0.3       26:47 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:46:15 periodic gpu_util=8 load= 88.71 71.19 68.29 
+  PID  %CPU     ELAPSED ARGS
+78658  87.7       00:00 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+  411  11.0 03-08:17:06 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  914   3.9 03-08:15:43 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+16286   3.3    17:56:00 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  924   2.7 03-08:15:43 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 1688   2.7 03-08:15:18 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  465   2.0 03-08:17:05 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+49842   0.1       27:17 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:46:46 periodic gpu_util=17 load= 68.10 67.60 67.08 
+  PID  %CPU     ELAPSED ARGS
+78375  77.9       00:48 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+53350  60.3    04:53:14 /usr/libexec/PerfPowerServices
+  411  57.5 03-08:17:39 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+27187  37.0       42:28 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  32.1 03-08:16:14 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+79154  27.2       00:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  22.1 03-08:16:16 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+-- trellis:
+49842   0.3       27:51 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:47:19 periodic gpu_util=100 load= 81.21 70.98 68.33 
+  PID  %CPU     ELAPSED ARGS
+78375 122.0       01:21 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  80.8 03-08:16:49 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  411  53.9 03-08:18:12 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  958  42.7 03-08:16:48 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted
+79378  39.8       00:13 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+ 1062  34.9 03-08:16:46 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+79499  23.0       00:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.2       28:25 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:47:57 periodic gpu_util=25 load= 78.55 71.17 68.49 
+  PID  %CPU     ELAPSED ARGS
+79842  93.7       00:15 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  57.8 03-08:18:49 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+27187  33.3       43:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  32.2 03-08:17:26 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1061  25.7 03-08:17:24 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1688  20.8 03-08:17:01 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+80084  15.7       00:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.3       29:00 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:48:28 periodic gpu_util=84 load= 68.07 69.46 67.97 
+  PID  %CPU     ELAPSED ARGS
+80239  46.0       00:23 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+  411  36.8 03-08:19:19 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+79842  30.4       00:45 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  26.2 03-08:17:54 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+80331  10.5       00:11 /System/Library/Frameworks/AddressBook.framework/Versions/A/Helpers/AddressBookSourceSync.app/Contents/MacOS/Address
+  888   9.4 03-08:17:57 /usr/libexec/trustd --agent
+  341   7.0 03-08:19:19 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseven
+-- trellis:
+49842   0.1       29:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:48:59 periodic gpu_util=57 load= 42.34 63.08 65.71 
+  PID  %CPU     ELAPSED ARGS
+81132  80.5       00:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  75.6 03-08:19:51 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  50.1 03-08:18:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+81063  34.1       00:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  21.5 03-08:18:28 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+81090  20.0       00:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465  14.2 03-08:19:50 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+49842   0.3       30:02 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:49:30 periodic gpu_util=23 load= 29.05 57.93 63.75 
+  PID  %CPU     ELAPSED ARGS
+82147  94.2       00:01 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+  411  26.7 03-08:20:21 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  12.7 03-08:18:58 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  881   7.6 03-08:18:59 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914   6.7 03-08:18:58 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475   6.1 03-08:18:40 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+80760   5.5       00:47 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+49842   0.1       30:32 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:50:00 periodic gpu_util=99 load= 26.74 54.48 62.29 
+  PID  %CPU     ELAPSED ARGS
+  411  29.2 03-08:20:51 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+81356  25.8       00:50 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+82513  23.4       00:00 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+  914  16.7 03-08:19:28 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  924  13.3 03-08:19:28 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  424   6.9 03-08:20:51 /usr/sbin/coreaudiod
+49842   6.2       31:02 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+-- trellis:
+49842   3.9       31:03 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:50:31 periodic gpu_util=0 load= 16.89 48.97 59.97 
+  PID  %CPU     ELAPSED ARGS
+49842  91.8       31:33 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+  924   6.6 03-08:19:59 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  411   6.5 03-08:21:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  523   5.8 03-08:21:21 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1688   3.3 03-08:19:34 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  465   3.0 03-08:21:21 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1193   2.9 03-08:19:54 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+-- trellis:
+49842  81.6       31:33 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:51:01 periodic gpu_util=1 load= 17.80 46.10 58.54 
+  PID  %CPU     ELAPSED ARGS
+49842 1434.2       32:03 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-met
+83553  88.0       00:16 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+  411  17.4 03-08:21:52 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749   7.2 03-00:47:15 claude
+  942   3.2 03-08:20:28 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+58284   2.2    15:42:51 claude
+57915   2.1    15:43:18 claude
+-- trellis:
+49842 1371.4       32:03 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-met
+== 17:51:31 periodic gpu_util=13 load= 30.98 47.15 58.53 
+  PID  %CPU     ELAPSED ARGS
+49842 100.0       32:33 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+84216  50.4       00:06 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+  411  36.8 03-08:22:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1026  28.6 03-08:20:57 /usr/libexec/duetexpertd
+84346  26.3       00:02 /System/Library/PrivateFrameworks/MediaConversionService.framework/Versions/A/XPCServices/com.apple.photos.VideoConv
+84353  16.3       00:00 /usr/libexec/ReportMemoryException
+  378  16.3 03-08:22:22 /usr/libexec/opendirectoryd
+-- trellis:
+49842 100.0       32:33 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-meta
+== 17:51:38 after new gpu_util=15 load= 29.38 46.55 58.25 
+  PID  %CPU     ELAPSED ARGS
+84216  63.4       00:13 /opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/M
+ 1026  51.8 03-08:21:04 /usr/libexec/duetexpertd
+  411  39.0 03-08:22:29 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+84386  30.2       00:07 /System/Library/PrivateFrameworks/MediaConversionService.framework/Versions/A/XPCServices/com.apple.photos.ImageConv
+  461  29.3 03-08:22:28 /usr/libexec/mobileassetd
+  378  25.2 03-08:22:29 /usr/libexec/opendirectoryd
+  924  24.0 03-08:21:06 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:

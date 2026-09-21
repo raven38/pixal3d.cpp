@@ -1,0 +1,12 @@
+gate: passed 18:33:35 gpu=0%
+gn_oracle_nth.log exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-metal-groupnorm 
+gate: passed 18:46:31 gpu=0%
+nafops_T1024_nth_native_1.log exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: passed 18:48:25 gpu=0%
+nafops_T1024_nth_native_2.log exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: passed 18:50:36 gpu=0%
+nafops_T1024_nth_lowering_1.log exit=0
+U1 DONE Sun Sep 20 18:50:57 JST 2026

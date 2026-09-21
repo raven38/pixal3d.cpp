@@ -1,0 +1,441 @@
+== 15:12:00 before new nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+  411  41.7 03-05:42:51 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+29954  40.8    13:16:47 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+88460  39.5    23:35:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+15330  31.8 01-21:13:31 /Applications/Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/Claude Helper (Renderer) --
+ 1061  30.9 03-05:41:26 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  11.7 03-05:41:28 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+15305  10.5 01-21:13:32 /Applications/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/MacOS/Claude Helper --type=gpu-process --use
+-- trellis:
+== 15:12:30 periodic
+  PID  %CPU     ELAPSED ARGS
+42916  86.2       00:08 /usr/bin/tar -tf node-runtime.tar.xz
+  411  41.4 03-05:43:21 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+59383  22.2    13:04:10 claude
+ 1061  19.6 03-05:41:56 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  19.0    23:35:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  929  18.6 03-05:41:58 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT
+  924  13.9 03-05:41:58 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+41979   0.4       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:12:31 after new nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+42916  98.7       00:09 /usr/bin/tar -tf node-runtime.tar.xz
+  411  41.1 03-05:43:22 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  17.8 03-05:41:57 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  13.8    23:35:54 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+30846   9.6 03-04:25:03 /Applications/Google Drive.app/Contents/MacOS/Google Drive --auto_restart_count=1 --first_auto_restart_timestamp=506
+  924   6.5 03-05:41:59 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+59383   6.0    13:04:11 claude
+-- trellis:
+== 15:14:02 before old nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+  411  42.7 03-05:44:53 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  39.6    23:37:25 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  31.2 03-05:43:28 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  942  21.4 03-05:43:29 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+  924   9.4 03-05:43:30 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+29954   7.1    13:18:49 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+ 5074   6.5 03-05:36:01 /Users/s25705/.local/bin/herdr server
+-- trellis:
+== 15:14:32 periodic
+  PID  %CPU     ELAPSED ARGS
+  411  40.4 03-05:45:23 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  29.9    23:37:55 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  24.4 03-05:43:58 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  10.9 03-05:45:05 /usr/libexec/sysmond
+  924   6.9 03-05:44:00 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 5074   6.6 03-05:36:31 /Users/s25705/.local/bin/herdr server
+  926   5.3 03-05:44:00 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+-- trellis:
+46915   0.1       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:14:38 after old nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+  970  80.2 03-05:44:05 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  411  39.1 03-05:45:29 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  29.8    23:38:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  26.1 03-05:44:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+16286   6.5    15:24:23 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  465   5.2 03-05:45:28 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5074   4.4 03-05:36:37 /Users/s25705/.local/bin/herdr server
+-- trellis:
+== 15:16:09 before new nafops_T512
+  PID  %CPU     ELAPSED ARGS
+88460  40.7    23:39:32 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  37.8 03-05:47:00 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  33.9 03-05:45:35 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  13.8 03-05:45:37 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   9.7 03-05:46:59 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  560   5.6 03-05:46:58 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN com.apple.bc
+ 5074   5.1 03-05:38:08 /Users/s25705/.local/bin/herdr server
+-- trellis:
+== 15:16:30 after new nafops_T512
+  PID  %CPU     ELAPSED ARGS
+88460  39.3    23:39:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  39.2 03-05:47:21 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  32.5 03-05:45:56 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  31.0 03-05:45:58 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523  24.0 03-05:47:20 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 2531  12.1 03-05:44:37 Raycast Helper (Extensions)         
+ 5074  11.6 03-05:38:29 /Users/s25705/.local/bin/herdr server
+-- trellis:
+49262   0.3       00:17 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:18:11 before old nafops_T512
+  PID  %CPU     ELAPSED ARGS
+88460  42.1    23:41:34 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  38.4 03-05:49:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  34.9 03-05:47:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   6.1 02-22:14:25 claude
+58284   6.0    13:10:01 claude
+  924   4.5 03-05:47:39 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   4.5 03-05:49:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 15:18:37 after old nafops_T512
+  PID  %CPU     ELAPSED ARGS
+  411  54.2 03-05:49:28 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  39.9    23:42:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  31.0 03-05:48:03 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  13.9 03-05:48:05 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+51777   8.8       00:00 kubectl get pod h3-bench-l4 -o jsonpath={.status.phase}
+90749   6.3 02-22:14:51 claude
+  686   6.0 03-05:49:10 /usr/libexec/sysmond
+-- trellis:
+== 15:20:08 before old nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+  411  44.3 03-05:50:59 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  32.7    23:43:31 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  25.5 03-05:49:34 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  13.4 03-05:49:36 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  942  11.6 03-05:49:35 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter
+  686   6.2 03-05:50:41 /usr/libexec/sysmond
+    1   5.9 03-05:53:42 /sbin/launchd
+-- trellis:
+== 15:20:38 periodic
+  PID  %CPU     ELAPSED ARGS
+  411  46.3 03-05:51:29 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  43.3 03-05:50:06 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+58284  34.2    13:12:28 claude
+ 1061  20.0 03-05:50:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  13.2    23:44:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 5074   9.2 03-05:42:37 /Users/s25705/.local/bin/herdr server
+  465   8.7 03-05:51:28 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+53330   0.9       00:31 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:20:49 after old nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+55092  47.8       00:01 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.quotePath=false status --porcelain=v1 -uall -z
+  411  40.9 03-05:51:40 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  924  27.4 03-05:50:17 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 1061  18.7 03-05:50:15 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+29954  12.9    13:25:36 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+55079  12.0       00:01 /opt/homebrew/Cellar/python@3.13/3.13.9_1/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/Ma
+88460  10.5    23:44:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+-- trellis:
+== 15:22:20 before new nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+  411  41.0 03-05:53:11 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  24.5 03-05:51:46 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  13.2    23:45:43 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   6.2 02-22:18:34 claude
+ 5074   5.7 03-05:44:19 /Users/s25705/.local/bin/herdr server
+  924   5.2 03-05:51:48 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 1688   5.2 03-05:51:23 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+== 15:22:46 after new nafops_T1024
+  PID  %CPU     ELAPSED ARGS
+  411  42.5 03-05:53:37 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  30.4    23:46:09 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  10.6 03-05:52:14 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 1061   9.1 03-05:52:12 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   4.9 03-05:53:36 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5074   4.1 03-05:44:45 /Users/s25705/.local/bin/herdr server
+  418   3.6 03-05:53:37 /usr/libexec/trustd
+-- trellis:
+== 15:24:17 before old nafops_T512
+  PID  %CPU     ELAPSED ARGS
+  686  15.6 03-05:54:50 /usr/libexec/sysmond
+  924  13.1 03-05:53:45 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   5.8 03-05:55:07 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5074   4.2 03-05:46:16 /Users/s25705/.local/bin/herdr server
+ 5809   4.0 03-05:46:14 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+59065   3.9    22:52:11 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  418   3.1 03-05:55:08 /usr/libexec/trustd
+-- trellis:
+== 15:24:40 after old nafops_T512
+  PID  %CPU     ELAPSED ARGS
+  924  11.5 03-05:54:09 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465  11.0 03-05:55:31 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6062   9.7 03-05:46:38 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+  418   7.2 03-05:55:32 /usr/libexec/trustd
+58284   6.7    13:16:31 claude
+ 5074   6.4 03-05:46:40 /Users/s25705/.local/bin/herdr server
+  338   5.6 03-05:55:32 /usr/libexec/smd
+-- trellis:
+== 15:26:11 before new nafops_T512
+  PID  %CPU     ELAPSED ARGS
+  924  12.1 03-05:55:39 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 6069   6.5 03-05:48:08 claude --resume f082fc6d-24a7-4117-a342-76c5c3144ca4
+ 6032   6.5 03-05:48:08 claude --resume 376b48a1-ed20-4cbb-bb20-928970ce3dce
+90749   5.1 02-22:22:25 claude
+ 2085   4.9 03-05:55:06 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+58284   4.8    13:18:01 claude
+  465   4.8 03-05:57:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 15:26:29 after new nafops_T512
+  PID  %CPU     ELAPSED ARGS
+  924  15.1 03-05:55:57 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 5074   4.4 03-05:48:28 /Users/s25705/.local/bin/herdr server
+58284   4.3    13:18:19 claude
+ 2085   3.0 03-05:55:24 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+57915   2.8    13:18:46 claude
+90749   2.8 02-22:22:43 claude
+ 5070   2.0 03-05:48:28 herdr
+-- trellis:
+58453   0.2       00:11 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:28:10 before new nafops_LR
+  PID  %CPU     ELAPSED ARGS
+  924  35.0 03-05:57:38 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   6.4 03-05:59:00 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 5074   4.5 03-05:50:09 /Users/s25705/.local/bin/herdr server
+57915   4.2    13:20:27 claude
+  418   3.1 03-05:59:01 /usr/libexec/trustd
+90749   2.4 02-22:24:24 claude
+58284   2.4    13:20:00 claude
+-- trellis:
+59999   0.2       00:09 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:28:19 after new nafops_LR
+  PID  %CPU     ELAPSED ARGS
+  924  25.9 03-05:57:47 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  970  11.8 03-05:57:46 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+58284   9.4    13:20:09 claude
+57915   6.3    13:20:36 claude
+ 6053   5.0 03-05:50:16 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+  523   4.9 03-05:59:09 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 5074   4.1 03-05:50:18 /Users/s25705/.local/bin/herdr server
+-- trellis:
+59999   0.1       00:18 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:30:10 before old nafops_LR
+  PID  %CPU     ELAPSED ARGS
+61424  39.9       00:00 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+  924  20.6 03-05:59:38 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+57915  16.2    13:22:27 claude
+  686   9.0 03-06:00:43 /usr/libexec/sysmond
+  523   7.6 03-06:01:00 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 5809   6.8 03-05:52:07 claude --resume d44ba1d4-9184-440f-b37a-b33041bc7341
+ 5074   3.2 03-05:52:09 /Users/s25705/.local/bin/herdr server
+-- trellis:
+61424  39.9       00:00 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:30:22 after old nafops_LR
+  PID  %CPU     ELAPSED ARGS
+  924  15.0 03-05:59:50 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  424   8.8 03-06:01:13 /usr/sbin/coreaudiod
+58284   4.8    13:22:12 claude
+ 5074   3.7 03-05:52:21 /Users/s25705/.local/bin/herdr server
+90749   2.9 02-22:26:36 claude
+16286   2.4    15:40:07 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+  523   2.1 03-06:01:12 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+61424   0.2       00:13 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:32:24 before new tex
+  PID  %CPU     ELAPSED ARGS
+  924  42.5 03-06:01:52 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+58284   5.6    13:24:14 claude
+ 5074   5.4 03-05:54:23 /Users/s25705/.local/bin/herdr server
+57915   5.2    13:24:41 claude
+90749   3.9 02-22:28:38 claude
+16286   2.7    15:42:09 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 5070   2.5 03-05:54:23 herdr
+-- trellis:
+65149   0.1       00:05 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:32:54 periodic
+  PID  %CPU     ELAPSED ARGS
+  924  14.8 03-06:02:22 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  941   7.7 03-06:02:21 /Applications/Bitwarden.app/Contents/MacOS/Bitwarden
+65196   5.6       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+16286   5.0    15:42:39 /Users/s25705/Library/Application Support/Claude/claude-code/2.1.275/claude.app/Contents/MacOS/claude --output-forma
+ 5074   4.1 03-05:54:53 /Users/s25705/.local/bin/herdr server
+90749   3.6 02-22:29:08 claude
+58284   2.9    13:24:44 claude
+-- trellis:
+65196   5.6       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+65149   2.7       00:35 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:33:02 after new tex
+  PID  %CPU     ELAPSED ARGS
+  924  18.8 03-06:02:30 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  686   7.3 03-06:03:35 /usr/libexec/sysmond
+  414   6.1 03-06:03:53 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow console
+ 6053   5.1 03-05:54:59 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+58284   3.7    13:24:52 claude
+ 5074   3.3 03-05:55:01 /Users/s25705/.local/bin/herdr server
+ 2085   3.2 03-06:01:57 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+-- trellis:
+65149   0.1       00:43 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:34:53 before old tex
+  PID  %CPU     ELAPSED ARGS
+  924  20.1 03-06:04:21 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+57915   4.5    13:27:10 claude
+ 5074   4.4 03-05:56:52 /Users/s25705/.local/bin/herdr server
+  944   4.3 03-06:04:20 /Applications/Karabiner-Elements.app/Contents/MacOS/Karabiner-Elements
+58284   3.8    13:26:43 claude
+  686   3.7 03-06:05:26 /usr/libexec/sysmond
+ 6062   3.0 03-05:56:50 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+-- trellis:
+== 15:35:23 periodic
+  PID  %CPU     ELAPSED ARGS
+  411  79.5 03-06:06:14 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  926  51.9 03-06:04:51 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 1061  40.0 03-06:04:49 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  39.6    23:58:46 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1193  23.6 03-06:04:46 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Servic
+  419  22.0 03-06:06:14 /usr/libexec/runningboardd
+  881  20.2 03-06:04:52 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+-- trellis:
+67289  17.0       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:35:35 after old tex
+  PID  %CPU     ELAPSED ARGS
+  411  41.9 03-06:06:27 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  20.4 03-06:05:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  12.5    23:58:59 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1688   6.0 03-06:04:39 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  418   5.5 03-06:06:27 /usr/libexec/trustd
+  924   4.7 03-06:05:04 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   4.4 03-06:06:26 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 15:37:06 before new hr
+  PID  %CPU     ELAPSED ARGS
+  411  43.3 03-06:07:57 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  19.2 03-06:06:32 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  18.7 01-00:00:29 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  15.8 03-06:06:35 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475  13.2 03-06:06:16 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+  924  11.5 03-06:06:34 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  914  10.7 03-06:06:34 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+-- trellis:
+== 15:37:36 periodic
+  PID  %CPU     ELAPSED ARGS
+  411  42.0 03-06:08:28 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  25.4 03-06:07:03 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  12.8 01-00:01:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   7.7 03-06:08:27 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1688   6.7 03-06:06:40 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+  418   5.9 03-06:08:28 /usr/libexec/trustd
+  523   5.2 03-06:08:27 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+-- trellis:
+68809   0.2       00:21 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+68691   0.2       00:31 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:37:39 after new hr
+  PID  %CPU     ELAPSED ARGS
+  411  41.7 03-06:08:30 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  19.7 03-06:07:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  14.7 01-00:01:02 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+57915  11.7    13:29:56 claude
+  523  11.1 03-06:08:29 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749  10.0 02-22:33:53 claude
+ 5887   7.4 03-05:59:36 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+-- trellis:
+68809   0.1       00:23 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights/pix
+== 15:39:40 before old hr
+  PID  %CPU     ELAPSED ARGS
+  523  37.5 03-06:10:30 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924  26.7 03-06:09:08 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  411  23.2 03-06:10:31 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+58284  12.3    13:31:30 claude
+75044   9.0       00:01 /bin/bash /Users/s25705/.codex/hooks/log-command.sh
+75048   8.6       00:01 /bin/bash /Users/s25705/.codex/hooks/log-command.sh
+  686   7.4 03-06:10:13 /usr/libexec/sysmond
+-- trellis:
+74848   0.1       00:06 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+== 15:40:10 periodic
+  PID  %CPU     ELAPSED ARGS
+  970  53.4 03-06:09:37 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+90749  13.8 02-22:36:24 claude
+  523   9.3 03-06:11:00 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+58284   6.0    13:32:00 claude
+  465   4.1 03-06:11:00 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+59383   3.8    13:31:50 claude
+29954   3.7    13:44:57 /Users/s25705/.local/share/claude/versions/2.1.278 --session-id cad2dd43-a752-4d84-9dd2-da2677173029 --fork-session 
+-- trellis:
+75728   0.2       00:30 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+74848   0.1       00:36 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+== 15:40:40 periodic
+  PID  %CPU     ELAPSED ARGS
+47103 100.9 02-22:18:53 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  31.0 03-06:11:32 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+88460  29.3 01-00:04:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  16.6 03-06:10:09 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1061  16.4 03-06:10:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523  15.6 03-06:11:31 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  924  14.7 03-06:10:09 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+75728   0.3       01:01 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+74848   0.2       01:07 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+== 15:41:11 periodic
+  PID  %CPU     ELAPSED ARGS
+  970  21.8 03-06:10:38 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  686  21.0 03-06:11:44 /usr/libexec/sysmond
+  926  13.7 03-06:10:39 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  411   9.5 03-06:12:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061   6.1 03-06:10:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   5.2 03-06:12:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 1688   4.8 03-06:10:14 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+74848   0.1       01:37 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+75728   0.1       01:31 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:41:41 periodic
+  PID  %CPU     ELAPSED ARGS
+  411  43.8 03-06:12:32 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  21.5 03-06:11:07 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  13.1 01-00:05:04 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  970   6.8 03-06:11:08 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+90749   6.4 02-22:37:55 claude
+ 5074   4.9 03-06:03:40 /Users/s25705/.local/bin/herdr server
+  924   4.7 03-06:11:09 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+74848   0.3       02:07 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+75728   0.1       02:01 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:42:11 periodic
+  PID  %CPU     ELAPSED ARGS
+74848 100.1       02:37 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+93007  66.3       00:07 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.quotePath=false diff --no-color --no-ext-diff --no-t
+  411  46.8 03-06:13:02 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  18.3 03-06:11:37 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  13.1 01-00:05:34 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   7.8 03-06:13:01 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   5.2 03-06:13:02 /usr/libexec/trustd
+-- trellis:
+74848  91.7       02:37 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+93007  55.1       00:07 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.quotePath=false diff --no-color --no-ext-diff --no-t
+75728   0.1       02:31 /Users/s25705/Downloads/pixal3d-metal-groupnorm/build-metal/trellis-test-pixal3d-cond-tex /Users/s25705/data/weights
+== 15:42:17 after old hr
+  PID  %CPU     ELAPSED ARGS
+93007  91.3       00:13 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.quotePath=false diff --no-color --no-ext-diff --no-t
+  411  42.3 03-06:13:08 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  16.4 03-06:11:43 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  13.5 01-00:05:40 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+90749   7.4 02-22:38:31 claude
+  465   6.9 03-06:13:07 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 6062   4.3 03-06:04:14 claude --resume 756d2dc7-fa36-4ca8-9b8e-8e12bfed07b1
+-- trellis:
+93007  91.3       00:13 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.quotePath=false diff --no-color --no-ext-diff --no-t
+74848   0.1       02:43 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli --views /Users/s25705/Downloads/pixal3d-cond-spa
+== 16:28:21 before new lr
+  PID  %CPU     ELAPSED ARGS
+  411  43.3 03-06:59:12 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  19.4 03-06:57:47 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+59383  15.3    14:20:01 claude
+  924  14.4 03-06:57:49 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+58284  14.0    14:20:11 claude
+88460  12.3 01-00:51:44 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  465   4.5 03-06:59:11 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+-- trellis:
+== 16:28:28 after new lr
+  PID  %CPU     ELAPSED ARGS
+  411  37.6 03-06:59:19 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  970  33.7 03-06:57:55 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+ 1061  20.0 03-06:57:54 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+88460  11.3 01-00:51:51 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  924  10.2 03-06:57:56 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   4.6 03-06:59:18 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   4.3 02-23:24:42 claude
+-- trellis:

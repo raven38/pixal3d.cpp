@@ -30,6 +30,9 @@
 #include "ggml.h"
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
+#if defined(GGML_USE_METAL)
+#include "ggml-metal.h"   // ggml_backend_is_metal
+#endif
 #if defined(TRELLIS_USE_CUDA)
 #include "naf_attn.h"
 #endif
@@ -48,6 +51,8 @@
 
 namespace trellis {
 using GT = ggml_tensor;
+
+bool g_naf_native_gn = false;   // --naf-native-gn; set by trellis_run (and the cond-tex / naf test flags)
 
 namespace {
 
@@ -90,6 +95,10 @@ GT* group_norm_affine(ggml_context* c, const Model& m, const std::string& name, 
     if (!o.generic_lowering && !o.generic_groupnorm) {
         y = ggml_group_norm(c, x, 8, 1e-5f);
     } else {
+        // The reshape only means "8 contiguous channel slabs" for a contiguous [W,H,C,1] tensor
+        // whose channel count divides into the 8 groups (every NAF GroupNorm has C in {128, 256}).
+        if (x->ne[2] % 8 != 0 || x->ne[3] != 1 || !ggml_is_contiguous(x))
+            throw std::runtime_error("naf: GroupNorm lowering needs a contiguous [W,H,C,1] tensor with C % 8 == 0");
         const int64_t n = ggml_nelements(x) / 8;
         y = ggml_norm(c, ggml_reshape_2d(c, x, n, 8), 1e-5f);
         y = ggml_reshape_4d(c, y, x->ne[0], x->ne[1], x->ne[2], x->ne[3]);
@@ -166,6 +175,16 @@ NafGgmlOpts naf_ggml_opts_for(const Model& naf) {
     GT* k3 = ggml_new_tensor_4d(c, GGML_TYPE_F16, 3, 3, 16, 16);
     GT* cd = ggml_conv_2d_direct(c, k3, x, 1, 1, 0, 0, 1, 1);
     o.generic_lowering = !(dev_supports(naf, gn) && dev_supports(naf, pr) && dev_supports(naf, pl));
+    // Metal: ggml-metal's GROUP_NORM dispatches one threadgroup of 32 threads per group, so the
+    // 8 encoder GroupNorms on [1024,1024,128] f32 cost 453 ms each (58 % of the NAF graph); the
+    // ggml_norm re-expression runs them in 8 ms (docs/results/2026-09-20-conditioning-profile.md
+    // §4.3, issue #55). Reflect pad / pool stay native (their lowering is slower at T=512).
+#if defined(GGML_USE_METAL)
+    const bool is_metal = naf.backend && ggml_backend_is_metal(naf.backend);
+#else
+    const bool is_metal = false;
+#endif
+    o.generic_groupnorm = is_metal && !g_naf_native_gn;   // --naf-native-gn = the A/B switch back
     // 診断専用: WebGPU と同じ lowering を他 backend で再現してメモリを測るためのトグル
     // (docs/PIXAL3D_WEBGPU_MEMORY.md §11)。計算内容は同じ再表現だが縮約順が変わるので出力は bit 一致しない
     // （Metal: native 比 L2rel ~1e-4、docs/results/2026-09-20-conditioning-profile.md §4.1）。
@@ -181,6 +200,16 @@ NafGgmlOpts naf_ggml_opts_for(const Model& naf) {
     if (const char* e = getenv("TRELLIS_DBG_NAF_DIRECT"))
         o.direct_conv = (*e != '0') && dev_supports(naf, cd);
     ggml_free(c);
+    // --profile-cond: say once which lowering this backend got, so a silently-missed backend
+    // match (the optimisation quietly off) shows up in the log next to the [cond-v] laps.
+    static bool announced = false;
+    if (g_profile_cond && !announced) {
+        announced = true;
+        printf("      [cond] naf lowering on %s: groupnorm=%s pad/pool=%s conv=%s%s\n", bname,
+               (o.generic_lowering || o.generic_groupnorm) ? "ggml_norm[n/8,8]" : "native",
+               o.generic_lowering ? "generic" : "native", o.direct_conv ? "direct" : "im2col",
+               g_naf_native_gn ? " (--naf-native-gn)" : "");
+    }
     return o;
 }
 

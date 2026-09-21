@@ -11,6 +11,7 @@ extern bool g_sparse_cast_f32;  // defined in sparse.cpp        (TRELLIS_F32)
 extern bool g_no_fa;            // defined in dit.cpp           (TRELLIS_NOFA)
 extern bool g_profile;          // defined in dit.cpp; --profile (per-op flow DiT timing)
 extern bool g_profile_cond;     // defined in dit.cpp; --profile-cond (conditioning / decoder sub-stage laps, printf only)
+extern bool g_naf_native_gn;    // defined in naf_gpu.cpp; --naf-native-gn (Metal: keep ggml_group_norm instead of the norm re-expression, A/B)
 extern bool g_require_gpu;      // defined in trellis_model.cpp (TRELLIS_REQUIRE_GPU)
 extern bool g_gpu_auto;         // defined in trellis_model.cpp; true when --gpu was not specified
 extern int  g_cpu_threads;      // defined in trellis_model.cpp (TRELLIS_THREADS)
@@ -86,6 +87,7 @@ struct TrellisParams {
     bool no_fa    = false;      // disable FlashAttention (manual softmax)
     bool profile  = false;      // per-op / per-block timing of one forward per flow DiT
     bool profile_cond = false;  // per-view / per-stage wall-clock laps of the conditioning and decoders (no extra compute)
+    bool naf_native_gn = false; // Metal: NAF encoder GroupNorm as the native ggml_group_norm op (slow, A/B only; issue #55)
     bool require_gpu = false;   // refuse CPU fallback if no GPU is usable
     int  threads  = 0;          // CPU backend thread count; 0 = all cores
     float gss = 7.5f;           // sparse-structure guidance strength

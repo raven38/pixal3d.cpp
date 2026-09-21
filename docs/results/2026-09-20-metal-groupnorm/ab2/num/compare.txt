@@ -1,0 +1,6 @@
+tex global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.933e+01 finite=True
+tex proj   shape=(17489, 2048) max|d|=1.917e-03 mean|d|=1.905e-05 L2rel=4.069e-05 cos=1.00000000 refmax=2.432e+01 finite=True
+hr  global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.933e+01 finite=True
+hr  proj   shape=(17489, 2048) max|d|=2.052e-03 mean|d|=1.838e-05 L2rel=3.915e-05 cos=1.00000000 refmax=2.432e+01 finite=True
+lr  global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.934e+01 finite=True
+lr  proj   shape=(3872, 2048) max|d|=3.153e-03 mean|d|=1.859e-05 L2rel=4.386e-05 cos=1.00000000 refmax=2.430e+01 finite=True

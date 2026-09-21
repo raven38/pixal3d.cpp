@@ -1,0 +1,270 @@
+P1 START Sun Sep 20 18:41:29 JST 2026
+--- skip new_nafops_T1024 #1 (already measured)
+--- skip old_nafops_T1024 #1 (already measured)
+--- skip new_nafops_T512 #1 (already measured)
+--- skip old_nafops_T512 #1 (already measured)
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/new_nafops_LR_*.log
+gate: passed 18:42:59 gpu=0%
+--- new nafops_LR 18:42:59
+exit=0
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/old_nafops_LR_*.log
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: passed 18:47:28 gpu=0%
+--- old nafops_LR 18:47:28
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: passed 18:49:27 gpu=0%
+--- old nafops_T1024 18:49:27
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse pixal3d-metal-groupnorm 
+gate: passed 18:51:43 gpu=0%
+--- new nafops_T1024 18:51:43
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 18:53:52 gpu=0%
+--- old nafops_T512 18:53:52
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 18:56:11 gpu=0%
+--- new nafops_T512 18:56:11
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 18:58:07 gpu=0%
+--- old nafops_LR 18:58:07
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:00:19 gpu=0%
+--- new nafops_LR 19:00:19
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:02:11 gpu=0%
+--- new nafops_T1024 19:02:11
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:04:13 gpu=0%
+--- old nafops_T1024 19:04:13
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:06:42 gpu=0%
+--- new nafops_T512 19:06:42
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:08:49 gpu=0%
+--- old nafops_T512 19:08:49
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:11:13 gpu=0%
+--- new nafops_LR 19:11:13
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:13:25 gpu=0%
+--- old nafops_LR 19:13:25
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:15:33 gpu=0%
+--- old nafops_T1024 19:15:33
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:17:53 gpu=0%
+--- new nafops_T1024 19:17:53
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:19:56 gpu=0%
+--- old nafops_T512 19:19:56
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:22:27 gpu=0%
+--- new nafops_T512 19:22:27
+exit=0
+gate: yielding 20 s to other waiter(s): pixal3d-cond-sparse 
+gate: passed 19:25:06 gpu=0%
+--- old nafops_LR 19:25:06
+exit=0
+gate: passed 19:25:54 gpu=0%
+--- new nafops_LR 19:25:54
+exit=0
+gate: passed 19:26:40 gpu=0%
+--- new nafops_T1024 19:26:40
+exit=0
+gate: passed 19:27:38 gpu=0%
+--- old nafops_T1024 19:27:38
+exit=0
+gate: passed 19:28:48 gpu=0%
+--- new nafops_T512 19:28:48
+exit=0
+gate: passed 19:29:38 gpu=0%
+--- old nafops_T512 19:29:38
+exit=0
+gate: passed 19:30:41 gpu=0%
+--- new nafops_LR 19:30:41
+exit=0
+gate: passed 19:31:20 gpu=0%
+--- old nafops_LR 19:31:20
+exit=0
+gate: passed 19:32:15 gpu=0%
+--- old nafops_T1024 19:32:16
+exit=0
+gate: passed 19:33:19 gpu=0%
+--- new nafops_T1024 19:33:19
+exit=0
+gate: passed 19:34:20 gpu=0%
+--- old nafops_T512 19:34:20
+exit=0
+gate: passed 19:35:25 gpu=0%
+--- new nafops_T512 19:35:25
+exit=0
+gate: passed 19:36:09 gpu=0%
+--- old nafops_LR 19:36:09
+exit=0
+gate: passed 19:37:03 gpu=0%
+--- new nafops_LR 19:37:03
+exit=0
+P1 DONE Sun Sep 20 19:37:09 JST 2026
+P2 START Sun Sep 20 19:37:09 JST 2026
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/new_tex_*.log
+gate: passed 19:37:42 gpu=0%
+--- new tex 19:37:42
+exit=0
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/old_tex_*.log
+gate: passed 19:38:36 gpu=0%
+--- old tex 19:38:37
+exit=0
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/new_hr_*.log
+gate: passed 19:39:54 gpu=0%
+--- new hr 19:39:54
+exit=0
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/old_hr_*.log
+gate: passed 19:40:45 gpu=0%
+--- old hr 19:40:45
+exit=0
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/new_lr_*.log
+gate: passed 19:41:49 gpu=0%
+--- new lr 19:41:49
+exit=0
+run:3: no matches found: /Users/s25705/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab2/old_lr_*.log
+gate: passed 19:42:32 gpu=0%
+--- old lr 19:42:32
+exit=0
+gate: passed 19:43:16 gpu=0%
+--- old tex 19:43:16
+exit=0
+gate: passed 19:44:23 gpu=0%
+--- new tex 19:44:23
+exit=0
+gate: passed 19:45:18 gpu=0%
+--- old hr 19:45:18
+exit=0
+gate: passed 19:46:29 gpu=0%
+--- new hr 19:46:29
+exit=0
+gate: passed 19:47:28 gpu=0%
+--- old lr 19:47:28
+exit=0
+gate: passed 19:48:20 gpu=0%
+--- new lr 19:48:20
+exit=0
+gate: passed 19:49:01 gpu=0%
+--- new tex 19:49:01
+exit=0
+gate: passed 19:50:03 gpu=0%
+--- old tex 19:50:03
+exit=0
+gate: passed 19:51:14 gpu=0%
+--- new hr 19:51:14
+exit=0
+gate: passed 19:52:09 gpu=0%
+--- old hr 19:52:09
+exit=0
+gate: passed 19:53:17 gpu=0%
+--- new lr 19:53:17
+exit=0
+gate: passed 19:54:07 gpu=0%
+--- old lr 19:54:07
+exit=0
+gate: passed 19:54:52 gpu=0%
+--- old tex 19:54:52
+exit=0
+gate: passed 19:56:06 gpu=0%
+--- new tex 19:56:06
+exit=0
+gate: passed 19:57:01 gpu=0%
+--- old hr 19:57:01
+exit=0
+gate: passed 19:58:07 gpu=0%
+--- new hr 19:58:07
+exit=0
+gate: passed 20:00:37 gpu=0%
+--- old lr 20:00:37
+exit=0
+gate: passed 20:01:31 gpu=0%
+--- new lr 20:01:32
+exit=0
+gate: passed 20:02:15 gpu=0%
+--- new tex 20:02:15
+exit=0
+gate: passed 20:03:09 gpu=0%
+--- old tex 20:03:09
+exit=0
+gate: passed 20:04:21 gpu=0%
+--- new hr 20:04:21
+exit=0
+gate: passed 20:05:15 gpu=0%
+--- old hr 20:05:15
+exit=0
+gate: passed 20:06:24 gpu=0%
+--- new lr 20:06:24
+exit=0
+gate: passed 20:07:08 gpu=0%
+--- old lr 20:07:08
+exit=0
+gate: passed 20:07:57 gpu=0%
+--- old tex 20:07:57
+exit=0
+gate: passed 20:09:10 gpu=0%
+--- new tex 20:09:10
+exit=0
+gate: passed 20:10:15 gpu=0%
+--- old hr 20:10:15
+exit=0
+gate: passed 20:11:24 gpu=0%
+--- new hr 20:11:24
+exit=0
+gate: passed 20:12:20 gpu=0%
+--- old lr 20:12:20
+exit=0
+gate: passed 20:13:12 gpu=0%
+--- new lr 20:13:12
+exit=0
+P2 DONE Sun Sep 20 20:13:17 JST 2026
+P2NUM START Sun Sep 20 20:13:17 JST 2026
+gate: passed 20:14:03 gpu=0%
+num new tex exit=0
+gate: waiting (20:14:23) gpu=0% others=0
+gate: passed 20:15:03 gpu=0%
+num old tex exit=0
+gate: waiting (20:15:35) gpu=0% others=0
+gate: passed 20:16:17 gpu=0%
+num new hr exit=0
+gate: waiting (20:16:32) gpu=0% others=0
+gate: passed 20:17:19 gpu=0%
+num old hr exit=0
+gate: waiting (20:17:47) gpu=0% others=0
+gate: passed 20:18:35 gpu=0%
+num new lr exit=0
+gate: passed 20:19:14 gpu=0%
+num old lr exit=0
+tex global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.933e+01 finite=True
+tex proj   shape=(17489, 2048) max|d|=1.917e-03 mean|d|=1.905e-05 L2rel=4.069e-05 cos=1.00000000 refmax=2.432e+01 finite=True
+hr  global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.933e+01 finite=True
+hr  proj   shape=(17489, 2048) max|d|=2.052e-03 mean|d|=1.838e-05 L2rel=3.915e-05 cos=1.00000000 refmax=2.432e+01 finite=True
+lr  global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.934e+01 finite=True
+lr  proj   shape=(3872, 2048) max|d|=3.153e-03 mean|d|=1.859e-05 L2rel=4.386e-05 cos=1.00000000 refmax=2.430e+01 finite=True
+P2NUM DONE Sun Sep 20 20:19:24 JST 2026
+docs/results/2026-09-20-metal-groupnorm/scripts/ab_gn2.sh:68: command not found: one
+tex global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.933e+01 finite=True
+tex proj   shape=(17489, 2048) max|d|=1.917e-03 mean|d|=1.905e-05 L2rel=4.069e-05 cos=1.00000000 refmax=2.432e+01 finite=True
+hr  global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.933e+01 finite=True
+hr  proj   shape=(17489, 2048) max|d|=2.052e-03 mean|d|=1.838e-05 L2rel=3.915e-05 cos=1.00000000 refmax=2.432e+01 finite=True
+lr  global shape=(5, 1024) max|d|=0.000e+00 mean|d|=0.000e+00 L2rel=0.000e+00 cos=1.00000000 refmax=2.934e+01 finite=True
+lr  proj   shape=(3872, 2048) max|d|=3.153e-03 mean|d|=1.859e-05 L2rel=4.386e-05 cos=1.00000000 refmax=2.430e+01 finite=True
+P2NUM DONE Sun Sep 20 20:19:24 JST 2026

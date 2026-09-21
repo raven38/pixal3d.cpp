@@ -123,8 +123,9 @@ struct NafGgmlOpts {
     // reduction order differs, so outputs are not bit-identical (Metal: L2rel ~1e-4 vs native).
     bool generic_lowering = false;
     // GroupNorm only (the norm-over-reshape re-expression above), reflect pad and pool stay native.
-    // Diagnostic (--naf-ops --naf-generic-gn) to attribute the generic_lowering speed-up to the
-    // GroupNorm op alone; naf_ggml_opts_for() leaves it false.
+    // naf_ggml_opts_for() sets it on Metal, where ggml-metal's GROUP_NORM kernel runs 32 threads
+    // per group (453 ms/op on [1024,1024,128] vs 8 ms for the re-expression; issue #55). Also the
+    // --naf-ops --naf-generic-gn diagnostic; --naf-native-gn (g_naf_native_gn) forces it off for A/B.
     bool generic_groupnorm = false;
     // ggml_conv_2d_direct (f32 activations, no [K*K*Ci, W*H] im2col buffer) instead
     // of ggml_conv_2d (im2col in the weight dtype + mul_mat).
