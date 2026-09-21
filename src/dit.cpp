@@ -330,12 +330,12 @@ static T* self_attn(ggml_context* c, const Model& m, const std::string& pre, T* 
 }
 
 static T* cross_attn(ggml_context* c, const Model& m, const std::string& pre, T* h, T* cond,
-                     const DiTParams& p, T* mask = nullptr) {
+                     const DiTParams& p, T* mask = nullptr, T* cached_kv = nullptr) {
     const int hd = p.head_dim, nh = p.n_heads;
     const int64_t L = h->ne[1], Lc = cond->ne[1];
     T* q = lin(c, m, pre + ".to_q", h);
     q = ggml_reshape_3d(c, q, hd, nh, L);
-    T* kv = lin(c, m, pre + ".to_kv", cond);                    // [2*d_model, Lc]
+    T* kv = cached_kv ? cached_kv : lin(c, m, pre + ".to_kv", cond); // [2*d_model, Lc]
     kv = ggml_reshape_4d(c, kv, hd, nh, 2, Lc);
     auto pick = [&](int s) {
         T* t = ggml_view_4d(c, kv, hd, nh, 1, Lc, kv->nb[1], kv->nb[2], kv->nb[3], s * kv->nb[2]);
@@ -354,7 +354,8 @@ static T* modulate(ggml_context* c, T* x, T* scale, T* shift) {
 
 static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
                 T* cos, T* sin, const DiTParams& p, std::map<std::string, T*>* inter = nullptr,
-                T* self_mask = nullptr, T* cross_mask = nullptr, T* proj = nullptr) {
+                T* self_mask = nullptr, T* cross_mask = nullptr, T* proj = nullptr,
+                T* cross_kv_cache = nullptr) {
     const std::string b = "blocks." + std::to_string(i);
     const int dm = p.d_model;
     // Block 0 keeps the historical "blk0_*" names; block 15 is exposed too as a mid-depth probe.
@@ -385,7 +386,14 @@ static T* block(ggml_context* c, const Model& m, int i, T* h, T* mod, T* cond,
     // Pixal3D ProjectAttention: the ordinary cross-attn weights move one level deeper
     // (blocks.N.cross_attn.cross_attn_block.*) alongside a sibling proj_linear.
     const std::string cross_pre = p.proj_attn ? (b + ".cross_attn.cross_attn_block") : (b + ".cross_attn");
-    T* global_out = cross_attn(c, m, cross_pre, hh, cond, p, cross_mask);
+    T* cached_kv = nullptr;
+    if (cross_kv_cache) {
+        // cross_kv_cache is contiguous [2*d_model, Lc, n_blocks].  A 2D view avoids
+        // copying the tiny (Pixal3D: Lc=5) per-block slice into the main graph.
+        cached_kv = ggml_view_2d(c, cross_kv_cache, 2 * dm, cond->ne[1],
+                                 cross_kv_cache->nb[1], (size_t)i * cross_kv_cache->nb[2]);
+    }
+    T* global_out = cross_attn(c, m, cross_pre, hh, cond, p, cross_mask, cached_kv);
     dbg("blk0_global_out", global_out);
     hh = global_out;
     if (p.proj_attn && proj) {
@@ -418,9 +426,23 @@ ggml_tensor* dit_rope(ggml_context* gctx, ggml_tensor* x, ggml_tensor* cos, ggml
     return apply_rope(gctx, x, cos, sin);
 }
 
+ggml_tensor* build_dit_cross_kv_cache(ggml_context* c, const Model& m, const DiTParams& p, T* cond) {
+    g_cast_f32 = p.cast_f32;
+    T* out = nullptr;
+    for (int i = 0; i < p.n_blocks; ++i) {
+        const std::string b = "blocks." + std::to_string(i);
+        const std::string cross_pre = p.proj_attn ? (b + ".cross_attn.cross_attn_block")
+                                                   : (b + ".cross_attn");
+        T* kv = lin(c, m, cross_pre + ".to_kv", cond);          // [2*d_model, Lc]
+        kv = ggml_reshape_3d(c, kv, 2 * p.d_model, cond->ne[1], 1);
+        out = out ? ggml_concat(c, out, kv, 2) : kv;
+    }
+    return out;                                                  // [2*d_model, Lc, n_blocks]
+}
+
 ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p,
                              T* h0, T* tfreq, T* cond, T* cos, T* sin,
-                             std::map<std::string, T*>* inter, T* proj) {
+                             std::map<std::string, T*>* inter, T* proj, T* cross_kv_cache) {
     g_cast_f32 = p.cast_f32;
     auto keep = [&](const char* n, T* t) { if (inter) (*inter)[n] = t; ggml_set_name(t, n); return t; };
 
@@ -439,7 +461,8 @@ ggml_tensor* build_dit_dense(ggml_context* c, const Model& m, const DiTParams& p
     T* self_mask  = build_pad_mask(c, h0->ne[1], h0->ne[1]);
     T* cross_mask = build_pad_mask(c, cond->ne[1], h0->ne[1]);
     for (int i = 0; i < p.n_blocks; ++i) {
-        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask, proj);
+        h = block(c, m, i, h, mod, cond, cos, sin, p, inter, self_mask, cross_mask, proj,
+                  cross_kv_cache);
         keep(("after_block" + std::to_string(i)).c_str(), h);
     }
     h = layernorm(c, h, p.final_ln_eps);
