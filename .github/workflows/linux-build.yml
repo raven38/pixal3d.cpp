@@ -81,6 +81,9 @@ jobs:
         # 重みが要るので実行はしない（ビルドが通ることだけを見る）。
         run: cmake --build build -j "$(nproc)" -- -k 0
 
+      - name: Run the C++ TRELLIS.2 multi-image sampler oracle
+        run: ./build/trellis-test-trellis2-mv-sampler
+
       # canonical rig の契約（合成結果が同梱 transforms.json とビット一致・異常系が
       # fail closed・自然順）と、権限/走査エラーの扱いを Linux で実際に動かす。
       - name: Run the weightless canonical-rig test
