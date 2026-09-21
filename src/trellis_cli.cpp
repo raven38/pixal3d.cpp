@@ -893,11 +893,12 @@ int trellis_run(const trellis::TrellisParams& cfg) {
 
     auto sample_bank = [&](const trellis::FlowFwd& fwd, vector<float> state,
                            const vector<vector<float>>& bank, const vector<float>& negative,
-                           const trellis::SamplerParams& sp) {
+                           const trellis::SamplerParams& sp, int* stochastic_counter = nullptr) {
         if (!t2mv) return trellis::sample_flow(fwd, std::move(state), bank[0].data(), negative.data(), sp);
         vector<const float*> ptrs; ptrs.reserve(bank.size());
         for (const auto& c : bank) ptrs.push_back(c.data());
-        return trellis::sample_flow_multi(fwd, std::move(state), ptrs, negative.data(), sp, t2mv_mode);
+        return trellis::sample_flow_multi(fwd, std::move(state), ptrs, negative.data(), sp,
+                                          t2mv_mode, nullptr, stochastic_counter);
     };
 
     printf("[3/6] sparse-structure flow + decode\n");
@@ -923,6 +924,10 @@ int trellis_run(const trellis::TrellisParams& cfg) {
 
     const bool do_tex = cfg.texture;
 
+    // PR #104 wraps the whole cascade (LR + HR) in ONE shape-sampler injection.
+    // Therefore stochastic mode carries its view counter across the two 12-step calls.
+    // This only changes the HR starting view when V does not divide 12 (e.g. 5/7/8).
+    int shape_stochastic_counter = 0;
     // one shape SLAT flow run -> normalized [32,n] (sparse, CFG 7.5, gi[0.6,1], rescale_t 3)
     auto shape_flow = [&](const std::string& path, const vector<std::array<int,3>>& cds,
                           const vector<vector<float>>& bank, const vector<float>& ncnd, int lc) {
@@ -932,7 +937,9 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         trellis::DitRunner* run = trellis::make_sparse_runner(m, p, cds, lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
         trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gsh; sp.guidance_rescale=0.5f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=3.0f;
-        vector<float> sn = sample_bank(fwd, noise((size_t)32*n), bank, ncnd, sp);   // [32,n]
+        vector<float> sn = sample_bank(fwd, noise((size_t)32*n), bank, ncnd, sp,
+                                             t2mv_mode == trellis::MultiCondMode::Stochastic
+                                                 ? &shape_stochastic_counter : nullptr);   // [32,n]
         delete run; m.free();
         return sn;
     };
