@@ -4,6 +4,20 @@ Desktop app (Tauri v2) for local image→3D generation with [trellis.cpp](../). 
 
 For end users: see [`docs/getting-started.md`](../docs/getting-started.md).
 
+## TRELLIS.2 multiview
+
+Studio has an explicit **TRELLIS.2 · multiview** mode, separate from Pixal3D MV:
+
+- select/reorder 2–8 images of the same object
+- choose `stochastic` or `multidiffusion` fusion
+- choose 512 / 1024 cascade / 1536 cascade, seed, background removal and UV mode
+- no camera metadata, FOV or mesh scale is requested
+- results use the common viewer, auto-save path and gallery; history records persist
+  the view count and fusion mode
+
+The server remains the authority for the 2–8 image limit and rejects camera-specific
+fields on `/generate-trellis2-mv`.
+
 ## Pixal3D multiview
 
 Studio exposes the Pixal3D multiview pipeline through `/generate-mv`:
@@ -27,7 +41,7 @@ Release gates and the exact support matrix are tracked in [`docs/PIXAL3D_RELEASE
 
 ```text
 src/              Vite + TypeScript UI
-  api.ts          POST /generate + /generate-mv, GET /health
+  api.ts          /generate + /generate-trellis2-mv + Pixal3D endpoints, GET /health
   viewer.ts       <model-viewer> wrapper
   store.ts        IndexedDB gallery
   config.ts       server host/port/model config
@@ -71,4 +85,4 @@ npm run tauri build
 
 Version metadata (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`) carries the numeric version only (`0.10.0`); the `-desktop-alpha` prerelease marker lives in the git tag because Tauri's Windows bundler rejects prerelease identifiers. Keep the five files in agreement before tagging (see `docs/PIXAL3D_RELEASE_CHECKLIST.md`).
 
-Studio modes (0.10.0): **TRELLIS.2** (single image, unchanged from 0.9.0), **Pixal3D single view** (one pre-matted RGBA image + FOV → `POST /generate-sv`, needs the SV model set: `modelsDirSv` in the config / "SV models directory" in Settings) and **Pixal3D multi-view** (`transforms.json` + images, or the canonical 4-view turntable rig without `transforms.json`). Generate availability follows `GET /capabilities`; **Stop waiting** only stops this window's wait — the server finishes the generation, and Generate returns once the server reports `busy=false` with an increased `completed` counter.
+Studio modes: **TRELLIS.2** (single image, unchanged from 0.9.0), **TRELLIS.2 multiview** (2–8 pose-free images, stochastic or multidiffusion fusion via `POST /generate-trellis2-mv`), **Pixal3D single view** (one pre-matted RGBA image + FOV → `POST /generate-sv`, needs the SV model set: `modelsDirSv` in the config / "SV models directory" in Settings) and **Pixal3D multi-view** (`transforms.json` + images, or the canonical 4-view turntable rig without `transforms.json`). Generate availability follows `GET /capabilities`; **Stop waiting** only stops this window's wait — the server finishes the generation, and Generate returns once the server reports `busy=false` with an increased `completed` counter.
