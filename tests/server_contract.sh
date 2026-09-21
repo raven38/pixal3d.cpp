@@ -78,7 +78,8 @@ C="$(cap)"
 [ "$(jq_py "$C" '"missing model file" in d["mv"]["reason"]')" = "True" ] && pass "mv reason names the missing file" || fail "mv reason: $C"
 [ "$(jq_py "$C" 'd["sv"]["model_set"] == "pixal3d-sv-q8_0" and d["sv"]["model_family"] == "sv"')" = "True" ] && pass "sv identity is read from the manifest" || fail "sv identity: $C"
 [ "$(jq_py "$C" 'd["busy"] is False and d["completed"] == 0')" = "True" ] && pass "idle: busy=false completed=0" || fail "idle state: $C"
-[ "$(jq_py "$C" 'd.get("trellis2_mv",{}).get("available") is True and d["trellis2_mv"]["max_images"] == 8')" = "True" ] && pass "trellis2_mv capability advertised" || fail "trellis2_mv capability: $C"
+[ "$(jq_py "$C" 'd.get("trellis2_mv",{}).get("available") is False and d["trellis2_mv"]["max_images"] == 8')" = "True" ] && pass "trellis2_mv capability reports missing TRELLIS.2 flows" || fail "trellis2_mv capability: $C"
+[ "$(jq_py "$C" '"missing TRELLIS.2 model file" in d["trellis2_mv"].get("reason","")')" = "True" ] && pass "trellis2_mv capability names the missing model file" || fail "trellis2_mv reason: $C"
 
 expect_status "generate-sv without an available SV set -> 503" 503 -X POST "$U/generate-sv" -F "image=@$IMG"
 expect_status "generate-sv unknown field -> 400"             400 -X POST "$U/generate-sv" -F "image=@$IMG" -F "band=2"
@@ -102,6 +103,7 @@ expect_status "trellis2-mv invalid fusion -> 400"               400 -X POST "$U/
 expect_status "trellis2-mv sparse image indices -> 400"         400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image2=@$IMG"
 expect_status "trellis2-mv rejects mesh_scale -> 400"           400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "mesh_scale=1"
 expect_status "trellis2-mv seed=abc -> 400"                     400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "seed=abc"
+expect_status "trellis2-mv valid input but no TRELLIS.2 set -> 503" 503 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG"
 expect_status "generate-mv seed=abc -> 400 (was silently 0)" 400 -X POST "$U/generate-mv" -F "view0=@$IMG" -F "mesh_scale=1" -F "seed=abc"
 expect_status "generate seed=abc -> 400 (was silently 0)"    400 -X POST "$U/generate" -F "image=@$IMG" -F "seed=abc"
 
