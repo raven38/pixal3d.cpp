@@ -12,6 +12,7 @@ on:
       - 'include/**'
       - 'CMakeLists.txt'
       - 'thirdparty/**'
+      - 'patches/ggml-cuda/**'
       - '.gitmodules'
       - 'install/generate.sh'
       - 'install/test_natural_order.sh'
@@ -28,6 +29,7 @@ on:
       - 'include/**'
       - 'CMakeLists.txt'
       - 'thirdparty/**'
+      - 'patches/ggml-cuda/**'
       - '.gitmodules'
       - 'install/generate.sh'
       - 'install/test_natural_order.sh'
@@ -44,6 +46,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+
+  cuda-compile:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    container:
+      image: nvidia/cuda:12.8.1-devel-ubuntu22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        async_y: [OFF, ON]
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git ca-certificates cmake ninja-build g++ pkg-config
+          rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CUDA sm80
+        run: |
+          cmake -B build-cuda-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_CUDA=ON \
+            -DGGML_BLAS=OFF \
+            -DTRELLIS_WEBP=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES=80 \
+            -DPIXAL3D_CUDA_Q8_ASYNC_Y=${{ matrix.async_y }}
+          nvcc --version
+
+      - name: Compile ggml-cuda and DiT bench
+        run: |
+          cmake --build build-cuda-ci --target ggml-cuda trellis-test-dit-bench -j 2
+
   linux-cpu:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
