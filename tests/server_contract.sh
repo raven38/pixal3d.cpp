@@ -115,6 +115,7 @@ expect_status "trellis2-mv one image -> 400"                    400 -X POST "$U/
 expect_status "trellis2-mv nine images -> 400"                  400 -X POST "$U/generate-trellis2-mv" -F "num_images=9"
 expect_status "trellis2-mv invalid fusion -> 400"               400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "fusion=wat" -F "image0=@$IMG" -F "image1=@$IMG"
 expect_status "trellis2-mv sparse image indices -> 400"         400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image2=@$IMG"
+expect_status "trellis2-mv duplicate image0 part -> 400"        400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image0=@$IMG" -F "image1=@$IMG"
 expect_status "trellis2-mv rejects mesh_scale -> 400"           400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "mesh_scale=1"
 expect_status "trellis2-mv seed=abc -> 400"                     400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "seed=abc"
 expect_status "trellis2-mv valid input but no TRELLIS.2 set -> 503" 503 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG"

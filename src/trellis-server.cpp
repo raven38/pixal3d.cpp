@@ -539,8 +539,16 @@ int main(int argc, char** argv) {
         }
 
         // Whitelist all multipart fields. imageN must be contiguous 0..num_images-1.
+        // req.files is a multimap: a repeated field name (e.g. two "image0" parts) would
+        // otherwise let get_file_value() silently pick one and drop the other, which is
+        // exactly the "duplicate indices" case issue #66's validation section calls out
+        // for rejection, so reject it here instead of staging only the first upload.
         for (const auto& kv : req.files) {
             const std::string& k = kv.first;
+            if (req.files.count(k) > 1) {
+                set_error(res, 400, "duplicate multipart field: " + k);
+                return;
+            }
             bool ok = k == "num_images" || k == "fusion" || k == "seed" ||
                       k == "resolution" || k == "uv" || k == "band" ||
                       k == "webp" || k == "bg_removal";
