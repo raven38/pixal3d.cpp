@@ -43,6 +43,7 @@ export async function capabilities(timeoutMs = 2000): Promise<Capabilities | nul
       completed: typeof j.completed === "number" ? j.completed : 0,
       mv: j.mv,
       sv: j.sv,
+      ...(j.trellis2_mv ? { trellis2_mv: j.trellis2_mv } : {}),
     };
   } catch {
     return null;
@@ -224,6 +225,38 @@ export async function generateMultiview(
   const res = await fetch(`${await base()}/generate-mv`, {
     method: "POST",
     body: toMultiviewForm(transforms, views, params),
+    signal,
+  });
+  return parseGenerateResponse(res);
+}
+
+
+export type Trellis2MvFusion = "stochastic" | "multidiffusion";
+
+export interface Trellis2MultiviewParams extends GenParams {
+  fusion: Trellis2MvFusion;
+}
+
+/** TRELLIS.2 pose-free multi-image generation (#58/#66). */
+export async function generateTrellis2Multiview(
+  images: Blob[],
+  params: Trellis2MultiviewParams,
+  signal?: AbortSignal,
+): Promise<GenerateResult> {
+  if (images.length < 2 || images.length > 8) {
+    throw new Error("TRELLIS.2 multiview requires 2 to 8 images");
+  }
+  const fd = new FormData();
+  fd.append("num_images", String(images.length));
+  fd.append("fusion", params.fusion);
+  fd.append("seed", String(params.seed));
+  fd.append("resolution", String(params.resolution));
+  fd.append("uv", params.uv);
+  if (params.bgRemoval !== "auto") fd.append("bg_removal", params.bgRemoval);
+  images.forEach((image, i) => fd.append(`image${i}`, image, `view${String(i).padStart(2, "0")}.png`));
+  const res = await fetch(`${await base()}/generate-trellis2-mv`, {
+    method: "POST",
+    body: fd,
     signal,
   });
   return parseGenerateResponse(res);
