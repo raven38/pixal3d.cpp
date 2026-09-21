@@ -293,7 +293,8 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
         if (!proj) throw std::runtime_error("DitRunner: proj_attn model requires a proj tensor");
         if (use_proj_q8_cache_) {
             ggml_tensor* packed = proj_q8_for(proj);
-            ggml_backend_tensor_copy_async(m_.backend, m_.backend, packed, gproj_);
+            if (!ggml_backend_tensor_copy_async(m_.backend, m_.backend, packed, gproj_))
+                throw std::runtime_error("DitRunner: proj Q8 device copy failed");
         } else {
             ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
         }
@@ -327,7 +328,8 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
             if (gproj_) {
                 if (use_proj_q8_cache_) {
                     ggml_tensor* packed = proj_q8_for(proj);
-                    ggml_backend_tensor_copy_async(m_.backend, m_.backend, packed, gproj_);
+                    if (!ggml_backend_tensor_copy_async(m_.backend, m_.backend, packed, gproj_))
+                        throw std::runtime_error("DitRunner: proj Q8 device copy failed");
                 } else {
                     ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
                 }
