@@ -402,6 +402,17 @@ std::vector<double> flow_t_schedule(int steps, double rescale_t) {
     return ts;
 }
 
+SamplerParams ss_production_sampler_params(float guidance_strength) {
+    SamplerParams sp;
+    sp.steps = 12;
+    sp.guidance_strength = guidance_strength;
+    sp.guidance_rescale = 0.7f;
+    sp.gi0 = 0.6;
+    sp.gi1 = 1.0;
+    sp.rescale_t = 5.0;
+    return sp;
+}
+
 // Shared CFG-rescale math used by both sample_flow and sample_flow_multi (single source of truth
 // -- previously duplicated between the two samplers). `pos` is the raw positive prediction
 // (pre-CFG); `pred` is the CFG-mixed prediction, mutated in place to the rescaled value.

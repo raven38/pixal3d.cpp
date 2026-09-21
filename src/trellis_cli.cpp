@@ -373,7 +373,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] %s: not a Pixal3D checkpoint\n", W.ss.c_str()); return 1; }
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, c.n_global);
         trellis::FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* cn, const float* pj){ return run->forward(x, ts, cn, pj); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6; sp.gi1=1.0; sp.rescale_t=5.0;
+        trellis::SamplerParams sp = trellis::ss_production_sampler_params(cfg.gss);
         vector<float> z = trellis::sample_flow(fwd, noise(8*4096), c.global.data(), neg_g.data(), c.proj.data(), neg_p.data(), sp);
         delete run; m.free();
         cond_lap("flow (load + runner + sampler)");
@@ -908,7 +908,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         trellis::DiTParams p; p.in_ch = 8; p.out_ch = 8; p.d_cond = 1024; p.cast_f32 = F32;
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, Lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6; sp.gi1=1.0; sp.rescale_t=5.0;
+        trellis::SamplerParams sp = trellis::ss_production_sampler_params(cfg.gss);
         vector<float> z = sample_bank(fwd, noise(8*4096), cond_bank, neg, sp);  // [8,4096] ne0=8
         delete run; m.free();
         // transpose [8,L] -> torch [8,16,16,16] memory (c*4096 + sp)

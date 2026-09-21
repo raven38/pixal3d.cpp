@@ -178,11 +178,16 @@ static std::vector<float> make_deterministic_noise(int n) {
     for (int i = 0; i < n; ++i) v[i] = std::sin(0.017f * i + 0.3f) * 0.6f;
     return v;
 }
-// Production sparse_structure_sampler params (docs/spec/33-trellis2-mv-reference.md §3 in the old
-// track; this tree has not ported that catalog doc, values kept verbatim from it).
+// Production sparse_structure_sampler params. TASK-PORT F2 (verifier finding, 2026-09-21): this
+// used to duplicate the literals trellis_cli.cpp's SS blocks (trellis_run()/trellis_run_mv(),
+// ~:911/:376) hardcode, so "does the test match production" was a visual diff only. Both now
+// build from the single shared trellis::ss_production_sampler_params() (flow_runner.h/.cpp) --
+// if trellis_cli.cpp's SS SamplerParams ever drifts from it (or vice versa), that's a source
+// change in the shared function itself, not two literals silently diverging. `steps` stays
+// overridable here for test_view_reorder()'s reduced-step variant (production always runs 12).
 static SamplerParams ss_production_params(int steps = 12) {
-    SamplerParams sp; sp.steps = steps; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.7f;
-    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 5.0;
+    SamplerParams sp = trellis::ss_production_sampler_params();
+    sp.steps = steps;
     return sp;
 }
 
