@@ -299,6 +299,183 @@ static double compute_step0_clamp_ratio(const std::string& prefix, const Sampler
 }
 
 // =================================================================================================
+// §2.5: v3 fixture — 全12step の CFG parity + x_t chain + 最終SLat（TASK-STAGES-V3 S1+S2）。
+// docs/design/2026-09-21-trellis2-mv-stages-v3.md の設計・codex exec レビュー反映版。
+//
+// 前任の check_step0_cfg（sp.steps=1 トリック）は step0 にしか一般化できない
+// （flow_t_schedule は steps 引数から schedule を作り直すため、部分schedule では step i>0 の
+// t 値を再現できない）。代わりに sample_flow_multi を sp.steps=12・trace 付きで「1回だけ」
+// 呼び、native 自身の trace から CFG を逆算する（fixture x_t とは独立に、native の
+// 自己無矛盾性を検証する）。CFG/rescale/clamp は一切複製しない。
+// =================================================================================================
+namespace {
+
+// trellis_cli.cpp:53-54 の SHAPE_MEAN/SHAPE_STD と同一定数（複製方針は
+// test_pixal3d_slat_sample.cpp の前例に倣う）。最終SLatの非正規化 parity 専用 -- CLI の
+// denorm 実装そのものを exercise するテストではなく、素朴なアフィン変換での突合せ。
+const float SHAPE_MEAN[32] = {
+    0.781296f,0.018091f,-0.495192f,-0.558457f,1.060530f,0.093252f,1.518149f,-0.933218f,
+    -0.732996f,2.604095f,-0.118341f,-2.143904f,0.495076f,-2.179512f,-2.130751f,-0.996944f,
+    0.261421f,-2.217463f,1.260067f,-0.150213f,3.790713f,1.481266f,-1.046058f,-1.523667f,
+    -0.059621f,2.220780f,1.621212f,0.877230f,0.567247f,-3.175944f,-3.186688f,1.578665f };
+const float SHAPE_STD[32] = {
+    5.972266f,4.706852f,5.445010f,5.209927f,5.320220f,4.547237f,5.020802f,5.444004f,
+    5.226681f,5.683095f,4.831436f,5.286469f,5.652043f,5.367606f,5.525084f,4.730578f,
+    4.805265f,5.124013f,5.530808f,5.619001f,5.103930f,5.417670f,5.269677f,5.547194f,
+    5.634698f,5.235274f,6.110351f,5.511298f,6.237273f,4.879207f,5.347008f,5.405691f };
+
+struct FullTraj {
+    std::vector<float> sample0;
+    std::vector<std::vector<float>> trace;   // sp.steps entries, trace[i] = step i 実行後の sample
+};
+
+// base+"_step{0..steps-1}" の記録済み pos/neg を1本の ReplayModel にチェインし、
+// sample_flow_multi(sp.steps=steps, trace=&out.trace) を1回だけ呼ぶ。
+bool run_full_trajectory(const std::string& base, const SamplerParams& sp_full, int V,
+                         MultiCondMode mode, const std::string& noise_path, int N,
+                         int* counter, FullTraj& out, std::string& err) {
+    npy::Array noise;
+    if (!load_native32(noise_path, N, noise, err)) return false;
+    out.sample0 = noise.data;
+
+    ReplayModel rm;
+    for (int i = 0; i < sp_full.steps; ++i)
+        if (!build_replay_one_step(base + "_step" + std::to_string(i), N, rm, err)) return false;
+
+    auto negbuf = std::make_shared<std::vector<float>>(32, 0.0f);
+    auto condbufs = std::make_shared<std::vector<std::vector<float>>>(V, std::vector<float>(32, 0.0f));
+    std::vector<const float*> conds; conds.reserve(V);
+    for (auto& b : *condbufs) conds.push_back(b.data());
+    rm.neg_ptr = negbuf->data();
+    FlowFwd fwd = [&rm](const std::vector<float>& x, float t, const float* c) { return rm(x, t, c); };
+    try {
+        out.trace.clear();
+        std::vector<float> sample0copy = out.sample0;
+        sample_flow_multi(fwd, sample0copy, conds, negbuf->data(), sp_full, mode, &out.trace, counter);
+    } catch (const std::exception& e) {
+        err = std::string("sample_flow_multi(steps=") + std::to_string(sp_full.steps) + ") threw: " + e.what();
+        return false;
+    }
+    if ((int)out.trace.size() != sp_full.steps) { err = "trace size != sp.steps"; return false; }
+    if (rm.next != rm.tensors.size()) {
+        err = "not all replay tensors consumed (" + std::to_string(rm.next) + "/" +
+              std::to_string(rm.tensors.size()) + ")";
+        return false;
+    }
+    if (rm.mismatches != 0) { err = "pos/neg branch mismatch (" + std::to_string(rm.mismatches) + ")"; return false; }
+    return true;
+}
+
+// tag+": full-trajectory ..." の2本の主張（S2: x_t chain + 最終SLat、S1: CFG逆算）を検証する。
+// strict=true (parity gate, TRELLIS_NOFIX=1 前提) は hard assert、strict=false (production
+// gate) は clamp が既知no-op（v3 doc実測、全run最小ratio0.246）である前提で同じ閾値をそのまま
+// hard assertする -- ただし呼び出し元で ratio が0.2未満と分かった場合は info に落とす。
+bool check_full_trajectory(const std::string& tag, const std::string& base,
+                           const SamplerParams& sp_full, int V, MultiCondMode mode,
+                           const std::string& noise_path, int N, int* counter,
+                           const std::string& final_slat_path, bool hard_assert) {
+    std::string err;
+    FullTraj tr;
+    if (!run_full_trajectory(base, sp_full, V, mode, noise_path, N, counter, tr, err)) {
+        check(false, tag + ": full-trajectory replay (12 steps) succeeds (" + err + ")");
+        return false;
+    }
+    const std::vector<double> ts = flow_t_schedule(sp_full.steps, sp_full.rescale_t);
+
+    double s2_max_rel = 0.0, s1_max_rel = 0.0;
+    bool s2_ok = true, s1_ok = true;
+    for (int i = 0; i < sp_full.steps; ++i) {
+        // --- S2: trace[i] vs fixture x_t[i+1] (正規化空間), 最終stepのみ denorm して最終SLatと比較 ---
+        if (i < sp_full.steps - 1) {
+            std::string e2;
+            npy::Array xt;
+            const std::string p = base + "_step" + std::to_string(i + 1) + "_xt_feats.npy";
+            if (!load_native32(p, N, xt, e2)) { check(false, tag + ": " + e2); s2_ok = false; continue; }
+            double maxd = 0, gmax = 0;
+            for (size_t k = 0; k < xt.data.size(); ++k) {
+                const double d = std::fabs((double)tr.trace[i][k] - (double)xt.data[k]);
+                maxd = std::max(maxd, d); gmax = std::max(gmax, std::fabs((double)xt.data[k]));
+            }
+            s2_max_rel = std::max(s2_max_rel, maxd / std::max(gmax, 1e-12));
+        } else {
+            std::string e2;
+            npy::Array fs;
+            if (!load_native32(final_slat_path, N, fs, e2)) { check(false, tag + ": " + e2); s2_ok = false; continue; }
+            double maxd = 0, gmax = 0;
+            for (size_t k = 0; k < fs.data.size(); ++k) {
+                const int c = (int)(k % 32);
+                const double dn = (double)tr.trace[i][k] * SHAPE_STD[c] + SHAPE_MEAN[c];
+                const double d = std::fabs(dn - (double)fs.data[k]);
+                maxd = std::max(maxd, d); gmax = std::max(gmax, std::fabs((double)fs.data[k]));
+            }
+            s2_max_rel = std::max(s2_max_rel, maxd / std::max(gmax, 1e-12));
+        }
+        // --- S1: prev=(i==0?sample0:trace[i-1]), pred=(prev-trace[i])/dt[i] vs fixture cfg_output[i] ---
+        std::string e3;
+        npy::Array cfg;
+        const std::string cp = base + "_step" + std::to_string(i) + "_cfg.npy";
+        if (!load_native32(cp, N, cfg, e3)) { check(false, tag + ": " + e3); s1_ok = false; continue; }
+        const double dt = ts[(size_t)i] - ts[(size_t)i + 1];
+        const std::vector<float>& prev = (i == 0) ? tr.sample0 : tr.trace[(size_t)i - 1];
+        double maxd = 0, gmax = 0;
+        for (size_t k = 0; k < cfg.data.size(); ++k) {
+            const double pred = ((double)prev[k] - (double)tr.trace[i][k]) / dt;
+            const double d = std::fabs(pred - (double)cfg.data[k]);
+            maxd = std::max(maxd, d); gmax = std::max(gmax, std::fabs((double)cfg.data[k]));
+        }
+        s1_max_rel = std::max(s1_max_rel, maxd / std::max(gmax, 1e-12));
+    }
+
+    char s2buf[64], s1buf[64]; snprintf(s2buf, sizeof s2buf, "%.4e", s2_max_rel); snprintf(s1buf, sizeof s1buf, "%.4e", s1_max_rel);
+    const std::string s2msg = tag + ": full-trajectory x_t chain (steps 1-11) + denorm final SLat match fixture "
+        "(max rel over all 12 comparisons=" + std::string(s2buf) + ", N=" + std::to_string(N) + ")";
+    const std::string s1msg = tag + ": full-trajectory CFG reconstruction ((prev-trace[i])/dt[i]) matches fixture "
+        "cfg_output for all 12 steps (max rel=" + std::string(s1buf) + ")";
+    if (hard_assert) {
+        if (s2_ok) check(s2_max_rel < 1e-4, s2msg);
+        if (s1_ok) check(s1_max_rel < 1e-3, s1msg);
+    } else {
+        printf("%s %s [production gate, informational]\n", (s2_ok && s2_max_rel < 1e-4) ? "ok  " : "info", s2msg.c_str());
+        printf("%s %s [production gate, informational]\n", (s1_ok && s1_max_rel < 1e-3) ? "ok  " : "info", s1msg.c_str());
+    }
+    return s2_ok && s1_ok;
+}
+
+// S1 項目3: step8 (inside) の否定対照 + step9 (outside) の trivial 確認。fixture データのみの
+// 純算術（native 不要）。事前実測（設計ドキュメント§0.5）: 全18点（512x6+1024cascade x6xLR/HR）で
+// step8 rel 最小0.603、step9 rel は全点0.0。
+void check_step89_contrast(const std::string& tag, const std::string& base, bool multidiffusion) {
+    auto load_pair = [&](int step, double& rel) -> bool {
+        const std::string pos_path = base + "_step" + std::to_string(step) + (multidiffusion ? "_avg.npy" : "_pos0.npy");
+        const std::string cfg_path = base + "_step" + std::to_string(step) + "_cfg.npy";
+        std::string err; npy::Array pos, cfg;
+        if (!load_native32(pos_path, -1, pos, err) || !load_native32(cfg_path, (int)pos.shape[0], cfg, err)) return false;
+        double maxd = 0, gmax = 0;
+        for (size_t k = 0; k < cfg.data.size(); ++k) {
+            const double d = std::fabs((double)pos.data[k] - (double)cfg.data[k]);
+            maxd = std::max(maxd, d); gmax = std::max(gmax, std::fabs((double)cfg.data[k]));
+        }
+        rel = maxd / std::max(gmax, 1e-12);
+        return true;
+    };
+    double rel8 = 0.0, rel9 = 0.0;
+    if (load_pair(8, rel8)) {
+        char b[32]; snprintf(b, sizeof b, "%.4e", rel8);
+        check(rel8 > 0.1, tag + ": step8 (inside) cfg_output diverges from pos/avg -- 'outside' formula "
+              "pred=pos would NOT reproduce it (rel=" + std::string(b) + ", observed band >=0.603 across all runs)");
+    } else check(false, tag + ": step8 pos/avg + cfg files present for the negative contrast");
+    if (load_pair(9, rel9)) {
+        char b[32]; snprintf(b, sizeof b, "%.4e", rel9);
+        check(rel9 < 1e-12, tag + ": step9 (outside) cfg_output == pos/avg exactly (trivial, rel=" + std::string(b) + ")");
+    } else check(false, tag + ": step9 pos/avg + cfg files present for the trivial check");
+}
+
+} // namespace
+
+// run_full_trajectory_512 / _1024c（S1+S2 driver）は RUNS_512/RUNS_1024C/check_coords_rows
+// （§3で定義）を使うため、§3・run_512・run_1024c の後ろに定義する（前方参照回避）。
+
+// =================================================================================================
 // §3: fixture run table + driver
 // =================================================================================================
 namespace {
@@ -386,6 +563,67 @@ static int run_1024c(const std::string& fixture_root) {
     return ran;
 }
 
+// §2.5 の driver: v3 全12step の full-trajectory CFG/x_t/最終SLat 検証（S1+S2）。
+static int run_full_trajectory_512(const std::string& fixture_root, bool hard_assert) {
+    int ran = 0;
+    for (const auto& r : RUNS_512) {
+        const std::string dir = fixture_root + "/" + r.name;
+        const std::string tag = std::string(r.name) + " (V=" + std::to_string(r.V) + ", " +
+            (r.mode == MultiCondMode::Stochastic ? "stochastic" : "multidiffusion") + ")";
+        if (!fs::exists(dir)) { check(false, tag + ": fixture run directory present (" + dir + ")"); continue; }
+        const int N = check_coords_rows(tag, dir + "/ss_coords.npy");
+        if (N < 0) continue;
+        int counter = 0;
+        if (check_full_trajectory(tag, dir + "/shape", shape_production_params(), r.V, r.mode,
+                                  dir + "/noise_shape_0.npy", N, &counter, dir + "/shape_slat_feats.npy",
+                                  hard_assert)) {
+            ++ran;
+        }
+        if (hard_assert) check_step89_contrast(tag, dir + "/shape", r.mode == MultiCondMode::MultiDiffusion);
+    }
+    if (hard_assert) check(ran == 6, "all 6 shape-512 full-trajectory (12 step) fixture runs were present and checked (ran=" +
+          std::to_string(ran) + "/6)");
+    return ran;
+}
+
+static int run_full_trajectory_1024c(const std::string& fixture_root, bool hard_assert) {
+    int ran = 0;
+    for (const auto& r : RUNS_1024C) {
+        const std::string dir = fixture_root + "/" + r.name;
+        const std::string base_tag = std::string(r.name) + " (V=" + std::to_string(r.V) + ", " +
+            (r.mode == MultiCondMode::Stochastic ? "stochastic" : "multidiffusion") + ")";
+        if (!fs::exists(dir)) { check(false, base_tag + ": fixture run directory present (" + dir + ")"); continue; }
+
+        bool ok = true;
+        const int N_lr = check_coords_rows(base_tag + " LR", dir + "/ss_coords.npy");
+        ok &= (N_lr >= 0);
+        const int N_hr = check_coords_rows(base_tag + " HR", dir + "/shape_slat_coords.npy");
+        ok &= (N_hr >= 0);
+        if (!ok) continue;
+
+        // trellis_cli.cpp:927-942 と同じ配線: LR->HR で shape_stochastic_counter を共有する
+        // （PR #104 のカスケード全体1injectionの契約。継続しないと production の呼び出し順から
+        // ズレる -- 現行 V in {1,2,4} は12を割り切るので数値差は出ないが、配線契約として必須）。
+        int counter = 0;
+        const std::string tag_lr = base_tag + " LR";
+        const bool ok_lr = check_full_trajectory(tag_lr, dir + "/shape_lr", shape_production_params(), r.V, r.mode,
+                                                 dir + "/noise_shape_cascade_0.npy", N_lr, &counter,
+                                                 dir + "/shape_lr_final_slat_feats.npy", hard_assert);
+        if (hard_assert) check_step89_contrast(tag_lr, dir + "/shape_lr", r.mode == MultiCondMode::MultiDiffusion);
+
+        const std::string tag_hr = base_tag + " HR";
+        const bool ok_hr = check_full_trajectory(tag_hr, dir + "/shape_hr", shape_production_params(), r.V, r.mode,
+                                                 dir + "/noise_shape_cascade_1.npy", N_hr, &counter,
+                                                 dir + "/shape_slat_feats.npy", hard_assert);
+        if (hard_assert) check_step89_contrast(tag_hr, dir + "/shape_hr", r.mode == MultiCondMode::MultiDiffusion);
+
+        if (ok_lr && ok_hr) ++ran;
+    }
+    if (hard_assert) check(ran == 6, "all 6 shape-1024cascade full-trajectory (LR+HR, 12 step) fixture runs were "
+          "present and checked (ran=" + std::to_string(ran) + "/6)");
+    return ran;
+}
+
 // =================================================================================================
 // §4: LR->HR 共有 stochastic カウンタ配線の real-fixture-scale structural test。
 // 2026-09-21 差し戻し対応 (1) -- 設計ドキュメント「レビュー反映」2番・「検証項目」2番が約束した
@@ -465,10 +703,13 @@ static int run_parity_subprocess_mode(int argc, char** argv) {
     setenv("TRELLIS_NOFIX", "1", 1);
     const char* home = getenv("HOME");
     const std::string fixture_root = argc > 2 ? argv[2]
-        : (std::string(home ? home : "") + "/nfs/pixal3d_trellis2mv_ref_v2");
+        : (std::string(home ? home : "") + "/nfs/pixal3d_trellis2mv_ref_v3");
     printf("== parity (clamp off): shape step0 CFG vs pinned reference ==\n");
     run_512(fixture_root);
     run_1024c(fixture_root);
+    printf("== parity (clamp off): shape full-trajectory (12 step) CFG + x_t chain + 最終SLat (S1+S2) ==\n");
+    run_full_trajectory_512(fixture_root, /*hard_assert=*/true);
+    run_full_trajectory_1024c(fixture_root, /*hard_assert=*/true);
     printf(g_fail == 0 ? "\n[parity subprocess] ALL PASS\n" : "\n[parity subprocess] %d FAILURE(S)\n", g_fail);
     return g_fail == 0 ? 0 : 1;
 }
@@ -479,7 +720,7 @@ int main(int argc, char** argv) {
 
     const char* home = getenv("HOME");
     const std::string fixture_root = argc > 1 ? argv[1]
-        : (std::string(home ? home : "") + "/nfs/pixal3d_trellis2mv_ref_v2");
+        : (std::string(home ? home : "") + "/nfs/pixal3d_trellis2mv_ref_v3");
 
     test_quantize_backoff_synthetic();
     test_i8_boundary();
@@ -488,6 +729,9 @@ int main(int argc, char** argv) {
     printf("== production (clamp on, default settings): step0 CFG, informational + diagnostics ==\n");
     run_512(fixture_root);
     run_1024c(fixture_root);
+    printf("== production (clamp on, default settings): shape full-trajectory (12 step), informational ==\n");
+    run_full_trajectory_512(fixture_root, /*hard_assert=*/false);
+    run_full_trajectory_1024c(fixture_root, /*hard_assert=*/false);
 
     printf("== parity (clamp off): re-exec'ing self with TRELLIS_NOFIX forced internally ==\n");
     {
