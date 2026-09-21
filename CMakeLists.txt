@@ -363,6 +363,11 @@ add_executable(trellis-test-transforms-synth src/test_transforms_synth.cpp)
 target_link_libraries(trellis-test-transforms-synth PRIVATE trellis_core)
 set_target_properties(trellis-test-transforms-synth PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# TASK-PORT P5: list_view_images() coverage gaps not already covered by trellis-test-transforms-synth.
+add_executable(trellis-test-list-view-images src/test_list_view_images.cpp)
+target_link_libraries(trellis-test-list-view-images PRIVATE trellis_core)
+set_target_properties(trellis-test-list-view-images PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-ss-flow src/test_ss_flow.cpp)
 target_link_libraries(trellis-test-ss-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")

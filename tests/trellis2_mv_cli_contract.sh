@@ -5,9 +5,9 @@ set -euo pipefail
 CLI="${1:?usage: trellis2_mv_cli_contract.sh <trellis-cli>}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/views" "$WORK/one" "$WORK/models"
+mkdir -p "$WORK/views" "$WORK/one" "$WORK/eight" "$WORK/nine" "$WORK/models"
 
-python3 - "$WORK/views/view10.png" "$WORK/views/view2.png" "$WORK/one/only.png" <<'PY'
+python3 - "$WORK/views/view10.png" "$WORK/views/view2.png" "$WORK/one/only.png" "$WORK/eight" "$WORK/nine" <<'PY'
 import struct, sys, zlib
 def write(path, rgb):
     w=h=16
@@ -25,6 +25,11 @@ def write(path, rgb):
 write(sys.argv[1], (200,80,40))
 write(sys.argv[2], (40,180,90))
 write(sys.argv[3], (80,90,220))
+import os
+for i in range(8):
+    write(os.path.join(sys.argv[4], f"view{i}.png"), (10*i, 20*i % 256, 30*i % 256))
+for i in range(9):
+    write(os.path.join(sys.argv[5], f"view{i}.png"), (10*i, 20*i % 256, 30*i % 256))
 PY
 
 fail=0
@@ -74,6 +79,22 @@ if "$CLI" --trellis2-mv "$WORK/views" --views "$WORK/views" "$WORK/o.glb" >"$WOR
 elif grep -q 'mutually exclusive' "$WORK/conflict.log"; then
   ok "TRELLIS.2 MV and Pixal3D --views are separate modes"
 else bad "mode-conflict diagnostic changed"; fi
+
+# 2..8 upper-bound boundary (TASK-PORT P5): 8 images is the accepted maximum, 9 is rejected.
+# Exercises the real CLI (trellis_cli.cpp's `names.size() < 2 || names.size() > 8` gate), not a
+# reimplementation, so a regression in the production bound is caught here.
+if "$CLI" --trellis2-mv "$WORK/eight" --models "$WORK/models" --bg-only "$WORK/e.glb" >"$WORK/eight.log" 2>&1; then
+  ok "eight images (upper bound) is accepted"
+else
+  bad "eight-image directory was rejected: $(tail -20 "$WORK/eight.log")"
+fi
+if "$CLI" --trellis2-mv "$WORK/nine" --models "$WORK/models" --bg-only "$WORK/n.glb" >"$WORK/nine.log" 2>&1; then
+  bad "nine images (over the upper bound) was accepted"
+elif grep -q 'requires 2..8 images' "$WORK/nine.log"; then
+  ok "nine images (over the upper bound) fails closed"
+else
+  bad "nine-image error was not actionable: $(cat "$WORK/nine.log")"
+fi
 
 if [ "$fail" -eq 0 ]; then echo "TRELLIS2_MV_CLI_CONTRACT_OK"; exit 0; fi
 echo "TRELLIS2_MV_CLI_CONTRACT_FAIL ($fail)" >&2
