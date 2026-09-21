@@ -72,6 +72,34 @@ int main() {
         fwd, noise, one, &neg, sp, trellis::MultiCondMode::MultiDiffusion);
     check(close_vec(one_st, one_md, 2e-5f), "V=1 stochastic == multidiffusion");
 
+    // PR #104 cascade quirk/contract: one shape injection context spans LR + HR.
+    // With 12 steps and V=5, LR consumes indices 0..4,0..4,0,1 and HR starts at view2.
+    {
+        float v0=0.f, v1=1.f, v2=2.f, v3=3.f, v4=4.f;
+        vector<const float*> five = {&v0,&v1,&v2,&v3,&v4};
+        int calls[5] = {0,0,0,0,0};
+        int counter = 0;
+        trellis::SamplerParams cp = sp;
+        cp.steps = 12;
+        cp.guidance_strength = 1.0f;
+        cp.guidance_rescale = 0.0f;
+        auto count_fwd = [&](const vector<float>& x, float, const float* c) {
+            const float* vv[5] = {&v0,&v1,&v2,&v3,&v4};
+            for (int q=0;q<5;++q) if (c==vv[q]) calls[q]++;
+            return vector<float>(x.size(), 0.0f);
+        };
+        (void)trellis::sample_flow_multi(count_fwd, noise, five, &neg, cp,
+                                          trellis::MultiCondMode::Stochastic, nullptr, &counter);
+        check(counter == 12, "shared stochastic counter advances by LR step count");
+        int before[5]; for(int q=0;q<5;++q) before[q]=calls[q];
+        (void)trellis::sample_flow_multi(count_fwd, noise, five, &neg, cp,
+                                          trellis::MultiCondMode::Stochastic, nullptr, &counter);
+        check(counter == 24, "shared stochastic counter advances through HR");
+        check(calls[2] == before[2] + 3, "HR starts at view2 for V=5 after 12 LR steps");
+        check(calls[0] == before[0] + 2 && calls[1] == before[1] + 2,
+              "HR shared schedule wraps after starting at view2");
+    }
+
     // PR #104 quirk: multidiffusion still does one negative forward at gs=1;
     // stochastic delegates to the existing CFG mixin semantics and skips it.
     sp.guidance_strength = 1.0f;
