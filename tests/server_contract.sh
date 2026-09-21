@@ -9,6 +9,7 @@
 #     ファイル欠損・サイズ不一致・family 取り違え）と busy / completed
 #   - POST /generate-sv: whitelist、strict な数値、PNG のみ、1024 のみ、SV 未導入は 503
 #   - POST /generate-mv: seed=abc が 400 になる（0.10.0 の挙動変更。以前は黙って 0）
+#   - POST /generate-trellis2-mv: 2..8 image contract / fusion / camera-field separation
 #   - 生成が走ると busy=true → 終了で busy=false かつ completed が 1 増える
 #     （manifest どおりのサイズの sparse ファイルを置いて available=true にし、
 #      GGUF ロードで失敗させる。500 で返り、それでも completed は増えること）
@@ -77,6 +78,7 @@ C="$(cap)"
 [ "$(jq_py "$C" '"missing model file" in d["mv"]["reason"]')" = "True" ] && pass "mv reason names the missing file" || fail "mv reason: $C"
 [ "$(jq_py "$C" 'd["sv"]["model_set"] == "pixal3d-sv-q8_0" and d["sv"]["model_family"] == "sv"')" = "True" ] && pass "sv identity is read from the manifest" || fail "sv identity: $C"
 [ "$(jq_py "$C" 'd["busy"] is False and d["completed"] == 0')" = "True" ] && pass "idle: busy=false completed=0" || fail "idle state: $C"
+[ "$(jq_py "$C" 'd.get("trellis2_mv",{}).get("available") is True and d["trellis2_mv"]["max_images"] == 8')" = "True" ] && pass "trellis2_mv capability advertised" || fail "trellis2_mv capability: $C"
 
 expect_status "generate-sv without an available SV set -> 503" 503 -X POST "$U/generate-sv" -F "image=@$IMG"
 expect_status "generate-sv unknown field -> 400"             400 -X POST "$U/generate-sv" -F "image=@$IMG" -F "band=2"
@@ -93,6 +95,13 @@ expect_status "generate-sv seed=4294967296 -> 400"           400 -X POST "$U/gen
 expect_status "generate-sv uv=typo -> 400"                   400 -X POST "$U/generate-sv" -F "image=@$IMG" -F "uv=typo"
 expect_status "generate-sv non-PNG -> 400"                   400 -X POST "$U/generate-sv" -F "image=@$ROOT/CMakeLists.txt"
 expect_status "generate-sv missing image -> 400"             400 -X POST "$U/generate-sv" -F "fov=0.5"
+expect_status "trellis2-mv missing num_images -> 400"          400 -X POST "$U/generate-trellis2-mv" -F "image0=@$IMG" -F "image1=@$IMG"
+expect_status "trellis2-mv one image -> 400"                    400 -X POST "$U/generate-trellis2-mv" -F "num_images=1" -F "image0=@$IMG"
+expect_status "trellis2-mv nine images -> 400"                  400 -X POST "$U/generate-trellis2-mv" -F "num_images=9"
+expect_status "trellis2-mv invalid fusion -> 400"               400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "fusion=wat" -F "image0=@$IMG" -F "image1=@$IMG"
+expect_status "trellis2-mv sparse image indices -> 400"         400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image2=@$IMG"
+expect_status "trellis2-mv rejects mesh_scale -> 400"           400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "mesh_scale=1"
+expect_status "trellis2-mv seed=abc -> 400"                     400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "seed=abc"
 expect_status "generate-mv seed=abc -> 400 (was silently 0)" 400 -X POST "$U/generate-mv" -F "view0=@$IMG" -F "mesh_scale=1" -F "seed=abc"
 expect_status "generate seed=abc -> 400 (was silently 0)"    400 -X POST "$U/generate" -F "image=@$IMG" -F "seed=abc"
 
