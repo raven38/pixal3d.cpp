@@ -1,0 +1,20 @@
+== 18:44:47 before n1 rerun gpu_util=0 load= 4.95 4.84 6.16 
+  PID  %CPU     ELAPSED ARGS
+  953  90.3 03-09:14:14 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+72069  84.1       00:09 /Library/Apple/System/Library/CoreServices/XProtect.app/Contents/MacOS/XProtectRemediatorSnowBeagle 794A38A2-8597-4E
+  523   8.8 03-09:15:37 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 6182   3.9 03-09:06:44 claude --resume e5905586-eccc-45c3-95a3-c8c62e4e8041
+ 2085   3.5 03-09:13:42 /Users/<redacted-user>/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+90749   3.3 03-01:41:01 claude
+ 6222   3.1 03-09:06:44 claude --resume d2d9b1b4-5da4-40a3-937c-1d3119f2d87a
+-- trellis:
+== 18:44:53 after n1 rerun gpu_util=97 load= 4.81 4.81 6.13 
+  PID  %CPU     ELAPSED ARGS
+  953  92.1 03-09:14:20 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+72654  63.0       00:02 /Library/Apple/System/Library/CoreServices/XProtect.app/Contents/MacOS/XProtectRemediatorColdSnap 73540695-40A3-46E9
+  418  32.9 03-09:15:44 /usr/libexec/trustd
+  970   5.4 03-09:14:20 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  465   4.6 03-09:15:43 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  338   2.9 03-09:15:44 /usr/libexec/smd
+90749   2.5 03-01:41:07 claude
+-- trellis:

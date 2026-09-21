@@ -1,0 +1,69 @@
+--------------------------------------------------------------------------
+docs/results/2026-09-20-metal-groupnorm/e2e/old.glb
+--------------------------------------------------------------------------
+meshes: 1  triangle primitives: 1
+GEOMETRY
+  vertices: 666366   faces: 960030
+  components (index-based): 23117   top-5 sizes (faces): [48272, 38484, 24452, 24122, 12094]
+  boundary edges: 347692   non-manifold edges: 0
+  winding consistency: 100.00% (over 1266199 mult-2 edges)
+  watertight (index-based): no
+  welded (by position): 478379 verts, boundary 0, non-manifold 1568, watertight no
+  bbox min: [-0.3782, -0.4228, -0.4914]  max: [0.3784, 0.4228, 0.4922]
+  principal extents: [1.108, 1.053, 0.7565]
+UV/ATLAS
+  atlas (baseColor): 4096x4096  format=WebP  mime=image/webp
+  uv bbox: [0, 0] .. [0.9996, 0.9996]
+  chart estimate (uv-space components): 23062
+  texel density texels^2/unit^2 (T=4096): mean 1.603e+06  p5 1.422e+06  p50 1.46e+06  p95 1.995e+06  CV 0.933
+  zero-UV-area faces: 0.14%
+MATERIAL
+  material[0]: doubleSided=False  metallicFactor=1  roughnessFactor=1
+  texture[0]: format=WebP  mime=image/webp  4096x4096
+  texture[1]: format=WebP  mime=image/webp  4096x4096
+  metallicRoughness channels (64px sample): R constant (mean 0.0)  G var 0.00  B var 0.00
+
+--------------------------------------------------------------------------
+docs/results/2026-09-20-metal-groupnorm/e2e/new.glb
+--------------------------------------------------------------------------
+meshes: 1  triangle primitives: 1
+GEOMETRY
+  vertices: 656387   faces: 951638
+  components (index-based): 22825   top-5 sizes (faces): [47954, 41064, 27122, 25630, 20474]
+  boundary edges: 336474   non-manifold edges: 0
+  winding consistency: 100.00% (over 1259220 mult-2 edges)
+  watertight (index-based): no
+  welded (by position): 473635 verts, boundary 0, non-manifold 1887, watertight no
+  bbox min: [-0.3782, -0.4228, -0.4932]  max: [0.3783, 0.4227, 0.4921]
+  principal extents: [1.11, 1.049, 0.7565]
+UV/ATLAS
+  atlas (baseColor): 4096x4096  format=WebP  mime=image/webp
+  uv bbox: [0, 0] .. [0.9996, 0.9996]
+  chart estimate (uv-space components): 22757
+  texel density texels^2/unit^2 (T=4096): mean 1.604e+06  p5 1.422e+06  p50 1.463e+06  p95 1.985e+06  CV 0.905
+  zero-UV-area faces: 0.14%
+MATERIAL
+  material[0]: doubleSided=False  metallicFactor=1  roughnessFactor=1
+  texture[0]: format=WebP  mime=image/webp  4096x4096
+  texture[1]: format=WebP  mime=image/webp  4096x4096
+  metallicRoughness channels (64px sample): R constant (mean 0.0)  G var 0.00  B var 0.00
+
+--------------------------------------------------------------------------
+COMPARISON
+--------------------------------------------------------------------------
+metric               old.glb                 new.glb              
+-------------------  ----------------------  ---------------------
+vertices             666366                  656387               
+faces                960030                  951638               
+components           23117                   22825                
+boundary edges       347692                  336474               
+non-manifold edges   0                       0                    
+winding %            100.00                  100.00               
+watertight (index)   False                   False                
+watertight (welded)  False                   False                
+charts               23062                   22757                
+zero-UV faces %      0.14                    0.14                 
+texel dens p50       1.46e+06                1.463e+06            
+texel dens CV        0.933                   0.905                
+atlas                4096x4096 WebP          4096x4096 WebP       
+principal extents    [1.108, 1.053, 0.7565]  [1.11, 1.049, 0.7565]

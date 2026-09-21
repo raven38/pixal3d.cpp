@@ -1,0 +1,90 @@
+P1 START Sun Sep 20 20:27:49 JST 2026
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/new_nafops_T1024_*.log
+gate: passed 20:29:28 gpu=0%
+--- new nafops_T1024 20:29:28
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/old_nafops_T1024_*.log
+gate: passed 20:31:24 gpu=0%
+--- old nafops_T1024 20:31:24
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/new_nafops_T512_*.log
+gate: passed 20:33:29 gpu=0%
+--- new nafops_T512 20:33:29
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/old_nafops_T512_*.log
+gate: passed 20:35:14 gpu=0%
+--- old nafops_T512 20:35:14
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/new_nafops_LR_*.log
+gate: passed 20:37:19 gpu=0%
+--- new nafops_LR 20:37:19
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/old_nafops_LR_*.log
+gate: passed 20:39:04 gpu=0%
+--- old nafops_LR 20:39:04
+exit=0
+gate: passed 20:40:56 gpu=0%
+--- old nafops_T1024 20:40:56
+exit=0
+gate: waiting (20:42:19) gpu=0% others=0
+gate: passed 20:44:26 gpu=0%
+--- new nafops_T1024 20:44:26
+exit=0
+gate: passed 20:46:33 gpu=0%
+--- old nafops_T512 20:46:33
+exit=0
+gate: passed 20:48:34 gpu=0%
+--- new nafops_T512 20:48:34
+exit=0
+gate: passed 20:50:23 gpu=0%
+--- old nafops_LR 20:50:23
+exit=0
+gate: passed 20:52:12 gpu=0%
+--- new nafops_LR 20:52:12
+exit=0
+P1 DONE Sun Sep 20 20:52:18 JST 2026
+P2 START Sun Sep 20 20:52:18 JST 2026
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/new_tex_*.log
+gate: passed 20:54:01 gpu=0%
+--- new tex 20:54:01
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/old_tex_*.log
+gate: passed 20:56:09 gpu=0%
+--- old tex 20:56:09
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/new_hr_*.log
+gate: passed 20:58:26 gpu=0%
+--- new hr 20:58:26
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/old_hr_*.log
+gate: passed 21:00:24 gpu=0%
+--- old hr 21:00:24
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/new_lr_*.log
+gate: passed 21:02:31 gpu=0%
+--- new lr 21:02:31
+exit=0
+run:3: no matches found: /Users/<redacted-user>/Downloads/pixal3d-metal-groupnorm/docs/results/2026-09-20-metal-groupnorm/ab3_strict/old_lr_*.log
+gate: passed 21:04:20 gpu=0%
+--- old lr 21:04:20
+exit=0
+gate: passed 21:06:09 gpu=0%
+--- old tex 21:06:09
+exit=0
+gate: passed 21:08:16 gpu=0%
+--- new tex 21:08:16
+exit=0
+gate: passed 21:10:22 gpu=0%
+--- old hr 21:10:22
+exit=0
+gate: passed 21:12:29 gpu=0%
+--- new hr 21:12:29
+exit=0
+gate: passed 21:14:20 gpu=0%
+--- old lr 21:14:20
+exit=0
+gate: passed 21:16:15 gpu=0%
+--- new lr 21:16:15
+exit=0
+P2 DONE Sun Sep 20 21:16:20 JST 2026
+STRICT DONE Sun Sep 20 21:16:20 JST 2026

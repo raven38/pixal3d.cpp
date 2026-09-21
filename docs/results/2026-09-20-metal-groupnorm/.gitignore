@@ -1,0 +1,5 @@
+# 生成物の大物は置かない（npy 607 MB、glb / ply / 中間 png）。集計に要るのは .log / .gpu / .txt だけ
+*.npy
+*.glb
+*.ply
+e2e/*_base.png

@@ -1,0 +1,8 @@
+[trellis] CPU backend using 16 threads
+=== gn-oracle: [1024,1024,128] f32 on CPU (groups=8, eps=1e-5) ===
+  ggml_group_norm    per-group offset / slope: g0 -4.1e-09/4.9e-08 g1 1.7e-08/2.1e-08 g2 -1.3e-08/8.4e-08 g3 2.8e-09/-2.4e-08 g4 -3.4e-09/7.1e-09 g5 -3.6e-09/2.0e-08 g6 -3.7e-09/-2.3e-08 g7 2.4e-09/6.0e-08
+  ggml_norm[n/8,8]   per-group offset / slope: g0 -7.1e-08/1.3e-04 g1 1.8e-07/2.6e-04 g2 1.1e-07/9.0e-05 g3 -1.8e-07/7.9e-05 g4 1.8e-07/1.0e-04 g5 1.4e-07/6.4e-05 g6 -2.1e-07/1.2e-04 g7 -3.0e-07/1.1e-04
+  formulation              max|d|      mean|d|        L2rel         ms   worst
+  ggml_group_norm      9.5367e-07   3.2135e-08   6.2785e-08       34.1   @41048217
+  ggml_norm[n/8,8]     2.1734e-03   9.0521e-05   1.3335e-04       30.7   @20526378
+  N1: selected on this backend = ggml_group_norm: max|d| 9.537e-07 <= 1e-3 and <= 1.5 x other 2.173e-03  -> PASS

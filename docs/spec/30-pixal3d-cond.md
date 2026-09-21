@@ -118,8 +118,15 @@ Implementation status: `src/naf.cpp` is the CPU reference (threaded, bit-exact v
 view at T=512 on 32 cores). CUDA builds dispatch to `src/naf_gpu.cpp` (ggml graph for the encoder) + `src/naf_attn.cu`
 (custom neighborhood-attention kernel that indexes the pooled 32×32 key/value maps directly — with an integer
 upsample factor d the dilated window position `start+i` *is* the low-res index); output rel 6.5e-4 vs the fixture,
-~11 s wall at T=512 on a loaded box. `TRELLIS_NAF_CPU=1` forces the CPU path; Vulkan/Metal kernels are still TODO
-(they fall back to CPU).
+~11 s wall at T=512 on a loaded box. `TRELLIS_NAF_CPU=1` forces the CPU path. Every other GPU backend (Metal,
+Vulkan, WebGPU) runs the whole upsampler as one ggml graph (`naf_upsample_ggml` / `naf_build`, no custom kernel:
+the 9×9 dilated window is 81 `get_rows` gathers + two batched mul_mats per block). `naf_ggml_opts_for()` picks the
+per-backend lowering: WebGPU re-expresses `GROUP_NORM` / `PAD_REFLECT_1D` / `POOL_2D` (ops the backend lacks);
+**Metal re-expresses only the GroupNorm** (`generic_groupnorm`: `ggml_norm` over a `[W*H*C/8, 8]` reshape) because
+ggml-metal's `GROUP_NORM` kernel dispatches 32 threads per group -- 453 ms/op on `[1024,1024,128]`, 58 % of the
+encoder graph; the re-expression is 8 ms/op and closer to a float64 reference than the native kernel
+(issue #55, `docs/results/2026-09-20-metal-groupnorm.md`). `TRELLIS_DBG_NAF_GENERIC=0` restores the native ops
+for A/B.
 
 ## 5. Numerical conditioning of the Pixal3D SS flow (measured 2026-09-06)
 

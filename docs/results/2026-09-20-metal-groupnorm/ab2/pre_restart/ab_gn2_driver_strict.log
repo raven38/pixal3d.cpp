@@ -1,0 +1,19 @@
+P1 START Sun Sep 20 17:51:38 JST 2026
+gate: passed 17:53:34 gpu=0%
+--- new nafops_T1024 17:53:34
+exit=0
+gate: waiting (17:55:21) gpu=0% others=0
+gate: passed 17:59:52 gpu=0%
+--- old nafops_T1024 17:59:52
+exit=0
+gate: waiting (18:00:45) gpu=0% others=0
+gate: passed 18:05:57 gpu=0%
+--- new nafops_T512 18:05:57
+exit=0
+gate: waiting (18:06:23) gpu=0% others=0
+gate: re-check failed after jitter (18:14:37), waiting again
+gate: re-check failed after jitter (18:22:47), waiting again
+gate: passed 18:25:13 gpu=0%
+--- old nafops_T512 18:25:13
+exit=0
+gate: waiting (18:26:19) gpu=0% others=0

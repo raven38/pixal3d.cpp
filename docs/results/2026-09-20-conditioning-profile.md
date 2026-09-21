@@ -254,6 +254,9 @@ T=512 では pool の `sum_rows` 再表現（0.33 s）が native の `pool_2d` �
   速いのは (i)（T=1024: 2.60〜2.71 s vs 2.78 s、T=512: 2.45 vs 2.51 s）、native op のまま・pad / pool を触らないのは (ii)。
   (ii) は `thirdparty/ggml` の 1 行変更で、`docs/PIXAL3D_UPSTREAM_POLICY.md` の流儀（`patches/` + upstream 提案）が要る。
   follow-up PR では (i) を既定にし、(ii) は upstream ggml へ提案する（コメントアウトされたスケール処理を戻すだけ）。
+  → **issue #55 / `docs/results/2026-09-20-metal-groupnorm.md`**（2026-09-20）: (i) を Metal の既定にした。op 単体の float64 参照で
+  native `ggml_group_norm` は max|d| 2.2e-3（1/std を過大評価）、再表現は 9.5e-7 なので、上の「native 比 L2rel 1.2e-4」は
+  ほぼ native カーネル側の誤差。
 - `IM2COL`: node 別では 1×1 conv（`encoder` 枝、C_in=128 の 4 層）が **215 ms/op** で 256 MB（`[128, 1M]` f16）を書き、
   3×3（`sem_encoder` 枝、C_in=128 の 4 層）が 211 ms/op で 2.4 GB（`[1152, 1M]` f16）を書く（残り 2 op は C_in=3 の初段で小さい）。
   **K に依らず ≈210 ms** なのは、Metal の `kernel_im2col` が threadgroup grid = (IC, OH, OW) = 128 × 1024 × 1024 = 1.34 億
