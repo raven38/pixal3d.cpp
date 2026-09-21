@@ -244,6 +244,36 @@ bool safe_stage_path(const std::filesystem::path& root, const std::string& filen
     return true;
 }
 
+struct Trellis2Status {
+    bool available = false;
+    std::string reason;
+};
+
+Trellis2Status inspect_trellis2_models(const std::string& dir) {
+    Trellis2Status st;
+    if (dir.empty()) { st.reason = "TRELLIS.2 models directory is not configured"; return st; }
+    static const char* const required[] = {
+        "dinov3.gguf", "ss_flow.gguf", "ss_dec.gguf",
+        "shape_flow_512.gguf", "shape_flow_1024.gguf", "shape_dec.gguf",
+        "tex_flow_512.gguf", "tex_flow_1024.gguf", "tex_dec.gguf",
+    };
+    std::error_code ec;
+    for (const char* name : required) {
+        const std::filesystem::path p = std::filesystem::path(dir) / name;
+        if (!std::filesystem::is_regular_file(p, ec) || ec) {
+            st.reason = std::string("missing TRELLIS.2 model file: ") + name;
+            return st;
+        }
+        const auto n = std::filesystem::file_size(p, ec);
+        if (ec || n == 0) {
+            st.reason = std::string("empty/unreadable TRELLIS.2 model file: ") + name;
+            return st;
+        }
+    }
+    st.available = true;
+    return st;
+}
+
 void cleanup_outputs(const std::string& stem) {
     std::remove((stem + ".glb").c_str());
     std::remove((stem + ".ply").c_str());
@@ -557,6 +587,13 @@ int main(int argc, char** argv) {
             else if (bg == "auto") p.birefnet = -1;
             else { set_error(res, 400, "bg_removal must be auto, threshold, or birefnet"); return; }
         }
+        {
+            const Trellis2Status st = inspect_trellis2_models(base.models);
+            if (!st.available) {
+                set_error(res, 503, "TRELLIS.2 multiview model set is not available: " + st.reason);
+                return;
+            }
+        }
         p.image.clear();
         p.views.clear();
         p.sv_image.clear();
@@ -634,11 +671,15 @@ int main(int argc, char** argv) {
             if (!st.available)         j += ",\"reason\":\"" + json_escape(st.reason) + "\"";
             return j + "}";
         };
+        const Trellis2Status t2 = inspect_trellis2_models(base.models);
+        std::string t2j = "{\"available\":" + std::string(t2.available ? "true" : "false") +
+                          ",\"max_images\":8,\"modes\":[\"stochastic\",\"multidiffusion\"]";
+        if (!t2.available) t2j += ",\"reason\":\"" + json_escape(t2.reason) + "\"";
+        t2j += "}";
         const std::string body = "{\"busy\":" + std::string(g_busy.load() ? "true" : "false") +
                                  ",\"completed\":" + std::to_string(g_completed.load()) +
                                  ",\"mv\":" + one(mv) + ",\"sv\":" + one(sv) +
-                                 ",\"trellis2_mv\":{\"available\":true,\"max_images\":8,"
-                                 "\"modes\":[\"stochastic\",\"multidiffusion\"]}}";
+                                 ",\"trellis2_mv\":" + t2j + "}";
         res.set_content(body, "application/json");
     });
 
