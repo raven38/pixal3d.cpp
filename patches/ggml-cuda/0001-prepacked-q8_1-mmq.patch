@@ -78,7 +78,7 @@ index 61041bd..0000000 100644
      bool any_gpus_with_slow_fp16 = false;
  
      if (split) {
-@@ -2642,7 +2645,11 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
+@@ -2642,7 +2645,10 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
          return;
      }
  
@@ -90,7 +90,7 @@ index 61041bd..0000000 100644
          // the custom F16 vector kernel can be used over batched cuBLAS GEMM
          // but this is only faster for GPUs without tensor cores or with a thin src0 matrix (particularly KQV in attention)
          ggml_cuda_mul_mat_vec_f(ctx, src0, src1, nullptr, dst);
-@@ -5150,6 +5157,14 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const gg
+@@ -5150,5 +5157,13 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const gg
                  struct ggml_tensor * a = op->src[0];
                  struct ggml_tensor * b = op->src[1];
 +                if (b->type == GGML_TYPE_Q8_1) {
@@ -104,7 +104,7 @@ index 61041bd..0000000 100644
                  if (a->buffer && ggml_backend_buft_is_cuda_split(a->buffer->buft)) {
                      if (a->ne[2] > 1 || a->ne[3] > 1) {
                          return false;
-@@ -5760,4 +5775,42 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
+@@ -5760,4 +5775,53 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
      return cuda_backend;
  }
  
@@ -119,20 +119,32 @@ index 61041bd..0000000 100644
 +        !ggml_is_contiguous(dst_q8_1)) {
 +        return false;
 +    }
-+    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
-+        if (src_f32->ne[i] != dst_q8_1->ne[i]) {
-+            return false;
-+        }
++    // dst is an over-allocated backing tensor. Pixal3D exposes only the
++    // source's logical columns to MUL_MAT and keeps the tail as the same
++    // final-tile overread guard used by ggml's temporary MMQ allocation.
++    if (src_f32->ne[0] != dst_q8_1->ne[0] || dst_q8_1->ne[1] < src_f32->ne[1] ||
++        src_f32->ne[2] != dst_q8_1->ne[2] || src_f32->ne[3] != dst_q8_1->ne[3]) {
++        return false;
 +    }
-+    // quantize_mmq_q8_1_cuda pads ne0 to MATRIX_ROW_PADDING. The public Q8_1
-+    // tensor owns only its logical bytes, so only use the cache when no padding
-+    // is needed (Pixal3D proj_in is 1024 or 2048).
++    // quantize_mmq_q8_1_cuda pads ne0 to MATRIX_ROW_PADDING. This persistent
++    // path is restricted to Pixal3D's already-aligned 1024/2048 proj inputs.
 +    if (src_f32->ne[0] % MATRIX_ROW_PADDING != 0) {
 +        return false;
 +    }
 +
 +    ggml_backend_cuda_context * ctx = (ggml_backend_cuda_context *) backend->context;
 +    ggml_cuda_set_device(ctx->device);
++    const int cc = ggml_cuda_info().devices[ctx->device].cc;
++    const size_t main_bytes =
++        (size_t) src_f32->ne[3] * src_f32->ne[2] * src_f32->ne[1] * src_f32->ne[0] *
++        sizeof(block_q8_1) / QK8_1;
++    const size_t required =
++        main_bytes + get_mmq_x_max_host(cc) * sizeof(block_q8_1_mmq);
++    if (ggml_nbytes(dst_q8_1) < required) {
++        return false;
++    }
++
++    CUDA_CHECK(cudaMemsetAsync(dst_q8_1->data, 0, ggml_nbytes(dst_q8_1), ctx->stream()));
 +    quantize_mmq_q8_1_cuda(
 +        (const float *) src_f32->data, nullptr, dst_q8_1->data, weight_type,
 +        src_f32->ne[0],
