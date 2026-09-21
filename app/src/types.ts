@@ -42,7 +42,7 @@ export interface AppConfig {
 }
 
 /** Which pipeline produced a generation. Absent on records written before 0.10.0 = trellis2. */
-export type GenMode = "trellis2" | "pixal3d-sv" | "pixal3d-mv";
+export type GenMode = "trellis2" | "trellis2-mv" | "pixal3d-sv" | "pixal3d-mv";
 
 /** One persisted generation (IndexedDB record). */
 export interface GenRecord {
@@ -57,6 +57,8 @@ export interface GenRecord {
   thumb: Blob | null; // model-viewer snapshot for the gallery
   /** pixal3d-mv only: `input` is then the first view. */
   mv?: { meshScale: number; numViews: number };
+  /** TRELLIS.2 multi-image only: pose-free sampler fusion metadata. */
+  trellis2Mv?: { numViews: number; fusion: "stochastic" | "multidiffusion" };
 }
 
 /** One model set as reported by trellis-server GET /capabilities. */
@@ -79,9 +81,17 @@ export interface ModelSetCapability {
  * counts finished generations (success or failure). Studio uses both to decide when it
  * may re-enable Generate after "Stop waiting" (the server keeps computing).
  */
+export interface Trellis2MvCapability {
+  available: boolean;
+  max_images: number;
+  modes: Array<"stochastic" | "multidiffusion">;
+}
+
 export interface Capabilities {
   busy: boolean;
   completed: number;
   mv: ModelSetCapability;
   sv: ModelSetCapability;
+  /** Added by the #58 runtime; absent on older servers. */
+  trellis2_mv?: Trellis2MvCapability;
 }
