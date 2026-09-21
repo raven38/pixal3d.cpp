@@ -115,12 +115,21 @@ SS voxel 数が 2793→3337 と大きく異なり、これは brief が予告し
 | B7 | 2view, stochastic, res512 | 25s | 3283MiB | 958 | 正常 |
 | B8 | 4view, multidiffusion, res1536 | 206s | 5053MiB | 956 | 正常（落ちず、メモリ・時間とも許容範囲） |
 
-stage log の「TRELLIS.2 MV / view数 / fusion mode」は各 run で確認済み
-（`[trellis] TRELLIS.2 multiview: V=<N> mode=<stochastic|multidiffusion>`）。**view順（自然順）の
-専用ログは無い**（DINOv3 cond の `[stats]` 行は `view0` のみ出力され view1 以降は表示されない仕様）。
-view 処理順そのものはコード上 `flow_runner.cpp` の実装（`test_flow_multi.cpp` のユニットテストで
-`pv == [k % V]` = 自然順 round-robin であることが別途検証済み）に委ねられているため、E2E run.log
-からの直接確認はできなかった旨を記録する（GAP）。
+stage log の「TRELLIS.2 MV / view数 / fusion mode / view順」は各 run で確認済み。
+`[trellis] TRELLIS.2 multiview: V=<N> mode=<stochastic|multidiffusion>` の直後に
+`view<i> Frame<N>.png` の形で自然順（入力ディレクトリのファイル名順）に列挙される
+（訂正: 当初 `view [0-9]`（半角スペース区切り）で検索して見つからず GAP と誤記したが、
+実際は `view0`（スペース無し）表記で全 8 run に出力されていた）。例（B1）:
+
+```
+[trellis] TRELLIS.2 multiview: V=2 mode=stochastic
+      view0 Frame1.png
+      view1 Frame4.png
+```
+
+4view 系（B3/B4/B8）は `view0 Frame1.png` `view1 Frame2.png` `view2 Frame3.png` `view3 Frame4.png`
+と Frame 番号順に一致しており、view 処理順は自然順（round-robin、`test_flow_multi.cpp` の
+`pv == [k % V]` ユニットテストと整合）であることが E2E run.log からも直接確認できた。
 
 manifest.json のフィールド `voxels` はpod側スクリプトの正規表現バグ（`@res32`の"32"を誤抽出）で
 全run `32` 固定になっていたため、上表は各 `run.log` から `sed -nE 's/.*active voxels @res32 = ([0-9]+).*/\1/p'`
