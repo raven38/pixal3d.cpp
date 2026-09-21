@@ -100,7 +100,77 @@ SS voxel 数が 2793→3337 と大きく異なり、これは brief が予告し
 
 ## Part B: MV E2E マトリクス
 
-(進行中 — 別途追記)
+実行環境: 自然終了型 pod `<redacted-pod-b>`（A100-SXM4-80GB、`restartPolicy: Never`、
+完了後削除確認済み）。B1〜B8 全て `SEED=42`（前述の `--seed 0` auto-random バグ回避）で直列実行、
+全て `rc=0`。
+
+| run | 条件 | 壁時計 | peak VRAM | SS active voxels@res32 | 備考 |
+|---|---|---:|---:|---:|---|
+| B1 | 2view, stochastic, res1024 | 58s | 4067MiB | 958 | 正常 |
+| B2 | 2view, multidiffusion, res1024 | 73s | 3357MiB | 962 | 正常 |
+| B3 | 4view, stochastic, res1024 | 57s | 3339MiB | 936 | **FINDING: テクスチャ暗転（後述）** |
+| B4 | 4view, multidiffusion, res1024 | 103s | 3979MiB | 956 | 正常 |
+| B5 | 2view, stochastic, res1024, `--no-texture` | 26s | 3355MiB | 958 | 正常（テクスチャ無し形状のみ） |
+| B6 | 2view, stochastic, res1024（B1と同条件・決定性チェック） | 60s | 3357MiB | 958 | 下記参照 |
+| B7 | 2view, stochastic, res512 | 25s | 3283MiB | 958 | 正常 |
+| B8 | 4view, multidiffusion, res1536 | 206s | 5053MiB | 956 | 正常（落ちず、メモリ・時間とも許容範囲） |
+
+manifest.json のフィールド `voxels` はpod側スクリプトの正規表現バグ（`@res32`の"32"を誤抽出）で
+全run `32` 固定になっていたため、上表は各 `run.log` から `sed -nE 's/.*active voxels @res32 = ([0-9]+).*/\1/p'`
+で再抽出した正しい値（ローカルの `tools/e2e/run_part_b_matrix.sh` は既に修正済み）。
+
+### B6: 決定性チェック（B1 と同一条件を再実行）
+
+- SS active voxels（958=958）、decoded voxels@1024（1436016=1436016）、
+  `remesh_dc` の V/F（V=2549532 F=5112880）は **bit-exact で一致**（フロー〜メッシュ抽出段階は決定的）。
+- `out.glb` 全体の sha256 は **不一致**。差分は UV atlas（xatlas）パッキング段階のみに限定される
+  （B1: merge clusters=3464, uncharted=76, atlas=1235x1236, Vo/Fo=218600/285836 ／
+  B6: merge clusters=3724, uncharted=72, atlas=1232x1236, Vo/Fo=219561/285978）。
+  **結論: SS〜remesh(ジオメトリ)までは完全決定的、xatlas 段階にのみ既知の非決定性がある**
+  （xatlas 内部の並列パッキング順序に起因すると見られるが、深掘りは本タスクのスコープ外）。
+
+### B3: FINDING — 4view + stochastic の組み合わせでテクスチャがほぼ完全に黒くなる
+
+`B3`（4view, stochastic, res1024）のみ、出力 GLB のテクスチャが実質ほぼ黒（`out_base.png`
+— UVベイク前の PBR decode 直後の段階で既に mean=0.07, max=159。他 run は mean 10〜65）。
+run.log に NaN/Inf/error/warning は一切出ておらず、**静かな失敗**。切り分け:
+
+- 同一 pod・同一ビルドの **B1（2view stochastic）・B7（2view stochastic res512）・B8（4view
+  multidiffusion res1536）は正常** → 「4view」単独でも「stochastic」単独でもなく、
+  **両者の組み合わせでのみ**発生する。
+- `/nfs/pixal3d_trellis2mv_ref_v2/run_4img_real_stochastic_1024c/mesh.glb`
+  （B3 と全く同条件の PyTorch 参照、#59 が既に生成済み）をレンダしたところ、
+  **正常にテクスチャ付きキャラクターが出力される**（4視点いずれも破綻なし）。
+  → **PyTorch 側は正常、trellis.cpp 側のみで壊れている（C++移植固有のバグ）**。
+- `src/test_trellis2_mv_tex.cpp` には既に `run_4img_real_stochastic_1024c` を含む12ケースの
+  texture-SLAT-flow CFG 数値回帰テストが実装されているが、対応する `trellis-test-*` バイナリは
+  今回のビルドに含まれておらず未実行。**仮説（未検証）**: もしこのユニットテストが pass するなら、
+  tex flow の数値計算自体ではなく、その出力を PBR デコード or E2E パイプラインへ渡す統合経路
+  （`trellis_cli.cpp` 側）にバグがあると考えられる。
+- 証拠: `docs/results/2026-09-21-trellis2-mv-e2e/part-b-renders/part_c_grid.png`（B1/B2/B3/B4と
+  PyTorch参照の4視点並置。B3のみ全面黒）、`part-b-renders/B3_texture_black.png`（B3のPBRテクスチャ
+  atlas全体、ほぼ黒でまばらなノイズ点のみ）。
+
+`FINDING: trellis.cpp の 4view+stochastic モード（--trellis2-mv-mode stochastic, V=4）でテクスチャ生成が` +
+`ほぼ完全に黒くなる（PyTorch参照は正常）。原因未特定・本タスクの予算内では未修正。次の一手は該当` +
+`ユニットテスト（test_trellis2_mv_tex.cpp の run_4img_real_stochastic_1024c ケース）のビルド・実行`
+
+`PARTIAL: E2E B 完了 — B1/B2/B4/B5/B6/B7/B8 は正常（rc=0、目視破綻なし）。B3(4view+stochastic)のみ` +
+`テクスチャ暗転のFINDINGあり（PyTorch参照と比較しtrellis.cpp固有と確認）。B6決定性チェックはSS〜remeshまで` +
+`bit-exact、xatlas段階のみ非決定的`
+
+## Part C: 品質並置（B1〜B4 の4視点レンダ + PyTorch参照）
+
+`docs/results/2026-09-21-trellis2-mv-e2e/part-b-renders/part_c_grid.png`
+（列: B1 2view-stochastic / B2 2view-multidiffusion / B3 4view-stochastic(BROKEN) /
+B4 4view-multidiffusion / PyTorch参照 4view-stochastic、各2×2の4視点）。
+
+- B1・B2・B4 は目視破綻なし（キャラクターのシルエット・部分的な色/模様が確認できる）。
+- B3 は Part B の FINDING の通り全面黒。
+- PyTorch 参照（列5）は最も鮮明で、色・模様（顔の模様、衣装の縞、腕の装飾等）がはっきり見える。
+  trellis.cpp 側（B1/B2/B4）は同一入力でも総じて暗め — これは `birefnet.gguf` 未変換による
+  `threshold` マットフォールバック（Part A の GAP で既述）と、上記 B3 のバグに現れたテクスチャ
+  パイプラインの何らかの精度差が複合している可能性がある（未検証、追加切り分けはスコープ外）。
 
 ## EVIDENCE
 
@@ -119,5 +189,12 @@ SS voxel 数が 2793→3337 と大きく異なり、これは brief が予告し
   診断メッセージ一致（1枚: `requires 2..8 images; found 1` / 9枚: `found 9` /
   `--trellis2-mv`+positional同時: `accepts only one positional output path` /
   mode単独: `requires --trellis2-mv DIR` / mode typo: `expects 'stochastic' or 'multidiffusion'`）。
-- Part A レンダ・GLB: `docs/results/2026-09-21-trellis2-mv-e2e/parta-renders/`
-- pod 削除確認: （Part B/C 完了後に追記）
+- Part A レンダ・GLB: `docs/results/2026-09-21-trellis2-mv-e2e/part-a-renders/`
+- Part B/C レンダ・グリッド: `docs/results/2026-09-21-trellis2-mv-e2e/part-b-renders/`
+  （`part_c_grid.png`, `B3_texture_black.png`）
+- B1/B6 `out.glb` sha256: B1=`a4f300031b1183e3d6715d2669c08ece8628bf5ec3facf9bf33aad7de3142cd6`,
+  B6=`0c5c53278826257a23565fc0dbfca5e0d4866857dbe1ffcad429e24157558d8c`（remesh V/Fはbit-exact一致）
+- pod 削除確認: `<redacted-pod-b>` は Part B 完了（8/8 run rc=0）後に
+  `kubectl delete pod <redacted-pod-b> -n <redacted-namespace>` で削除済み。
+  旧 pod `<redacted-pod-a>`・rogue pod `trellis2-mv-e2e` も既に削除済み（本文記載の通り）。
+  常駐 CPU pod `<cpu-pod>` はPart B/C回収作業用に流用（削除せず、既存の常駐運用のまま）。
