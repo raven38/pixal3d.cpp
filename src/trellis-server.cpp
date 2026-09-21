@@ -485,14 +485,9 @@ int main(int argc, char** argv) {
         // Explicit pose-free TRELLIS.2 multi-image endpoint (#66). Keep this contract
         // disjoint from Pixal3D /generate-mv: no transforms, mesh_scale, FOV or view cameras.
         int num_images = 0;
-        if (!req.has_file("num_images") ||
-            !parse_int_strict(req.get_file_value("num_images").content, *(long*)&num_images)) {
-            // Avoid the aliasing trick above in the real parse below; this first branch only
-            // gives a precise missing-field error.
-            if (!req.has_file("num_images")) {
-                set_error(res, 400, "missing num_images");
-                return;
-            }
+        if (!req.has_file("num_images")) {
+            set_error(res, 400, "missing num_images");
+            return;
         }
         {
             long n = 0;
