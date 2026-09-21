@@ -131,8 +131,19 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     gcos_ = ggml_new_tensor_4d(ctx_, GGML_TYPE_F32, 1, half, 1, N_); ggml_set_input(gcos_);
     gsin_ = ggml_new_tensor_4d(ctx_, GGML_TYPE_F32, 1, half, 1, N_); ggml_set_input(gsin_);
     if (p_.proj_attn) {
-        const ggml_type proj_type = use_proj_q8_cache_ ? GGML_TYPE_Q8_1 : GGML_TYPE_F32;
-        gproj_ = ggml_new_tensor_2d(ctx_, proj_type, p_.d_proj, N_); ggml_set_input(gproj_);
+        if (use_proj_q8_cache_) {
+            // ggml MMQ intentionally overreads the tail of the final Y tile by up to
+            // get_mmq_x_max (128) block_q8_1_mmq records. Give the backing input
+            // real guard storage and expose only the first N logical columns to DiT.
+            constexpr int kProjQ8GuardCols = 128;
+            gproj_ = ggml_new_tensor_2d(ctx_, GGML_TYPE_Q8_1, p_.d_proj, N_ + kProjQ8GuardCols);
+            ggml_set_input(gproj_);
+            gproj_view_ = ggml_view_2d(ctx_, gproj_, p_.d_proj, N_, gproj_->nb[1], 0);
+        } else {
+            gproj_ = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.d_proj, N_);
+            ggml_set_input(gproj_);
+            gproj_view_ = gproj_;
+        }
     }
     if (use_cross_kv_cache_) {
         gcross_kv_ = ggml_new_tensor_3d(ctx_, GGML_TYPE_F32,
@@ -141,7 +152,7 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     }
     dbg_nan_ = std::getenv("TRELLIS_DBG_NAN") != nullptr;
     gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_,
-                            dbg_nan_ ? &inter_ : nullptr, gproj_, gcross_kv_);
+                            dbg_nan_ ? &inter_ : nullptr, gproj_view_, gcross_kv_);
     g_ = ggml_new_graph_custom(ctx_, 262144, false);
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);
@@ -192,13 +203,17 @@ ggml_tensor* DitRunner::proj_q8_for(const float* proj) {
     for (auto& e : proj_q8_cache_) if (e.key == proj) return e.packed;
     if (!use_proj_q8_cache_ || !proj) throw std::runtime_error("DitRunner: invalid proj Q8 cache request");
 
-    // Persistent destination: logical Q8_1 shape, private MMQ-packed bytes.
+    // Persistent destination: logical Q8_1 backing with 128 guard columns.
+    // The prepacker writes only the first N columns in MMQ-private block-major
+    // layout and zeroes the tail; the extra allocation makes the final MMQ
+    // tile's intentional vector overread memory-safe.
+    constexpr int kProjQ8GuardCols = 128;
     ProjQ8Entry e;
     e.key = proj;
     const size_t meta = ggml_tensor_overhead() * 2 + 1024;
     e.ctx = ggml_init({ meta, nullptr, true });
     if (!e.ctx) throw std::runtime_error("DitRunner: proj Q8 cache context alloc failed");
-    e.packed = ggml_new_tensor_2d(e.ctx, GGML_TYPE_Q8_1, p_.d_proj, N_);
+    e.packed = ggml_new_tensor_2d(e.ctx, GGML_TYPE_Q8_1, p_.d_proj, N_ + kProjQ8GuardCols);
     e.buffer = ggml_backend_alloc_ctx_tensors(e.ctx, m_.backend);
     if (!e.buffer) {
         ggml_free(e.ctx);
