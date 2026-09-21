@@ -487,7 +487,8 @@ std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> samp
                                      const float* neg_cond,
                                      const SamplerParams& sp,
                                      MultiCondMode mode,
-                                     std::vector<std::vector<float>>* trace) {
+                                     std::vector<std::vector<float>>* trace,
+                                     int* stochastic_counter) {
     if (conds.empty()) throw std::invalid_argument("sample_flow_multi: empty condition bank");
     if (!neg_cond) throw std::invalid_argument("sample_flow_multi: null negative condition");
     if (sp.steps <= 0) throw std::invalid_argument("sample_flow_multi: steps must be positive");
@@ -547,7 +548,8 @@ std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> samp
         const float tscaled = 1000.0f * t;
 
         if (mode == MultiCondMode::Stochastic) {
-            const float* c = conds[(size_t)i % conds.size()];
+            const int seq = stochastic_counter ? (*stochastic_counter)++ : i;
+            const float* c = conds[(size_t)seq % conds.size()];
             const float gs = guided ? sp.guidance_strength : 1.0f;
             if (gs == 1.0f) {
                 pred = fwd(sample, tscaled, c);
