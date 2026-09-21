@@ -30,13 +30,17 @@
 // （denorm・CFG混合は複製しない — 本番 sample_flow_multi を直接呼ぶため不要）。
 #include "flow_runner.h"
 #include "npy.h"
+#include "shape_decoder.h"
+#include "trellis_model.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <set>
@@ -625,6 +629,131 @@ static int run_full_trajectory_1024c(const std::string& fixture_root, bool hard_
 }
 
 // =================================================================================================
+// §3.5: cascade 境界の自己導出（TASK-STAGES-V3 S3）。
+// quantize 半分（model不要・決定的）と upsample 半分（model要・q8_0）を分離する
+// （docs/design/2026-09-21-trellis2-mv-stages-v3.md §2、codex exec レビュー反映）。
+// =================================================================================================
+namespace {
+
+// [N,4] int32 (列0=batch idx) を読み、列0固定0を確認しつつ xyz だけを取り出す。
+bool load_coords4_xyz(const std::string& path, std::vector<std::array<int,3>>& xyz, std::string& err) {
+    if (!fs::exists(path)) { err = "missing: " + path; return false; }
+    npy::ArrayI32 a = npy::load_i32(path);
+    if (!(a.shape.size() == 2 && a.shape[1] == 4)) { err = "unexpected shape: " + path; return false; }
+    const int64_t N = a.shape[0];
+    xyz.resize((size_t)N);
+    for (int64_t i = 0; i < N; ++i) {
+        if (a.data[i * 4] != 0) { err = "batch idx != 0 at row " + std::to_string(i) + ": " + path; return false; }
+        xyz[(size_t)i] = { a.data[i * 4 + 1], a.data[i * 4 + 2], a.data[i * 4 + 3] };
+    }
+    return true;
+}
+
+// S3-quantize: fixture の shape_hr_coords_prequantize.npy -> 既存 quantize_hr_backoff（§1 で
+// synthetic データに使ったのと同じ純算術）-> shape_slat_coords.npy（=HR step0 x_t coords）と
+// 集合として完全一致するか。model不要、trellis_cli.cpp:982-997 の複製ロジックをそのまま再利用。
+void check_s3_quantize(const std::string& tag, const std::string& dir) {
+    std::string err;
+    std::vector<std::array<int,3>> prequant;
+    if (!load_coords4_xyz(dir + "/shape_hr_coords_prequantize.npy", prequant, err)) {
+        check(false, tag + " S3-quantize: " + err); return;
+    }
+    int out_hr_res = 0;
+    auto quantized = quantize_hr_backoff(prequant, /*hr_target=*/1024, /*max_tokens=*/49152, out_hr_res);
+    check(out_hr_res == 1024, tag + " S3-quantize: backoff floors at hr_res=1024 on the first pass "
+          "(v3 doc: 全runでこの分岐、out_hr_res=" + std::to_string(out_hr_res) + ")");
+
+    std::set<std::array<int,4>> native_set;
+    for (auto& c : quantized) native_set.insert({ 0, c[0], c[1], c[2] });
+
+    npy::ArrayI32 expect = npy::load_i32(dir + "/shape_slat_coords.npy");
+    if (!(expect.shape.size() == 2 && expect.shape[1] == 4)) {
+        check(false, tag + " S3-quantize: shape_slat_coords.npy shape is [N,4]"); return;
+    }
+    std::set<std::array<int,4>> expect_set;
+    for (int64_t i = 0; i < expect.shape[0]; ++i)
+        expect_set.insert({ expect.data[i*4], expect.data[i*4+1], expect.data[i*4+2], expect.data[i*4+3] });
+
+    const bool exact = (native_set == expect_set);
+    if (!exact) {
+        std::vector<std::array<int,4>> only_native, only_fixture;
+        std::set_difference(native_set.begin(), native_set.end(), expect_set.begin(), expect_set.end(), std::back_inserter(only_native));
+        std::set_difference(expect_set.begin(), expect_set.end(), native_set.begin(), native_set.end(), std::back_inserter(only_fixture));
+        printf("info %s S3-quantize: diff -- only_native=%zu only_fixture=%zu (native N=%zu, fixture N=%zu)\n",
+               tag.c_str(), only_native.size(), only_fixture.size(), native_set.size(), expect_set.size());
+        for (size_t i = 0; i < std::min<size_t>(5, only_native.size()); ++i)
+            printf("      only_native[%zu] = [%d,%d,%d,%d]\n", i, only_native[i][0], only_native[i][1], only_native[i][2], only_native[i][3]);
+        for (size_t i = 0; i < std::min<size_t>(5, only_fixture.size()); ++i)
+            printf("      only_fixture[%zu] = [%d,%d,%d,%d]\n", i, only_fixture[i][0], only_fixture[i][1], only_fixture[i][2], only_fixture[i][3]);
+    }
+    check(exact, tag + " S3-quantize: native quantize(shape_hr_coords_prequantize) == fixture "
+          "shape_slat_coords exactly (native N=" + std::to_string(native_set.size()) +
+          ", fixture N=" + std::to_string(expect_set.size()) + ")");
+}
+
+// S3-upsample: shape_dec.gguf（この Mac には q8_0 のみ）で shape_upsample を実走し、結果座標集合を
+// shape_hr_coords_prequantize.npy と比較する。fixture 参照側は元の PyTorch 重みで走らせているため、
+// 不一致が出ても native バグと量子化ノイズを区別できない -- best-effort diagnostic のみ、
+// check(false,...) はしない（期待値を変えない原則。「一致しない場合は差集合サイズ・両側にしか
+// 無い座標例を報告する」という brief の指示どおり）。run_1img_baseline_1024c 1本のみ実行
+// （GPU/Metal 負荷抑制、COMMON.md §6）。
+void check_s3_upsample(const std::string& dir, const std::string& shape_dec_gguf, int gpu) {
+    printf("-- S3-upsample (INFO, q8_0 decoder -- parity 未判定): %s --\n", dir.c_str());
+    std::string err;
+    npy::Array lr_slat;
+    if (!load_native32(dir + "/shape_lr_final_slat_feats.npy", -1, lr_slat, err)) {
+        printf("info S3-upsample: %s (skipped)\n", err.c_str()); return;
+    }
+    std::vector<std::array<int,3>> coords0;
+    if (!load_coords4_xyz(dir + "/ss_coords.npy", coords0, err)) {
+        printf("info S3-upsample: %s (skipped)\n", err.c_str()); return;
+    }
+    if ((int)coords0.size() != (int)lr_slat.shape[0]) {
+        printf("info S3-upsample: coords0/latent row count mismatch (%d vs %lld), skipped\n",
+               (int)coords0.size(), (long long)lr_slat.shape[0]);
+        return;
+    }
+    if (!fs::exists(shape_dec_gguf)) {
+        printf("info S3-upsample: shape_dec.gguf not found at %s (skipped)\n", shape_dec_gguf.c_str());
+        return;
+    }
+
+    std::vector<std::array<int,3>> hr_coords;
+    try {
+        trellis::Model m = trellis::Model::load(shape_dec_gguf, gpu);
+        hr_coords = trellis::shape_upsample(m, lr_slat.data, coords0);
+        m.free();
+    } catch (const std::exception& e) {
+        printf("info S3-upsample: shape_upsample threw: %s (skipped)\n", e.what());
+        return;
+    }
+
+    std::vector<std::array<int,3>> expect_xyz;
+    if (!load_coords4_xyz(dir + "/shape_hr_coords_prequantize.npy", expect_xyz, err)) {
+        printf("info S3-upsample: %s (skipped)\n", err.c_str()); return;
+    }
+    std::set<std::array<int,3>> native_set(hr_coords.begin(), hr_coords.end());
+    std::set<std::array<int,3>> expect_set(expect_xyz.begin(), expect_xyz.end());
+    const bool exact = (native_set == expect_set);
+    printf("%s S3-upsample: native shape_upsample(q8_0) coords vs fixture shape_hr_coords_prequantize "
+           "(native N=%zu, fixture N=%zu)%s\n",
+           exact ? "ok  " : "info", native_set.size(), expect_set.size(),
+           exact ? " -- exact match" : " -- MISMATCH (q8_0 decoder: native bugと量子化ノイズを区別できない、下記diff参照)");
+    if (!exact) {
+        std::vector<std::array<int,3>> only_native, only_fixture;
+        std::set_difference(native_set.begin(), native_set.end(), expect_set.begin(), expect_set.end(), std::back_inserter(only_native));
+        std::set_difference(expect_set.begin(), expect_set.end(), native_set.begin(), native_set.end(), std::back_inserter(only_fixture));
+        printf("      diff: only_native=%zu only_fixture=%zu\n", only_native.size(), only_fixture.size());
+        for (size_t i = 0; i < std::min<size_t>(5, only_native.size()); ++i)
+            printf("      only_native[%zu] = [%d,%d,%d]\n", i, only_native[i][0], only_native[i][1], only_native[i][2]);
+        for (size_t i = 0; i < std::min<size_t>(5, only_fixture.size()); ++i)
+            printf("      only_fixture[%zu] = [%d,%d,%d]\n", i, only_fixture[i][0], only_fixture[i][1], only_fixture[i][2]);
+    }
+}
+
+} // namespace
+
+// =================================================================================================
 // §4: LR->HR 共有 stochastic カウンタ配線の real-fixture-scale structural test。
 // 2026-09-21 差し戻し対応 (1) -- 設計ドキュメント「レビュー反映」2番・「検証項目」2番が約束した
 // 「continued カウンタを渡しても実行が破綻せず」を、それまで一度も stochastic_counter を渡して
@@ -732,6 +861,20 @@ int main(int argc, char** argv) {
     printf("== production (clamp on, default settings): shape full-trajectory (12 step), informational ==\n");
     run_full_trajectory_512(fixture_root, /*hard_assert=*/false);
     run_full_trajectory_1024c(fixture_root, /*hard_assert=*/false);
+
+    printf("== S3: cascade boundary self-derivation (quantize: hard gate, upsample: q8_0 INFO) ==\n");
+    for (const auto& r : RUNS_1024C) {
+        const std::string dir = fixture_root + "/" + r.name;
+        const std::string tag = std::string(r.name) + " (V=" + std::to_string(r.V) + ")";
+        if (!fs::exists(dir)) { check(false, tag + ": fixture run directory present (" + dir + ")"); continue; }
+        check_s3_quantize(tag, dir);
+    }
+    {
+        const char* env_gguf = getenv("TRELLIS2_MV_SHAPE_DEC_GGUF");
+        const std::string shape_dec_gguf = env_gguf ? env_gguf
+            : (std::string(home ? home : "") + "/nfs/weights/pixal3d/gguf-q8_0/shape_dec.gguf");
+        check_s3_upsample(fixture_root + "/run_1img_baseline_1024c", shape_dec_gguf, /*gpu=*/0);
+    }
 
     printf("== parity (clamp off): re-exec'ing self with TRELLIS_NOFIX forced internally ==\n");
     {
