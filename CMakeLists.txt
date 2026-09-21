@@ -406,6 +406,10 @@ add_executable(trellis-test-slat-shape src/test_slat_shape.cpp)
 target_link_libraries(trellis-test-slat-shape PRIVATE trellis_core)
 set_target_properties(trellis-test-slat-shape PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+add_executable(trellis-test-trellis2-mv-sampler src/test_trellis2_mv_sampler.cpp)
+target_link_libraries(trellis-test-trellis2-mv-sampler PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-sampler PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-dinov3 src/test_dinov3.cpp)
 target_link_libraries(trellis-test-dinov3 PRIVATE trellis_core)
 set_target_properties(trellis-test-dinov3 PROPERTIES BUILD_RPATH "${GGML_RPATH}")
