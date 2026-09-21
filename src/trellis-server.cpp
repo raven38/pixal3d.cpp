@@ -513,7 +513,11 @@ int main(int argc, char** argv) {
                       k == "webp" || k == "bg_removal";
             if (!ok && k.rfind("image", 0) == 0) {
                 const std::string tail = k.substr(5);
-                ok = !tail.empty() && tail.find_first_not_of("0123456789") == std::string::npos;
+                if (!tail.empty() && tail.find_first_not_of("0123456789") == std::string::npos) {
+                    char* end = nullptr;
+                    const long idx = std::strtol(tail.c_str(), &end, 10);
+                    ok = end && *end == '\0' && idx >= 0 && idx < num_images;
+                }
             }
             if (!ok) {
                 set_error(res, 400, "unexpected field for generate-trellis2-mv: " + k);
@@ -541,14 +545,6 @@ int main(int argc, char** argv) {
                 return;
             }
         }
-        // Reject extra image indices beyond num_images.
-        for (int i = num_images; i < 32; ++i) {
-            if (req.has_file("image" + std::to_string(i))) {
-                set_error(res, 400, "image index is outside num_images");
-                return;
-            }
-        }
-
         trellis::TrellisParams p = base;
         {
             std::string perr;
