@@ -44,7 +44,11 @@ condition and the single negative condition.
 Consequences:
 
 - the view counter advances once per sampler step;
-- the counter resets for each sampler invocation/stage;
+- the counter is created when PR #104's injection context is entered;
+- SS and texture each get a fresh counter;
+- **cascade shape LR + HR share one injection context**, so HR continues after the LR
+  12-step counter. For V=2/3/4/6/12 this happens to start at view 0 again; for
+  V=5/7/8 it starts at `12 % V`;
 - outside the guidance interval the selected positive prediction is used directly;
 - when guidance strength is exactly 1, the original CFG mixin skips the negative model call.
 
@@ -181,7 +185,7 @@ The manifest records:
 - mode / pipeline type / seed;
 - final cascade resolution;
 - per-stage step counts;
-- stochastic view schedules;
+- stochastic view schedules, including the shared LR→HR cascade counter;
 - array shape / dtype / SHA256;
 - one stable aggregate `fixture_hash`.
 
