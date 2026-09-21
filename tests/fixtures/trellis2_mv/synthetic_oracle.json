@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "upstream_pr104_sha": "fe7b90c376cb2ed2fb48582d1b376b56e1e16c44",
+  "original_trellis_sha": "442aa1e1afb9014e80681d3bf604e8d728a86ee7",
+  "parameters": {
+    "noise": [0.5, -1.0, 0.25, 1.5],
+    "conditions": [0.25, -0.5, 1.0],
+    "negative_condition": -0.75,
+    "steps": 4,
+    "rescale_t": 3.0,
+    "guidance_strength": 2.5,
+    "guidance_rescale": 0.4,
+    "guidance_interval": [0.35, 0.9],
+    "sigma_min": 1e-5
+  },
+  "t_seq": [1.0, 0.9, 0.75, 0.5, 0.0],
+  "stochastic": {
+    "view_schedule": [0, 1, 2, 0],
+    "negative_calls_per_step": [0, 1, 1, 1],
+    "final": [-0.11309145771273649, -1.4319194761649394, -1.0677933549413765, 0.09845656337018072]
+  },
+  "multidiffusion": {
+    "positive_calls_per_step": [3, 3, 3, 3],
+    "negative_calls_per_step": [0, 1, 1, 1],
+    "final": [-0.07511911679702643, -1.3759127423006337, -0.9657339919398081, 0.2658824029933121]
+  }
+}

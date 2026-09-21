@@ -19,6 +19,7 @@ on:
       - 'tests/**'
       - 'tools/run_pixal3d_estimated.py'
       - 'tools/test_crop_parity.py'
+      - 'tools/ref_trellis2_mv.py'
       - '.github/workflows/linux-build.yml'
   push:
     branches: [main]
@@ -34,6 +35,7 @@ on:
       - 'tests/**'
       - 'tools/run_pixal3d_estimated.py'
       - 'tools/test_crop_parity.py'
+      - 'tools/ref_trellis2_mv.py'
       - '.github/workflows/linux-build.yml'
   workflow_dispatch:
 
@@ -51,6 +53,9 @@ jobs:
           submodules: recursive
 
       - uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Run the weightless TRELLIS.2 multi-image sampler oracle
+        run: python3 tools/ref_trellis2_mv.py --selftest
 
       # ccache が無いと webp / ggml を PR ごとに全ビルドする（configure が
       # "Warning: ccache not found" を出していた）。
