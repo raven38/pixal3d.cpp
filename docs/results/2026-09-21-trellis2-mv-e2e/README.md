@@ -115,6 +115,13 @@ SS voxel 数が 2793→3337 と大きく異なり、これは brief が予告し
 | B7 | 2view, stochastic, res512 | 25s | 3283MiB | 958 | 正常 |
 | B8 | 4view, multidiffusion, res1536 | 206s | 5053MiB | 956 | 正常（落ちず、メモリ・時間とも許容範囲） |
 
+stage log の「TRELLIS.2 MV / view数 / fusion mode」は各 run で確認済み
+（`[trellis] TRELLIS.2 multiview: V=<N> mode=<stochastic|multidiffusion>`）。**view順（自然順）の
+専用ログは無い**（DINOv3 cond の `[stats]` 行は `view0` のみ出力され view1 以降は表示されない仕様）。
+view 処理順そのものはコード上 `flow_runner.cpp` の実装（`test_flow_multi.cpp` のユニットテストで
+`pv == [k % V]` = 自然順 round-robin であることが別途検証済み）に委ねられているため、E2E run.log
+からの直接確認はできなかった旨を記録する（GAP）。
+
 manifest.json のフィールド `voxels` はpod側スクリプトの正規表現バグ（`@res32`の"32"を誤抽出）で
 全run `32` 固定になっていたため、上表は各 `run.log` から `sed -nE 's/.*active voxels @res32 = ([0-9]+).*/\1/p'`
 で再抽出した正しい値（ローカルの `tools/e2e/run_part_b_matrix.sh` は既に修正済み）。
