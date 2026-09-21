@@ -85,6 +85,7 @@ export interface Trellis2MvCapability {
   available: boolean;
   max_images: number;
   modes: Array<"stochastic" | "multidiffusion">;
+  reason?: string;
 }
 
 export interface Capabilities {
