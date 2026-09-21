@@ -73,6 +73,27 @@ std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
                                const SamplerParams& sp,
                                std::vector<std::vector<float>>* trace = nullptr);
 
+enum class MultiCondMode {
+    Stochastic,
+    MultiDiffusion,
+};
+
+// TRELLIS / TRELLIS.2 experimental multi-image sampler semantics.
+// Conditions are an ordered bank of same-shaped image-conditioning tensors.
+// - Stochastic: one positive condition per sampler step, cycling k % V.
+// - MultiDiffusion: evaluate every positive condition at the same x_t/t, average the
+//   raw velocity predictions, then apply one negative prediction + CFG/rescale.
+// V=1 is numerically equivalent to the single-condition sampler (apart from the
+// reference PR's intentionally preserved extra negative forward for multidiffusion
+// when guidance_strength==1 inside the guidance interval).
+std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> sample,
+                                     const std::vector<const float*>& conds,
+                                     const float* neg_cond,
+                                     const SamplerParams& sp,
+                                     MultiCondMode mode,
+                                     std::vector<std::vector<float>>* trace = nullptr);
+
+
 // Pixal3D ProjectAttention variant: the forward functor also takes the proj_cond pointer, threaded
 // from `proj`/`neg_proj` the same way `cond`/`neg_cond` are. The FlowFwd overload above wraps this
 // one with proj = nullptr. neg_proj is typically all-zeros (proj_linear(0) = bias).
