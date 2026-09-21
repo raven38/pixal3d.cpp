@@ -142,8 +142,13 @@ endif()
 set(CMAKE_INSTALL_RPATH "$ORIGIN")
 
 # --- CUDA language (for the custom deformable-conv kernel) ------------------
+option(PIXAL3D_CUDA_Q8_ASYNC_Y "Experimental Ampere+ cp.async double-buffering for Q8_0 MMQ Y tiles" OFF)
 if(TARGET ggml-cuda)
   set(TRELLIS_BUILD_BACKEND "cuda")
+  if(PIXAL3D_CUDA_Q8_ASYNC_Y)
+    target_compile_definitions(ggml-cuda PRIVATE PIXAL3D_CUDA_Q8_ASYNC_Y=1)
+    message(STATUS "pixal3d.cpp: experimental CUDA Q8_0 async-Y MMQ enabled")
+  endif()
   if(EXISTS /usr/local/cuda-13.3/bin/nvcc AND NOT CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_COMPILER /usr/local/cuda-13.3/bin/nvcc)
   endif()
