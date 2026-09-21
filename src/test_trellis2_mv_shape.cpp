@@ -40,12 +40,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <limits>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <sys/wait.h>
 #include <vector>
 
 using namespace trellis;
@@ -828,6 +831,209 @@ static void test_cascade_stochastic_counter_real_scale(const std::string& fixtur
     }
 }
 
+// =================================================================================================
+// §5: #77 OOD clamp ratio 全run×全insideステップ実測表 + NOFIX/production trace bit-identical
+// （TASK-STAGES-V3 S4）。docs/design/2026-09-21-trellis2-mv-stages-v3.md §3、codex exec レビュー
+// 反映版（clamp条件は isfinite && [0.2,5.0] の両側、bit-identical は別プロセス経由）。
+// =================================================================================================
+namespace {
+
+// manifest.json から ood_ratio を軽量スキャンで取り出す（汎用JSONパーサではない -- v3 manifest の
+// 既知の固定構造 shape_predictions -> {"lr"|"hr"|flatなら直下} -> "<step>" -> "ood_ratio" 専用）。
+// 取得失敗時は NaN（表では参照値列が n/a になるだけで、S4 の hard assert には使わない -- 実測の
+// 主判定は native ratio 自体）。
+double extract_manifest_ood_ratio(const std::string& manifest_path, const std::string& side, int step) {
+    std::ifstream f(manifest_path);
+    if (!f) return std::numeric_limits<double>::quiet_NaN();
+    std::stringstream ss; ss << f.rdbuf();
+    const std::string s = ss.str();
+    size_t p = s.find("\"shape_predictions\"");
+    if (p == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+    if (!side.empty()) {
+        p = s.find("\"" + side + "\"", p);
+        if (p == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+    }
+    p = s.find("\"" + std::to_string(step) + "\":", p);
+    if (p == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+    size_t brace = s.find('{', p);
+    if (brace == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+    int depth = 0; size_t i = brace;
+    for (; i < s.size(); ++i) {
+        if (s[i] == '{') ++depth;
+        else if (s[i] == '}') { --depth; if (depth == 0) break; }
+    }
+    if (i >= s.size()) return std::numeric_limits<double>::quiet_NaN();
+    const std::string block = s.substr(brace, i - brace + 1);
+    size_t rp = block.find("\"ood_ratio\":");
+    if (rp == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+    rp += std::string("\"ood_ratio\":").size();
+    return strtod(block.c_str() + rp, nullptr);
+}
+
+// compute_step0_clamp_ratio（既存、t==1.0/noise 固定）の一般化版。任意 step の x_t/t を受け取る。
+// apply_guidance_rescale は呼ばない -- pure arithmetic diagnostic（既存関数と同じ立て付け）。
+double compute_ratio_at(const std::string& base, int step, const SamplerParams& sp, double t, bool multidiffusion) {
+    std::string err;
+    npy::Array pos0, neg, xt;
+    const std::string pfx = base + "_step" + std::to_string(step);
+    const std::string pos_path = multidiffusion ? (pfx + "_avg.npy") : (pfx + "_pos0.npy");
+    if (!load_native32(pos_path, -1, pos0, err)) return std::numeric_limits<double>::quiet_NaN();
+    if (!load_native32(pfx + "_neg.npy", (int)pos0.shape[0], neg, err)) return std::numeric_limits<double>::quiet_NaN();
+    if (!load_native32(pfx + "_xt_feats.npy", (int)pos0.shape[0], xt, err)) return std::numeric_limits<double>::quiet_NaN();
+    const double a = 1.0 - sp.sigma_min, b = sp.sigma_min + (1.0 - sp.sigma_min) * t;
+    const double gs = sp.guidance_strength;
+    const size_t Nst = xt.data.size();
+    std::vector<double> x0p(Nst), x0c(Nst);
+    double mp = 0, mc = 0;
+    for (size_t i = 0; i < Nst; ++i) {
+        const double raw = gs * (double)pos0.data[i] + (1.0 - gs) * (double)neg.data[i];
+        x0p[i] = a * (double)xt.data[i] - b * (double)pos0.data[i];
+        x0c[i] = a * (double)xt.data[i] - b * raw;
+        mp += x0p[i]; mc += x0c[i];
+    }
+    mp /= Nst; mc /= Nst;
+    double vp = 0, vc = 0;
+    for (size_t i = 0; i < Nst; ++i) { vp += (x0p[i]-mp)*(x0p[i]-mp); vc += (x0c[i]-mc)*(x0c[i]-mc); }
+    return vc > 0 ? std::sqrt(vp/(Nst-1)) / std::sqrt(vc/(Nst-1)) : 1.0;
+}
+
+} // namespace
+
+static void run_s4_clamp_table(const std::string& fixture_root) {
+    printf("== S4: #77 OOD clamp ratio table (production gate, all runs x all inside steps) ==\n");
+    struct Row { std::string run; std::string side; int step; double native; double manifest; };
+    std::vector<Row> rows;
+
+    for (const auto& r : RUNS_512) {
+        const std::string dir = fixture_root + "/" + r.name;
+        if (!fs::exists(dir)) continue;
+        const bool md = r.mode == MultiCondMode::MultiDiffusion;
+        const std::vector<double> ts = flow_t_schedule(12, shape_production_params().rescale_t);
+        for (int step = 0; step <= 8; ++step) {   // shape: gi=[0.6,1.0], ts[8]==0.6 (inclusive) -> inside は 0..8
+            const double ratio = compute_ratio_at(dir + "/shape", step, shape_production_params(), ts[step], md);
+            const double ref = extract_manifest_ood_ratio(dir + "/manifest.json", "", step);
+            rows.push_back({ r.name, "flat", step, ratio, ref });
+        }
+    }
+    for (const auto& r : RUNS_1024C) {
+        const std::string dir = fixture_root + "/" + r.name;
+        if (!fs::exists(dir)) continue;
+        const bool md = r.mode == MultiCondMode::MultiDiffusion;
+        const std::vector<double> ts = flow_t_schedule(12, shape_production_params().rescale_t);
+        for (int step = 0; step <= 8; ++step) {
+            rows.push_back({ r.name, "lr", step,
+                compute_ratio_at(dir + "/shape_lr", step, shape_production_params(), ts[step], md),
+                extract_manifest_ood_ratio(dir + "/manifest.json", "lr", step) });
+            rows.push_back({ r.name, "hr", step,
+                compute_ratio_at(dir + "/shape_hr", step, shape_production_params(), ts[step], md),
+                extract_manifest_ood_ratio(dir + "/manifest.json", "hr", step) });
+        }
+    }
+
+    double gmin = std::numeric_limits<double>::infinity(), gmax = -std::numeric_limits<double>::infinity();
+    double max_ref_rel = 0.0;
+    int no_clamp_count = 0, would_fire_count = 0, missing = 0;
+    printf("      %-42s %-4s %4s %12s %12s %10s\n", "run", "side", "step", "native_ratio", "ref_ratio", "rel");
+    for (const auto& row : rows) {
+        if (!std::isfinite(row.native)) { ++missing; printf("      %-42s %-4s %4d %12s %12s %10s\n", row.run.c_str(), row.side.c_str(), row.step, "n/a", "n/a", "-"); continue; }
+        gmin = std::min(gmin, row.native); gmax = std::max(gmax, row.native);
+        const bool no_fire = std::isfinite(row.native) && row.native >= 0.2 && row.native <= 5.0;
+        if (no_fire) ++no_clamp_count; else ++would_fire_count;
+        char refbuf[16] = "n/a", relbuf[16] = "-";
+        if (std::isfinite(row.manifest)) {
+            snprintf(refbuf, sizeof refbuf, "%.6f", row.manifest);
+            const double rel = std::fabs(row.native - row.manifest) / std::max(std::fabs(row.manifest), 1e-12);
+            snprintf(relbuf, sizeof relbuf, "%.2e", rel);
+            max_ref_rel = std::max(max_ref_rel, rel);
+        }
+        printf("      %-42s %-4s %4d %12.6f %12s %10s\n", row.run.c_str(), row.side.c_str(), row.step, row.native, refbuf, relbuf);
+    }
+    printf("      -- summary: %d rows, native ratio min=%.4f max=%.4f, no_clamp=%d, would_fire=%d, missing=%d, "
+           "max rel vs manifest ood_ratio=%.2e --\n",
+           (int)rows.size(), gmin, gmax, no_clamp_count, would_fire_count, missing, max_ref_rel);
+
+    // 判断はしない（keep/removeはユーザー判断）。事実だけ assert する:
+    check(missing == 0, "S4: native ratio computed for every row (no missing pos/neg/xt files, missing=" +
+          std::to_string(missing) + ")");
+    if (would_fire_count == 0) {
+        check(true, "S4: clamp is a no-op across all measured points (isfinite && ratio in [0.2,5.0] for all " +
+              std::to_string(no_clamp_count) + " rows, min=" + std::to_string(gmin) + ", max=" + std::to_string(gmax) + ")");
+    } else {
+        printf("info S4: clamp WOULD fire on %d/%d measured points (min ratio=%.4f) -- reporting only, no verdict\n",
+               would_fire_count, (int)rows.size(), gmin);
+    }
+}
+
+// --internal-trace-dump モード: 1 run/1 side の full-trajectory (12 step) trace を生の float32 で
+// stdout へ書く。TRELLIS_NOFIX の有無で2回別プロセス起動し、親側で memcmp することで
+// 「production の clamp/NaN sanitizer が no-op」を独立に証明する（§0.5-2、codex exec レビュー
+// 反映 -- no_fix は関数ローカル static const なので同一プロセス内での setenv 切替は効かない）。
+static int run_trace_dump_subprocess_mode(int argc, char** argv) {
+    if (argc < 5) { fprintf(stderr, "usage: --internal-trace-dump <fixture_root> <run_name> <flat|lr|hr>\n"); return 2; }
+    const std::string fixture_root = argv[2], run_name = argv[3], side = argv[4];
+    const std::string dir = fixture_root + "/" + run_name;
+
+    int V = 0; MultiCondMode mode = MultiCondMode::Stochastic; bool found = false;
+    std::string base, noise_path;
+    if (side == "flat") {
+        for (const auto& r : RUNS_512) if (run_name == r.name) { V = r.V; mode = r.mode; found = true; break; }
+        base = dir + "/shape"; noise_path = dir + "/noise_shape_0.npy";
+    } else {
+        for (const auto& r : RUNS_1024C) if (run_name == r.name) { V = r.V; mode = r.mode; found = true; break; }
+        base = dir + "/shape_" + side;
+        noise_path = dir + "/noise_shape_cascade_" + (side == "lr" ? "0" : "1") + ".npy";
+    }
+    if (!found) { fprintf(stderr, "unknown run_name: %s\n", run_name.c_str()); return 2; }
+
+    std::string err;
+    npy::Array noise0;
+    if (!load_native32(noise_path, -1, noise0, err)) { fprintf(stderr, "%s\n", err.c_str()); return 1; }
+    const int N = (int)noise0.shape[0];
+
+    FullTraj tr;
+    if (!run_full_trajectory(base, shape_production_params(), V, mode, noise_path, N, nullptr, tr, err)) {
+        fprintf(stderr, "run_full_trajectory failed: %s\n", err.c_str()); return 1;
+    }
+    for (auto& step_vec : tr.trace)
+        if (fwrite(step_vec.data(), sizeof(float), step_vec.size(), stdout) != step_vec.size()) return 1;
+    fflush(stdout);
+    return 0;
+}
+
+// 親プロセス側: production (env無し) / TRELLIS_NOFIX=1 の2通りで trace-dump 子プロセスを起動し、
+// stdout を丸ごと popen で読んで memcmp する。
+static bool capture_trace_dump(const std::string& exe, const std::string& fixture_root,
+                               const std::string& run_name, const std::string& side, bool nofix,
+                               std::vector<char>& out) {
+    const std::string cmd = (nofix ? "TRELLIS_NOFIX=1 " : "") + std::string("\"") + exe +
+        "\" --internal-trace-dump \"" + fixture_root + "\" " + run_name + " " + side;
+    FILE* p = popen(cmd.c_str(), "r");
+    if (!p) return false;
+    out.clear();
+    char buf[65536]; size_t n;
+    while ((n = fread(buf, 1, sizeof buf, p)) > 0) out.insert(out.end(), buf, buf + n);
+    const int status = pclose(p);
+    return status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+static void run_s4_bit_identical(const std::string& fixture_root, const std::string& exe) {
+    printf("== S4: NOFIX vs production full-trajectory trace bit-identical (independent evidence clamp is no-op) ==\n");
+    auto check_one = [&](const std::string& run_name, const std::string& side, const std::string& tag) {
+        std::vector<char> a, b;
+        const bool ok1 = capture_trace_dump(exe, fixture_root, run_name, side, /*nofix=*/false, a);
+        const bool ok2 = capture_trace_dump(exe, fixture_root, run_name, side, /*nofix=*/true, b);
+        check(ok1 && ok2 && a.size() == b.size() && a.size() > 0 &&
+              std::memcmp(a.data(), b.data(), a.size()) == 0,
+              tag + ": production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (" +
+              std::to_string(a.size()) + " bytes)" + ((ok1 && ok2) ? "" : " (subprocess failed)"));
+    };
+    for (const auto& r : RUNS_512) check_one(r.name, "flat", std::string(r.name) + " flat");
+    for (const auto& r : RUNS_1024C) {
+        check_one(r.name, "lr", std::string(r.name) + " LR");
+        check_one(r.name, "hr", std::string(r.name) + " HR");
+    }
+}
+
 static int run_parity_subprocess_mode(int argc, char** argv) {
     setenv("TRELLIS_NOFIX", "1", 1);
     const char* home = getenv("HOME");
@@ -846,6 +1052,8 @@ static int run_parity_subprocess_mode(int argc, char** argv) {
 int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--internal-parity-subprocess")
         return run_parity_subprocess_mode(argc, argv);
+    if (argc > 1 && std::string(argv[1]) == "--internal-trace-dump")
+        return run_trace_dump_subprocess_mode(argc, argv);
 
     const char* home = getenv("HOME");
     const std::string fixture_root = argc > 1 ? argv[1]
@@ -875,6 +1083,9 @@ int main(int argc, char** argv) {
             : (std::string(home ? home : "") + "/nfs/weights/pixal3d/gguf-q8_0/shape_dec.gguf");
         check_s3_upsample(fixture_root + "/run_1img_baseline_1024c", shape_dec_gguf, /*gpu=*/0);
     }
+
+    run_s4_clamp_table(fixture_root);
+    run_s4_bit_identical(fixture_root, argv[0]);
 
     printf("== parity (clamp off): re-exec'ing self with TRELLIS_NOFIX forced internally ==\n");
     {
