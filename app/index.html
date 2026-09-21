@@ -27,9 +27,10 @@
 
     <main class="workspace">
       <section class="panel panel-left">
-        <!-- 3 つの明示モード。既存の TRELLIS.2 単一画像 UI は既定のまま残す（0.9.0 互換）。 -->
+        <!-- 4 explicit modes. Keep TRELLIS.2 single image as the default for compatibility. -->
         <div class="mode-bar" role="radiogroup" aria-label="Generation mode">
           <label class="mode-opt"><input type="radio" name="gen-mode" id="mode-trellis2" value="trellis2" checked /><span>TRELLIS.2 · single image</span></label>
+          <label class="mode-opt"><input type="radio" name="gen-mode" id="mode-trellis2-mv" value="trellis2-mv" /><span>TRELLIS.2 · multiview</span></label>
           <label class="mode-opt"><input type="radio" name="gen-mode" id="mode-pixal3d-sv" value="pixal3d-sv" /><span>Pixal3D SV · single image</span></label>
           <label class="mode-opt"><input type="radio" name="gen-mode" id="mode-pixal3d-mv" value="pixal3d-mv" /><span>Pixal3D MV · multiview</span></label>
         </div>
@@ -91,6 +92,7 @@
         </div>
         </div>
 
+        <div id="trellis2-mv-mount" class="mode-panel" hidden></div>
         <div id="sv-mount" class="mode-panel" hidden></div>
         <div id="mv-calibration-mount" class="mode-panel" hidden></div>
       </section>
