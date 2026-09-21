@@ -1,0 +1,148 @@
+diff --git a/include/ggml-cuda.h b/include/ggml-cuda.h
+index 5436c7e..0000000 100644
+--- a/include/ggml-cuda.h
++++ b/include/ggml-cuda.h
+@@ -35,6 +35,14 @@ GGML_BACKEND_API int  ggml_backend_cuda_get_device_count(void);
+ GGML_BACKEND_API void ggml_backend_cuda_get_device_description(int device, char * description, size_t description_size);
+ GGML_BACKEND_API void ggml_backend_cuda_get_device_memory(int device, size_t * free, size_t * total);
+ 
++// Pixal3D: prepack an F32 activation in the private MMQ Q8_1 layout used by
++// ggml_cuda_mul_mat_q. dst_q8_1 keeps the public logical Q8_1 shape/byte size,
++// but its bytes are MMQ-packed and must only be consumed as src1 of a CUDA
++// Q8_0 mul_mat. Returns false when the tensors/layout are unsupported.
++GGML_BACKEND_API bool ggml_backend_cuda_mmq_prepack_q8_1(
++        ggml_backend_t backend, const struct ggml_tensor * src_f32,
++        struct ggml_tensor * dst_q8_1, enum ggml_type weight_type);
++
+ GGML_BACKEND_API bool ggml_backend_cuda_register_host_buffer(void * buffer, size_t size);
+ GGML_BACKEND_API void ggml_backend_cuda_unregister_host_buffer(void);
+ 
+diff --git a/src/ggml-cuda/mmq.cu b/src/ggml-cuda/mmq.cu
+index e1add5e..0000000 100644
+--- a/src/ggml-cuda/mmq.cu
++++ b/src/ggml-cuda/mmq.cu
+@@ -76,7 +76,7 @@ static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, cons
+ 
+ void ggml_cuda_mul_mat_q(
+         ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst) {
+-    GGML_ASSERT(        src1->type == GGML_TYPE_F32);
++    GGML_ASSERT(        src1->type == GGML_TYPE_F32 || src1->type == GGML_TYPE_Q8_1);
+     GGML_ASSERT(        dst->type  == GGML_TYPE_F32);
+     GGML_ASSERT(!ids || ids->type  == GGML_TYPE_I32); // Optional, used for batched GGML_MUL_MAT_ID.
+ 
+@@ -96,7 +96,7 @@ void ggml_cuda_mul_mat_q(
+     GGML_ASSERT(!ids || ids->nb[0] == ggml_type_size(ids->type));
+ 
+     const char  * src0_d = (const char  *) src0->data;
+-    const float * src1_d = (const float *) src1->data;
++    const float * src1_d = src1->type == GGML_TYPE_F32 ? (const float *) src1->data : nullptr;
+     float       *  dst_d = (float       *)  dst->data;
+ 
+     // If src0 is a temporary compute buffer, clear any potential padding.
+@@ -120,6 +120,24 @@ void ggml_cuda_mul_mat_q(
+     // TODO: tighter pool buffer size vs q8 path
+     const bool use_native_fp4 = blackwell_mma_available(cc) && (src0->type == GGML_TYPE_MXFP4 || src0->type == GGML_TYPE_NVFP4);
+ 
++    // Pixal3D persistent activation cache. The Q8_1 tensor stores the exact
++    // block_q8_1_mmq byte layout produced by quantize_mmq_q8_1_cuda, not the
++    // ordinary public Q8_1 row layout. Q8_0 ProjectAttention is the only user.
++    if (!ids && src1->type == GGML_TYPE_Q8_1) {
++        GGML_ASSERT(src0->type == GGML_TYPE_Q8_0);
++        GGML_ASSERT(ne10_padded == ne10); // dst tensor has no room for row padding
++        const int64_t s12 = ne11 * ne10 * sizeof(block_q8_1) / (QK8_1 * sizeof(int));
++        const int64_t s13 = ne12 * s12;
++        const mmq_args args = {
++            src0_d, src0->type, (const int *) src1->data, nullptr, nullptr, dst_d,
++            ne00, ne01, ne1, s01, ne11, s1,
++            ne02, ne12, s02, s12, s2,
++            ne03, ne13, s03, s13, s3,
++            use_stream_k, ne1};
++        ggml_cuda_mul_mat_q_switch_type(ctx, args, stream);
++        return;
++    }
++
+     if (!ids) {
+         const size_t nbytes_src1_q8_1 = ne13*ne12 * ne11*ne10_padded * sizeof(block_q8_1)/QK8_1 +
+             get_mmq_x_max_host(cc)*sizeof(block_q8_1_mmq);
+diff --git a/src/ggml-cuda/ggml-cuda.cu b/src/ggml-cuda/ggml-cuda.cu
+index 61041bd..0000000 100644
+--- a/src/ggml-cuda/ggml-cuda.cu
++++ b/src/ggml-cuda/ggml-cuda.cu
+@@ -2587,6 +2587,9 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
+     bool use_mul_mat_q     = ggml_is_quantized(src0->type) && !bad_padding_clear
+         && src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32;
+ 
++    const bool use_prepacked_q8_1 = src0->type == GGML_TYPE_Q8_0 && !bad_padding_clear
++        && src1->type == GGML_TYPE_Q8_1 && dst->type == GGML_TYPE_F32 && !split;
++
+     bool any_gpus_with_slow_fp16 = false;
+ 
+     if (split) {
+@@ -2642,7 +2645,11 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
+         return;
+     }
+ 
+-    if (!split && use_mul_mat_vec_f) {
++    if (use_prepacked_q8_1) {
++        GGML_ASSERT(ggml_cuda_should_use_mmq(src0->type, cc, src1->ne[1], /*n_experts=*/0));
++        ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst);
++    } else if (!split && use_mul_mat_vec_f) {
+         // the custom F16 vector kernel can be used over batched cuBLAS GEMM
+         // but this is only faster for GPUs without tensor cores or with a thin src0 matrix (particularly KQV in attention)
+         ggml_cuda_mul_mat_vec_f(ctx, src0, src1, nullptr, dst);
+@@ -5150,6 +5157,14 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const gg
+                 struct ggml_tensor * a = op->src[0];
+                 struct ggml_tensor * b = op->src[1];
++                if (b->type == GGML_TYPE_Q8_1) {
++                    const int cc = ggml_cuda_info().devices[dev_ctx->device].cc;
++                    if (op->op != GGML_OP_MUL_MAT || a->type != GGML_TYPE_Q8_0 ||
++                        (a->buffer && ggml_backend_buft_is_cuda_split(a->buffer->buft)) ||
++                        !ggml_cuda_should_use_mmq(a->type, cc, b->ne[1], /*n_experts=*/0)) {
++                        return false;
++                    }
++                }
+                 if (a->buffer && ggml_backend_buft_is_cuda_split(a->buffer->buft)) {
+                     if (a->ne[2] > 1 || a->ne[3] > 1) {
+                         return false;
+@@ -5760,4 +5775,38 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
+     return cuda_backend;
+ }
+ 
++bool ggml_backend_cuda_mmq_prepack_q8_1(
++        ggml_backend_t backend, const ggml_tensor * src_f32,
++        ggml_tensor * dst_q8_1, enum ggml_type weight_type) {
++    if (!backend || !ggml_backend_is_cuda(backend) || !src_f32 || !dst_q8_1) {
++        return false;
++    }
++    if (src_f32->type != GGML_TYPE_F32 || dst_q8_1->type != GGML_TYPE_Q8_1 ||
++        weight_type != GGML_TYPE_Q8_0 || !ggml_is_contiguous(src_f32) ||
++        !ggml_is_contiguous(dst_q8_1)) {
++        return false;
++    }
++    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
++        if (src_f32->ne[i] != dst_q8_1->ne[i]) {
++            return false;
++        }
++    }
++    // quantize_mmq_q8_1_cuda pads ne0 to MATRIX_ROW_PADDING. The public Q8_1
++    // tensor owns only its logical bytes, so only use the cache when no padding
++    // is needed (Pixal3D proj_in is 1024 or 2048).
++    if (src_f32->ne[0] % MATRIX_ROW_PADDING != 0) {
++        return false;
++    }
++
++    ggml_backend_cuda_context * ctx = (ggml_backend_cuda_context *) backend->context;
++    ggml_cuda_set_device(ctx->device);
++    quantize_mmq_q8_1_cuda(
++        (const float *) src_f32->data, nullptr, dst_q8_1->data, weight_type,
++        src_f32->ne[0],
++        src_f32->nb[1] / sizeof(float),
++        src_f32->nb[2] / sizeof(float),
++        src_f32->nb[3] / sizeof(float),
++        src_f32->ne[0], src_f32->ne[1], src_f32->ne[2], src_f32->ne[3],
++        ctx->stream());
++    CUDA_CHECK(cudaGetLastError());
++    return true;
++}
++
+ GGML_BACKEND_DL_IMPL(ggml_backend_cuda_reg)
