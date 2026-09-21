@@ -5,6 +5,9 @@
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
+#ifdef TRELLIS_USE_CUDA
+#include "ggml-cuda.h"
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -107,6 +110,15 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     // for the entire flow. Opt out for parity/perf A/B or unusual callers that mutate
     // conditioning in place while keeping the same pointer.
     use_cross_kv_cache_ = p_.proj_attn && std::getenv("TRELLIS_DISABLE_CROSS_KV_CACHE") == nullptr;
+#ifdef TRELLIS_USE_CUDA
+    // The prepacked src1 path is intentionally narrow: CUDA + Q8_0 ProjectAttention only.
+    // F16 models and every other backend keep the existing F32 input path.
+    if (p_.proj_attn && std::getenv("TRELLIS_DISABLE_PROJ_Q8_CACHE") == nullptr &&
+        ggml_backend_is_cuda(m_.backend)) {
+        T* pw = m_.try_get("blocks.0.cross_attn.proj_linear.weight");
+        use_proj_q8_cache_ = pw && pw->type == GGML_TYPE_Q8_0;
+    }
+#endif
     // sdpa のクエリ分割はチャンク 1 本につき約 8 ノードを足す。30 ブロック x 2 attention で
     // 1 グラフに載るので、チャンク数を増やすとここが先に枯れる（ggml_new_object: not enough
     // space）。枠はホスト側のメタデータだけで 1 テンソル約 368 B なので、広げても数十 MB。
@@ -119,7 +131,8 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     gcos_ = ggml_new_tensor_4d(ctx_, GGML_TYPE_F32, 1, half, 1, N_); ggml_set_input(gcos_);
     gsin_ = ggml_new_tensor_4d(ctx_, GGML_TYPE_F32, 1, half, 1, N_); ggml_set_input(gsin_);
     if (p_.proj_attn) {
-        gproj_ = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.d_proj, N_); ggml_set_input(gproj_);
+        const ggml_type proj_type = use_proj_q8_cache_ ? GGML_TYPE_Q8_1 : GGML_TYPE_F32;
+        gproj_ = ggml_new_tensor_2d(ctx_, proj_type, p_.d_proj, N_); ggml_set_input(gproj_);
     }
     if (use_cross_kv_cache_) {
         gcross_kv_ = ggml_new_tensor_3d(ctx_, GGML_TYPE_F32,
@@ -164,10 +177,64 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
 }
 
 DitRunner::~DitRunner() {
+    for (auto& e : proj_q8_cache_) {
+        if (e.buffer) ggml_backend_buffer_free(e.buffer);
+        if (e.ctx) ggml_free(e.ctx);
+    }
     if (kv_alloc_) ggml_gallocr_free(kv_alloc_);
     if (kv_ctx_)   ggml_free(kv_ctx_);
     if (alloc_) ggml_gallocr_free(alloc_);
     if (ctx_)   ggml_free(ctx_);
+}
+
+ggml_tensor* DitRunner::proj_q8_for(const float* proj) {
+#ifdef TRELLIS_USE_CUDA
+    for (auto& e : proj_q8_cache_) if (e.key == proj) return e.packed;
+    if (!use_proj_q8_cache_ || !proj) throw std::runtime_error("DitRunner: invalid proj Q8 cache request");
+
+    // Persistent destination: logical Q8_1 shape, private MMQ-packed bytes.
+    ProjQ8Entry e;
+    e.key = proj;
+    const size_t meta = ggml_tensor_overhead() * 2 + 1024;
+    e.ctx = ggml_init({ meta, nullptr, true });
+    if (!e.ctx) throw std::runtime_error("DitRunner: proj Q8 cache context alloc failed");
+    e.packed = ggml_new_tensor_2d(e.ctx, GGML_TYPE_Q8_1, p_.d_proj, N_);
+    e.buffer = ggml_backend_alloc_ctx_tensors(e.ctx, m_.backend);
+    if (!e.buffer) {
+        ggml_free(e.ctx);
+        throw std::runtime_error("DitRunner: proj Q8 cache buffer alloc failed");
+    }
+
+    // Temporary F32 source exists only for the one-time prepack.
+    ggml_context* src_ctx = ggml_init({ ggml_tensor_overhead() + 512, nullptr, true });
+    if (!src_ctx) throw std::runtime_error("DitRunner: proj Q8 source context alloc failed");
+    ggml_tensor* src = ggml_new_tensor_2d(src_ctx, GGML_TYPE_F32, p_.d_proj, N_);
+    ggml_backend_buffer_t src_buf = ggml_backend_alloc_ctx_tensors(src_ctx, m_.backend);
+    if (!src_buf) {
+        ggml_free(src_ctx);
+        throw std::runtime_error("DitRunner: proj Q8 source buffer alloc failed");
+    }
+    ggml_backend_tensor_set(src, proj, 0, (size_t)p_.d_proj * N_ * sizeof(float));
+    const bool ok = ggml_backend_cuda_mmq_prepack_q8_1(m_.backend, src, e.packed, GGML_TYPE_Q8_0);
+    ggml_backend_synchronize(m_.backend);
+    ggml_backend_buffer_free(src_buf);
+    ggml_free(src_ctx);
+    if (!ok) {
+        ggml_backend_buffer_free(e.buffer);
+        ggml_free(e.ctx);
+        throw std::runtime_error("DitRunner: proj Q8 MMQ prepack unsupported");
+    }
+
+    if (std::getenv("TRELLIS_DBG_CACHE"))
+        fprintf(stderr, "      [cache] proj MMQ-Q8 miss -> %.2f MiB (F32 %.2f MiB, N=%d)\n",
+                ggml_nbytes(e.packed) / 1048576.0,
+                (double)p_.d_proj * N_ * sizeof(float) / 1048576.0, N_);
+    proj_q8_cache_.push_back(e);
+    return proj_q8_cache_.back().packed;
+#else
+    (void)proj;
+    throw std::runtime_error("DitRunner: proj Q8 cache requested without CUDA");
+#endif
 }
 
 const std::vector<float>& DitRunner::cross_kv_for(const float* cond) {
@@ -209,7 +276,12 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
     ggml_backend_tensor_set(gsin_, rsin_.data(), 0, rsin_.size() * 4);
     if (gproj_) {
         if (!proj) throw std::runtime_error("DitRunner: proj_attn model requires a proj tensor");
-        ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
+        if (use_proj_q8_cache_) {
+            ggml_tensor* packed = proj_q8_for(proj);
+            ggml_backend_tensor_copy_async(m_.backend, m_.backend, packed, gproj_);
+        } else {
+            ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
+        }
     }
     const auto tc0 = std::chrono::steady_clock::now();
     if (ggml_backend_graph_compute(m_.backend, g_) != GGML_STATUS_SUCCESS)
@@ -237,7 +309,14 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
             }
             ggml_backend_tensor_set(gcos_, rcos_.data(), 0, rcos_.size() * 4);
             ggml_backend_tensor_set(gsin_, rsin_.data(), 0, rsin_.size() * 4);
-            if (gproj_) ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
+            if (gproj_) {
+                if (use_proj_q8_cache_) {
+                    ggml_tensor* packed = proj_q8_for(proj);
+                    ggml_backend_tensor_copy_async(m_.backend, m_.backend, packed, gproj_);
+                } else {
+                    ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
+                }
+            }
         };
         if (fwd_count_ == 1) profile_forward(reupload);
     }
