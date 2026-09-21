@@ -594,6 +594,19 @@ static bool test_fixture_replay(const std::string& fixture_root, const std::stri
               tag + ": production per-step divergence stays in the known band (max_rel=" + std::to_string(max_rel) + ")");
         check(sym_diff >= 1 && sym_diff <= 50,
               tag + ": production coord-set divergence stays in the known band (sym_diff=" + std::to_string(sym_diff) + ")");
+
+        // TASK-PORT F1 (verifier finding, 2026-09-21): the old track additionally pinned a tighter
+        // band for this one specific run (old track's own machine, 2026-09-21). Restored verbatim
+        // -- this machine's measured values (min_ratio=0.1363, max_rel=0.099183, sym_diff=4) fall
+        // inside it.
+        if (run_name == "run_1img_baseline_512") {
+            check(min_ratio >= 0.13 && min_ratio <= 0.16,
+                  tag + ": pinned case -- min_ratio in [0.13,0.16] (got " + std::to_string(min_ratio) + ")");
+            check(max_rel >= 0.09 && max_rel <= 0.12,
+                  tag + ": pinned case -- max_rel in [0.09,0.12] (got " + std::to_string(max_rel) + ")");
+            check(sym_diff >= 2 && sym_diff <= 8,
+                  tag + ": pinned case -- coord-set sym_diff near 4 (got " + std::to_string(sym_diff) + ")");
+        }
     }
     return true;
 }
