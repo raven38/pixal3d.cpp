@@ -899,7 +899,10 @@ double compute_ratio_at(const std::string& base, int step, const SamplerParams& 
 
 } // namespace
 
-static void run_s4_clamp_table(const std::string& fixture_root) {
+// 戻り値: この fixture 全体で clamp ガードが1点も発火しなかったか（isfinite && [0.2,5.0] を
+// 全行が満たしたか）。main() が production-gate full-trajectory の informational->hard assert
+// 昇格判定に使う（2026-09-22 差し戻し対応、informational 36件の一部昇格）。
+static bool run_s4_clamp_table(const std::string& fixture_root) {
     printf("== S4: #77 OOD clamp ratio table (production gate, all runs x all inside steps) ==\n");
     struct Row { std::string run; std::string side; int step; double native; double manifest; };
     std::vector<Row> rows;
@@ -935,10 +938,23 @@ static void run_s4_clamp_table(const std::string& fixture_root) {
     int no_clamp_count = 0, would_fire_count = 0, missing = 0;
     printf("      %-42s %-4s %4s %12s %12s %10s\n", "run", "side", "step", "native_ratio", "ref_ratio", "rel");
     for (const auto& row : rows) {
-        if (!std::isfinite(row.native)) { ++missing; printf("      %-42s %-4s %4d %12s %12s %10s\n", row.run.c_str(), row.side.c_str(), row.step, "n/a", "n/a", "-"); continue; }
+        const std::string tag = row.run + " " + row.side + " step" + std::to_string(row.step);
+        if (!std::isfinite(row.native)) {
+            ++missing;
+            printf("      %-42s %-4s %4d %12s %12s %10s\n", row.run.c_str(), row.side.c_str(), row.step, "n/a", "n/a", "-");
+            check(false, tag + ": S4 native ratio computed (missing pos/neg/xt files)");
+            continue;
+        }
         gmin = std::min(gmin, row.native); gmax = std::max(gmax, row.native);
-        const bool no_fire = std::isfinite(row.native) && row.native >= 0.2 && row.native <= 5.0;
+        // 2026-09-22 差し戻し対応 (1): 集計してから if(would_fire_count==0){check(true,...)} と
+        // していた（分岐条件自体が真になるよう選ばれた枝の中で check(true,...) を呼ぶのは
+        // tautology で、失敗時は printf のみに落ちて1件もhard assertされない構造的欠陥だった）。
+        // 各行を個別にhard assertする（発火すればその行がFAILとして報告される、判断はしない —
+        // #77のkeep/removeはユーザー判断のまま）。
+        const bool no_fire = row.native >= 0.2 && row.native <= 5.0;
         if (no_fire) ++no_clamp_count; else ++would_fire_count;
+        check(no_fire, tag + ": OOD clamp guard is no-op (isfinite && ratio in [0.2,5.0], ratio=" +
+              std::to_string(row.native) + ")");
         char refbuf[16] = "n/a", relbuf[16] = "-";
         if (std::isfinite(row.manifest)) {
             snprintf(refbuf, sizeof refbuf, "%.6f", row.manifest);
@@ -948,20 +964,11 @@ static void run_s4_clamp_table(const std::string& fixture_root) {
         }
         printf("      %-42s %-4s %4d %12.6f %12s %10s\n", row.run.c_str(), row.side.c_str(), row.step, row.native, refbuf, relbuf);
     }
-    printf("      -- summary: %d rows, native ratio min=%.4f max=%.4f, no_clamp=%d, would_fire=%d, missing=%d, "
+    printf("      -- summary (informational aggregate, the per-row check() calls above are the real gate): "
+           "%d rows, native ratio min=%.4f max=%.4f, no_clamp=%d, would_fire=%d, missing=%d, "
            "max rel vs manifest ood_ratio=%.2e --\n",
            (int)rows.size(), gmin, gmax, no_clamp_count, would_fire_count, missing, max_ref_rel);
-
-    // 判断はしない（keep/removeはユーザー判断）。事実だけ assert する:
-    check(missing == 0, "S4: native ratio computed for every row (no missing pos/neg/xt files, missing=" +
-          std::to_string(missing) + ")");
-    if (would_fire_count == 0) {
-        check(true, "S4: clamp is a no-op across all measured points (isfinite && ratio in [0.2,5.0] for all " +
-              std::to_string(no_clamp_count) + " rows, min=" + std::to_string(gmin) + ", max=" + std::to_string(gmax) + ")");
-    } else {
-        printf("info S4: clamp WOULD fire on %d/%d measured points (min ratio=%.4f) -- reporting only, no verdict\n",
-               would_fire_count, (int)rows.size(), gmin);
-    }
+    return missing == 0 && would_fire_count == 0;
 }
 
 // --internal-trace-dump モード: 1 run/1 side の full-trajectory (12 step) trace を生の float32 で
@@ -1016,15 +1023,19 @@ static bool capture_trace_dump(const std::string& exe, const std::string& fixtur
     return status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-static void run_s4_bit_identical(const std::string& fixture_root, const std::string& exe) {
+// 戻り値: 全 run×side で bit-identical だったか（run_s4_clamp_table と合わせて main() の
+// informational->hard assert 昇格判定に使う）。
+static bool run_s4_bit_identical(const std::string& fixture_root, const std::string& exe) {
     printf("== S4: NOFIX vs production full-trajectory trace bit-identical (independent evidence clamp is no-op) ==\n");
+    bool all_ok = true;
     auto check_one = [&](const std::string& run_name, const std::string& side, const std::string& tag) {
         std::vector<char> a, b;
         const bool ok1 = capture_trace_dump(exe, fixture_root, run_name, side, /*nofix=*/false, a);
         const bool ok2 = capture_trace_dump(exe, fixture_root, run_name, side, /*nofix=*/true, b);
-        check(ok1 && ok2 && a.size() == b.size() && a.size() > 0 &&
-              std::memcmp(a.data(), b.data(), a.size()) == 0,
-              tag + ": production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (" +
+        const bool identical = ok1 && ok2 && a.size() == b.size() && a.size() > 0 &&
+              std::memcmp(a.data(), b.data(), a.size()) == 0;
+        all_ok = all_ok && identical;
+        check(identical, tag + ": production vs TRELLIS_NOFIX=1 full-trajectory trace is bit-identical (" +
               std::to_string(a.size()) + " bytes)" + ((ok1 && ok2) ? "" : " (subprocess failed)"));
     };
     for (const auto& r : RUNS_512) check_one(r.name, "flat", std::string(r.name) + " flat");
@@ -1032,6 +1043,7 @@ static void run_s4_bit_identical(const std::string& fixture_root, const std::str
         check_one(r.name, "lr", std::string(r.name) + " LR");
         check_one(r.name, "hr", std::string(r.name) + " HR");
     }
+    return all_ok;
 }
 
 static int run_parity_subprocess_mode(int argc, char** argv) {
@@ -1066,9 +1078,6 @@ int main(int argc, char** argv) {
     printf("== production (clamp on, default settings): step0 CFG, informational + diagnostics ==\n");
     run_512(fixture_root);
     run_1024c(fixture_root);
-    printf("== production (clamp on, default settings): shape full-trajectory (12 step), informational ==\n");
-    run_full_trajectory_512(fixture_root, /*hard_assert=*/false);
-    run_full_trajectory_1024c(fixture_root, /*hard_assert=*/false);
 
     printf("== S3: cascade boundary self-derivation (quantize: hard gate, upsample: q8_0 INFO) ==\n");
     for (const auto& r : RUNS_1024C) {
@@ -1084,8 +1093,20 @@ int main(int argc, char** argv) {
         check_s3_upsample(fixture_root + "/run_1img_baseline_1024c", shape_dec_gguf, /*gpu=*/0);
     }
 
-    run_s4_clamp_table(fixture_root);
-    run_s4_bit_identical(fixture_root, argv[0]);
+    // S4 を先に走らせ、「clampが全点で発火しない」ことを個別hard assert（ratio bounds）+
+    // 独立証拠（NOFIX/production trace bit-identical）の両方で確立する。両方成立するなら、
+    // 以降の production-gate full-trajectory (S1+S2) の 36件の informational printf を
+    // hard assert へ昇格する（2026-09-22 差し戻し対応 (1)：informationalのまま残すのは
+    // 「昇格すべきでない」場合のみに限定し、昇格根拠をログへ明記する）。
+    const bool s4_ratio_ok = run_s4_clamp_table(fixture_root);
+    const bool s4_bitid_ok = run_s4_bit_identical(fixture_root, argv[0]);
+    const bool promote_production_gate = s4_ratio_ok && s4_bitid_ok;
+    printf("== production (clamp on, default settings): shape full-trajectory (12 step)%s ==\n",
+           promote_production_gate
+               ? ", PROMOTED to hard assert (S4 proved clamp is a no-op for every point + NOFIX/production trace bit-identical)"
+               : ", informational only (S4 found a clamp-firing point or a bit-identical mismatch -- see S4 output above)");
+    run_full_trajectory_512(fixture_root, /*hard_assert=*/promote_production_gate);
+    run_full_trajectory_1024c(fixture_root, /*hard_assert=*/promote_production_gate);
 
     printf("== parity (clamp off): re-exec'ing self with TRELLIS_NOFIX forced internally ==\n");
     {

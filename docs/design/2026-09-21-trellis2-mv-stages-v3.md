@@ -27,7 +27,7 @@ step{0,8,11}のみ）を拡張する。fixture: `~/nfs/pixal3d_trellis2mv_ref_v3
    「量子化ノイズ」を区別できない。これを結果に明記する（期待値は変えない — 一致しない
    場合は差集合サイズ・両側にしかない座標例を報告するだけで、閾値緩和はしない）。
 
-## 0.5 codex exec レビュー反映（2026-09-21、`docs/design/../codex-review` 実施済み）
+## 0.5 codex exec レビュー反映（2026-09-21、全文: `docs/design/2026-09-21-trellis2-mv-stages-v3-codex-review.md`）
 
 致命的な設計欠陥は無し（「実装に進んでよい」）との結論。反映必須の3点:
 
