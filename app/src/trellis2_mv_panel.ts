@@ -94,7 +94,9 @@ export function mountTrellis2MvPanel(root: HTMLElement): void {
         ? { ok: false, text: "This runtime does not advertise TRELLIS.2 multiview; update trellis-server." }
         : { ok: false, text: "Server is offline." };
     }
-    if (!cap.trellis2_mv?.available) return { ok: false, text: "TRELLIS.2 multiview is not available in this runtime." };
+    if (!cap.trellis2_mv?.available) {
+      return { ok: false, text: `TRELLIS.2 multiview is not available: ${cap.trellis2_mv?.reason ?? "required model files are missing"}` };
+    }
     return { ok: true, text: `TRELLIS.2 multiview ready · up to ${cap.trellis2_mv.max_images || 8} images` };
   };
 
