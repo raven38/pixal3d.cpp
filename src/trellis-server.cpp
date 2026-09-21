@@ -11,7 +11,10 @@
 //                        chart space; box = faster projection), "band" (narrow-band
 //                        DC remesh band width, default 1 — see --band). Returns
 //                        model/gltf-binary.
-//   POST /generate-trellis2-mv  TRELLIS.2 pose-free multi-image endpoint. Takes\n//                        image0..imageN-1, num_images, fusion=stochastic|multidiffusion.\n//                        Uses the same model set as /generate; no transforms/mesh_scale.\n//   POST /generate-mv   Pixal3D multiview endpoint. Multipart may contain a
+//   POST /generate-trellis2-mv  TRELLIS.2 pose-free multi-image endpoint. Takes
+//                        image0..imageN-1, num_images, fusion=stochastic|multidiffusion.
+//                        Uses the same model set as /generate; no transforms/mesh_scale.
+//   POST /generate-mv   Pixal3D multiview endpoint. Multipart may contain a
 //                        "transforms" file part (transforms.json); without it, exactly 4
 //                        turntable views plus a "mesh_scale" field select the canonical
 //                        rig (front/right/back/left). It also takes one or more
