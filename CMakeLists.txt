@@ -419,6 +419,12 @@ add_executable(trellis-test-trellis2-mv-sampler src/test_trellis2_mv_sampler.cpp
 target_link_libraries(trellis-test-trellis2-mv-sampler PRIVATE trellis_core)
 set_target_properties(trellis-test-trellis2-mv-sampler PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# TASK-PORT P3: synthetic sampler oracle (weightless, CPU-only), ported from the old track's
+# src/test_flow_multi.cpp. Kept alongside (not replacing) trellis-test-trellis2-mv-sampler above.
+add_executable(trellis-test-flow-multi src/test_flow_multi.cpp)
+target_link_libraries(trellis-test-flow-multi PRIVATE trellis_core)
+set_target_properties(trellis-test-flow-multi PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-dinov3 src/test_dinov3.cpp)
 target_link_libraries(trellis-test-dinov3 PRIVATE trellis_core)
 set_target_properties(trellis-test-dinov3 PROPERTIES BUILD_RPATH "${GGML_RPATH}")
