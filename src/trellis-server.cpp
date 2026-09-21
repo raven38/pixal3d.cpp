@@ -11,7 +11,7 @@
 //                        chart space; box = faster projection), "band" (narrow-band
 //                        DC remesh band width, default 1 — see --band). Returns
 //                        model/gltf-binary.
-//   POST /generate-mv   Pixal3D multiview endpoint. Multipart may contain a
+//   POST /generate-trellis2-mv  TRELLIS.2 pose-free multi-image endpoint. Takes\n//                        image0..imageN-1, num_images, fusion=stochastic|multidiffusion.\n//                        Uses the same model set as /generate; no transforms/mesh_scale.\n//   POST /generate-mv   Pixal3D multiview endpoint. Multipart may contain a
 //                        "transforms" file part (transforms.json); without it, exactly 4
 //                        turntable views plus a "mesh_scale" field select the canonical
 //                        rig (front/right/back/left). It also takes one or more
@@ -481,6 +481,154 @@ int main(int argc, char** argv) {
         res.set_content(glb.data(), glb.size(), "model/gltf-binary");
     });
 
+    svr.Post("/generate-trellis2-mv", [&](const httplib::Request& req, httplib::Response& res) {
+        // Explicit pose-free TRELLIS.2 multi-image endpoint (#66). Keep this contract
+        // disjoint from Pixal3D /generate-mv: no transforms, mesh_scale, FOV or view cameras.
+        int num_images = 0;
+        if (!req.has_file("num_images") ||
+            !parse_int_strict(req.get_file_value("num_images").content, *(long*)&num_images)) {
+            // Avoid the aliasing trick above in the real parse below; this first branch only
+            // gives a precise missing-field error.
+            if (!req.has_file("num_images")) {
+                set_error(res, 400, "missing num_images");
+                return;
+            }
+        }
+        {
+            long n = 0;
+            if (!parse_int_strict(req.get_file_value("num_images").content, n) || n < 2 || n > 8) {
+                set_error(res, 400, "num_images must be an integer in [2, 8]");
+                return;
+            }
+            num_images = (int)n;
+        }
+
+        std::string fusion = "stochastic";
+        if (req.has_file("fusion")) fusion = req.get_file_value("fusion").content;
+        if (fusion != "stochastic" && fusion != "multidiffusion") {
+            set_error(res, 400, "fusion must be 'stochastic' or 'multidiffusion'");
+            return;
+        }
+
+        // Whitelist all multipart fields. imageN must be contiguous 0..num_images-1.
+        for (const auto& kv : req.files) {
+            const std::string& k = kv.first;
+            bool ok = k == "num_images" || k == "fusion" || k == "seed" ||
+                      k == "resolution" || k == "uv" || k == "band" ||
+                      k == "webp" || k == "bg_removal";
+            if (!ok && k.rfind("image", 0) == 0) {
+                const std::string tail = k.substr(5);
+                ok = !tail.empty() && tail.find_first_not_of("0123456789") == std::string::npos;
+            }
+            if (!ok) {
+                set_error(res, 400, "unexpected field for generate-trellis2-mv: " + k);
+                return;
+            }
+        }
+
+        constexpr size_t kMaxOne = 64ull * 1024 * 1024;
+        constexpr size_t kMaxTotal = 128ull * 1024 * 1024;
+        size_t total = 0;
+        for (int i = 0; i < num_images; ++i) {
+            const std::string key = "image" + std::to_string(i);
+            if (!req.has_file(key)) {
+                set_error(res, 400, "missing " + key + " (image fields must be contiguous)");
+                return;
+            }
+            const auto& im = req.get_file_value(key);
+            if (im.content.empty() || im.content.size() > kMaxOne) {
+                set_error(res, 400, key + " is empty or exceeds 64 MiB");
+                return;
+            }
+            total += im.content.size();
+            if (total > kMaxTotal) {
+                set_error(res, 400, "combined images exceed 128 MiB");
+                return;
+            }
+        }
+        // Reject extra image indices beyond num_images.
+        for (int i = num_images; i < 32; ++i) {
+            if (req.has_file("image" + std::to_string(i))) {
+                set_error(res, 400, "image index is outside num_images");
+                return;
+            }
+        }
+
+        trellis::TrellisParams p = base;
+        {
+            std::string perr;
+            if (!apply_common_overrides(req, p, perr)) { set_error(res, 400, perr); return; }
+        }
+        if (req.has_file("bg_removal")) {
+            const std::string bg = req.get_file_value("bg_removal").content;
+            if (bg == "birefnet") p.birefnet = 1;
+            else if (bg == "threshold") p.birefnet = 0;
+            else if (bg == "auto") p.birefnet = -1;
+            else { set_error(res, 400, "bg_removal must be auto, threshold, or birefnet"); return; }
+        }
+        p.image.clear();
+        p.views.clear();
+        p.sv_image.clear();
+        p.pixal3d_weights_set = false;
+        p.mesh_scale_set = false;
+        p.num_views_set = false;
+        p.trellis2_mv_mode = fusion;
+        p.trellis2_mv_mode_set = true;
+
+        const std::string stem = temp_stem();
+        const std::filesystem::path view_dir = stem + "-trellis2-mv";
+        p.trellis2_mv = view_dir.string();
+        p.output = stem + ".glb";
+
+        std::string glb;
+        std::string error_message = "TRELLIS.2 multiview reconstruction failed";
+        {
+            std::lock_guard<std::mutex> lk(gen_mu);
+            BusyScope busy;
+            std::error_code ec;
+            if (!std::filesystem::create_directory(view_dir, ec) || ec) {
+                set_error(res, 500, "failed to create a fresh TRELLIS.2 multiview staging directory");
+                return;
+            }
+
+            bool staged = true;
+            for (int i = 0; i < num_images; ++i) {
+                char name[32];
+                snprintf(name, sizeof name, "view%02d.png", i);
+                if (!write_file_bytes((view_dir / name).string(),
+                                      req.get_file_value("image" + std::to_string(i)).content)) {
+                    staged = false;
+                    error_message = "failed to stage image" + std::to_string(i);
+                    break;
+                }
+            }
+            if (!staged) {
+                std::filesystem::remove_all(view_dir, ec);
+                cleanup_outputs(stem);
+                set_error(res, 500, error_message);
+                return;
+            }
+
+            fprintf(stderr,
+                    "[trellis-server] generate-trellis2-mv: V=%d fusion=%s seed=%u res=%s uv=%s\n",
+                    num_images, fusion.c_str(), p.seed,
+                    p.cascade ? std::to_string(p.hr_res).c_str() : "512",
+                    p.xatlas ? "xatlas" : "box");
+            try {
+                const int rc = trellis_run(p);
+                if (rc == 0) glb = read_file_bytes(p.output);
+            } catch (const std::exception& e) {
+                fprintf(stderr, "[trellis-server] generate-trellis2-mv failed: %s\n", e.what());
+                error_message = e.what();
+            }
+            std::filesystem::remove_all(view_dir, ec);
+            cleanup_outputs(stem);
+        }
+
+        if (glb.empty()) { set_error(res, 500, error_message); return; }
+        res.set_content(glb.data(), glb.size(), "model/gltf-binary");
+    });
+
     svr.Get("/capabilities", [&](const httplib::Request&, httplib::Response& res) {
         // 毎回ディレクトリを見る（Studio の設定変更や installer の追加導入を再起動なしで反映する）。
         // SHA256 は再計算しない — manifest の存在 + 契約 + 実在 + サイズ一致まで（設計書 D6）。
@@ -497,7 +645,9 @@ int main(int argc, char** argv) {
         };
         const std::string body = "{\"busy\":" + std::string(g_busy.load() ? "true" : "false") +
                                  ",\"completed\":" + std::to_string(g_completed.load()) +
-                                 ",\"mv\":" + one(mv) + ",\"sv\":" + one(sv) + "}";
+                                 ",\"mv\":" + one(mv) + ",\"sv\":" + one(sv) +
+                                 ",\"trellis2_mv\":{\"available\":true,\"max_images\":8,"
+                                 "\"modes\":[\"stochastic\",\"multidiffusion\"]}}";
         res.set_content(body, "application/json");
     });
 
