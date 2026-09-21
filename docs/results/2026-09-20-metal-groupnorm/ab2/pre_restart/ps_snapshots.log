@@ -1,0 +1,80 @@
+== 17:53:34 before new nafops_T1024 gpu_util=0 load= 8.72 33.54 51.64 
+  PID  %CPU     ELAPSED ARGS
+  924  10.6 03-08:23:02 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  523   9.5 03-08:24:24 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  411   8.2 03-08:24:25 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  465   7.8 03-08:24:24 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 2212   7.5    01:17:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+40050   6.6 02-02:16:47 claude
+58284   6.4    15:45:24 claude
+-- trellis:
+== 17:53:54 after new nafops_T1024 gpu_util=0 load= 6.60 31.45 50.46 
+  PID  %CPU     ELAPSED ARGS
+ 6276   9.8 03-08:15:51 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+  926   8.3 03-08:23:22 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  924   8.2 03-08:23:22 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  411   7.2 03-08:24:45 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212   4.8    01:17:20 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+58284   4.3    15:45:44 claude
+ 1688   4.0 03-08:22:57 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+== 17:59:52 before old nafops_T1024 gpu_util=0 load= 5.35 13.06 34.85 
+  PID  %CPU     ELAPSED ARGS
+  411  42.6 03-08:30:43 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  20.2 03-08:29:18 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  11.3    01:23:18 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 6053   7.6 03-08:21:49 claude --resume 269841e3-50a1-45aa-aa98-7d7ca0fd3647
+ 2085   4.2 03-08:28:47 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+ 1688   3.8 03-08:28:55 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+90749   3.5 03-00:56:06 claude
+-- trellis:
+== 18:00:19 after old nafops_T1024 gpu_util=0 load= 4.95 12.35 33.97 
+  PID  %CPU     ELAPSED ARGS
+  411  43.9 03-08:31:10 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  16.1 03-08:29:45 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212   9.3    01:23:45 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+58284   6.0    15:52:09 claude
+  926   5.6 03-08:29:47 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  465   4.7 03-08:31:09 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.7 03-08:31:10 /usr/libexec/trustd
+-- trellis:
+== 18:05:57 before new nafops_T512 gpu_util=0 load= 3.26 6.23 23.91 
+  PID  %CPU     ELAPSED ARGS
+  411  42.2 03-08:36:48 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 1061  22.3 03-08:35:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 2212  16.9    01:29:23 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523   5.5 03-08:36:47 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   4.4 03-08:36:47 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+90749   4.4 03-01:02:11 claude
+ 1688   4.2 03-08:35:00 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+== 18:06:12 after new nafops_T512 gpu_util=0 load= 3.42 6.12 23.56 
+  PID  %CPU     ELAPSED ARGS
+  411  44.1 03-08:37:03 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  926  27.3 03-08:35:40 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+ 1061  21.6 03-08:35:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  20.9 03-08:36:45 /usr/libexec/sysmond
+ 2212  20.6    01:29:38 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 6276  10.4 03-08:28:09 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+57915   7.0    15:58:29 claude
+-- trellis:
+== 18:25:13 before old nafops_T512 gpu_util=0 load= 5.50 5.37 9.88 
+  PID  %CPU     ELAPSED ARGS
+  411  45.1 03-08:56:04 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  28.5    01:48:39 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  21.7 03-08:54:39 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  13.4 03-08:54:42 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914   9.5 03-08:54:41 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+58284   9.2    16:17:03 claude
+ 1475   7.2 03-08:54:23 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+== 18:25:38 after old nafops_T512 gpu_util=87 load= 5.47 5.38 9.75 
+  PID  %CPU     ELAPSED ARGS
+ 2212  85.4    01:49:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  411  42.0 03-08:56:30 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+27903  23.2       00:02 /Users/s25705/.local/bin/claude --output-format stream-json --verbose --system-prompt You are a senior application-s
+57915  14.6    16:17:56 claude
+ 1061   6.4 03-08:55:05 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523   4.9 03-08:56:29 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+ 1688   4.2 03-08:54:42 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:

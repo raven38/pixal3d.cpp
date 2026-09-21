@@ -144,6 +144,16 @@ worth upstreaming as-is, and 0004 (`feat/webgpu-sparse-backend-prep`) is the sam
 | `0005-webgpu-cpy-i32-src.patch` | `cpy.wgsl` accepts `SRC_I32` (`SRC_TYPE i32`), `get_cpy_pipeline` maps `GGML_TYPE_I32` sources to it, and `supports_op` admits `CPY`/`CONT` with I32 source **and** I32 destination (F32→I32 was already there). Added on `feat/webgpu-shape-decode`. | The sparse decoder's submanifold conv takes tap `t`'s neighbour indices for an output range as `cont(view_1d(nbr_i32, nr, (t*N + r0)*4))` (`src/sparse.cpp::submconv_range`; the `cont` exists because the Vulkan `get_rows` asserts a zero index offset). The shader lib had F32/F16 sources only, so the very first ConvNeXt graph aborted with `Unsupported src type for cpy shader` (native Dawn) -- and `supports_op` said "unsupported", which in a browser is the §9 silent skip. Regression: `trellis-webgpu-ops` `cont(view) i32` cases at the decoder's own layouts (`docs/PIXAL3D_WEBGPU_OP_GAP.md` §11.1). |
 | `0003-webgpu-2d-dispatch-row-ops.patch` | The `soft_max`, `sum_rows`, `row_norm` (NORM/RMS_NORM/L2_NORM), `get_rows`, `concat`, `pad` and `repeat` encoders dispatch on a 2D workgroup grid via the existing `compute_2d_workgroups`; their shaders take `@builtin(num_workgroups)` and linearize `wid.x + num_wg.x * wid.y` (workgroup-per-row shaders, with a row bound check; `sum_rows` gains an `n_rows` param) or `gid.x + num_wg.x * WG_SIZE * gid.y` (element shaders). The `cpy` shader, whose encoder was already 2D upstream, gets the same linearization (it read `gid.x` only). | Any of these ops with more than `maxComputeWorkgroupsPerDimension` (65535) rows / workgroups failed WebGPU validation and was silently skipped; `cont`/`cpy` over 64 Mi elements (256 MB f32) wrote only the first `1/wg_y` of the output (measured 50 % / 66.6 % / 79.9 % garbage at 256 / 512 / 1024 MB). The NAF attention graph needs a 1M-row softmax, a 4M-row `sum_rows`, 82944- and 262144-row `get_rows` and 1 GB `cont`s. Regression test: `trellis-webgpu-ops` (`docs/spec/31-webgpu-bringup.md` §10.2). |
 
+### Not applied: upstream candidates kept outside `patches/`
+
+- **ggml-metal `GROUP_NORM` threadgroup size** (issue #55, `docs/results/2026-09-20-metal-groupnorm/upstream/`):
+  `ggml_metal_op_group_norm` dispatches one threadgroup of 32 threads per group (the scaling loop is commented
+  out, also on upstream `llama.cpp` master), 453 ms/op on `[1024,1024,128]` f32. The candidate patch sizes the
+  threadgroup to the group (up to 1024) and adds the missing barrier before the second smem zero-fill. Not in
+  `patches/` because pixal3d.cpp's only `GROUP_NORM` user (the NAF encoder) re-expresses the op on Metal
+  (`NafGgmlOpts::generic_groupnorm`), which is both faster and closer to a float64 reference than the patched
+  kernel; the patch exists for upstream.
+
 ## Summary
 
 - Upstream base: `v0.15.1` @ `4251bf0eba36a032b871038156fde8068da28062` (verified identical between `pwilkin/ggml` and `ggml-org/ggml`).

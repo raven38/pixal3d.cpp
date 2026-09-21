@@ -1,0 +1,41 @@
+diff --git a/src/ggml-metal/ggml-metal-ops.cpp b/src/ggml-metal/ggml-metal-ops.cpp
+index e2ce56e9..22ba578a 100644
+--- a/src/ggml-metal/ggml-metal-ops.cpp
++++ b/src/ggml-metal/ggml-metal-ops.cpp
+@@ -3323,13 +3323,16 @@ int ggml_metal_op_group_norm(ggml_metal_op_t ctx, int idx) {
+ 
+     auto pipeline = ggml_metal_library_get_pipeline_group_norm(lib, op);
+ 
+-    int nth = 32; // SIMD width
+-    //while (nth < ne00/4 && nth < ggml_metal_pipeline_max_theads_per_threadgroup(pipeline)) {
+-    //    nth *= 2;
+-    //}
++    // one threadgroup per group: size it to the group (ne00*ne01*ceil(ne02/ngrp) elements), not
++    // to ne00 -- the kernel reduces across SIMD groups through a 32-float threadgroup buffer,
++    // so up to 32 SIMD groups (1024 threads) per group
++    const int64_t gs = (int64_t) ne00*ne01*((ne02 + ngrp - 1)/ngrp);
+ 
+-    //nth = std::min(nth, ggml_metal_pipeline_max_theads_per_threadgroup(pipeline));
+-    //nth = std::min(nth, ne00/4);
++    int nth = 32; // SIMD width
++    while (nth < gs/4 && nth < ggml_metal_pipeline_max_theads_per_threadgroup(pipeline)) {
++        nth *= 2;
++    }
++    nth = std::min(nth, 1024);
+ 
+     const size_t smem = pipeline.smem;
+ 
+diff --git a/src/ggml-metal/ggml-metal.metal b/src/ggml-metal/ggml-metal.metal
+index 0aea6845..cf024e4c 100644
+--- a/src/ggml-metal/ggml-metal.metal
++++ b/src/ggml-metal/ggml-metal.metal
+@@ -3232,6 +3232,9 @@ kernel void kernel_group_norm_f32(
+ 
+     tmp = simd_sum(tmp);
+     if (ntg > N_SIMDWIDTH) {
++        // every SIMD group has to finish reading buf[] from the mean reduction before it is re-zeroed
++        threadgroup_barrier(mem_flags::mem_threadgroup);
++
+         if (sgitg == 0) {
+             buf[tiisg] = 0.0f;
+         }

@@ -1,0 +1,7 @@
+apply ok
+build rc=0
+[8/9] Building CXX object thirdparty/ggml/tests/CMakeFiles/test-backend-ops.dir/test-backend-ops.cpp.o
+[9/9] Linking CXX executable test-backend-ops
+revert ok
+submodule status printed above (empty = clean)
+build-metal-nth/test-backend-ops

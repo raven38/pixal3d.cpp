@@ -1,0 +1,41 @@
+ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
+ggml_metal_library_init: using embedded metal library
+ggml_metal_library_init: loaded in 0.009 sec
+ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
+ggml_metal_device_init: GPU name:   MTL0 (Apple M4 Max)
+ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
+ggml_metal_device_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_device_init: GPU family: MTLGPUFamilyMetal4  (5002)
+ggml_metal_device_init: simdgroup reduction   = true
+ggml_metal_device_init: simdgroup matrix mul. = true
+ggml_metal_device_init: has unified memory    = true
+ggml_metal_device_init: has bfloat            = true
+ggml_metal_device_init: has tensor            = false
+ggml_metal_device_init: use residency sets    = true
+ggml_metal_device_init: use shared buffers    = true
+ggml_metal_device_init: recommendedMaxWorkingSetSize  = 55662.79 MB
+ggml_metal_init: allocating
+ggml_metal_init: found device: Apple M4 Max
+ggml_metal_init: picking default device: Apple M4 Max
+ggml_metal_init: use fusion         = true
+ggml_metal_init: use concurrency    = true
+ggml_metal_init: use graph optimize = true
+ggml_metal_library_compile_pipeline: compiling pipeline: base = 'kernel_group_norm_f32', name = 'kernel_group_norm_f32'
+ggml_metal_library_compile_pipeline: loaded kernel_group_norm_f32                         0x10367b8b0 | th_max = 1024 | th_width =   32
+Testing 3 devices
+
+Backend 1/3: MTL0
+  Device description: Apple M4 Max
+  Device memory: 53084 MB (53083 MB free)
+
+  GROUP_NORM(type=f32,ne=[64,64,320,1],num_groups=32,eps=0.000001): [1;32mOK[0m
+  GROUP_NORM(type=f32,ne=[9,9,1280,1],num_groups=32,eps=0.000001): ggml_metal_free: deallocating
+[1;32mOK[0m
+  2/2 tests passed
+  Backend MTL0: [1;32mOK[0m
+Backend 2/3: BLAS
+  Skipping
+Backend 3/3: CPU
+  Skipping
+3/3 backends passed
+[1;32mOK[0m

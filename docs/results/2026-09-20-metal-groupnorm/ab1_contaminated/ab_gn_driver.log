@@ -1,0 +1,51 @@
+P1 START Sun Sep 20 15:09:49 JST 2026
+gate: waiting (15:10:19): 35446       00:10 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-
+--- new nafops_T1024 15:12:00
+exit=0
+--- old nafops_T1024 15:14:02
+exit=0
+--- new nafops_T512 15:16:09
+exit=0
+gate: waiting (15:16:30): 49262       00:17 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-
+--- old nafops_T512 15:18:11
+exit=0
+--- old nafops_T1024 15:20:08
+exit=0
+--- new nafops_T1024 15:22:20
+exit=0
+--- old nafops_T512 15:24:17
+exit=0
+--- new nafops_T512 15:26:11
+exit=0
+gate: waiting (15:26:29): 58453       00:11 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-
+--- new nafops_LR 15:28:10
+exit=0
+gate: waiting (15:28:19): 59999       00:18 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-
+--- old nafops_LR 15:30:10
+exit=0
+P1 DONE Sun Sep 20 15:30:23 JST 2026
+P2 START Sun Sep 20 15:30:23 JST 2026
+gate: waiting (15:30:23): 61424       00:13 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-
+--- new tex 15:32:24
+exit=0
+gate: waiting (15:33:02): 65149       00:43 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-
+--- old tex 15:34:53
+exit=0
+--- new hr 15:37:06
+exit=0
+gate: waiting (15:37:39): 68809       00:23 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-test-pixal3d-cond-
+--- old hr 15:39:40
+exit=0
+gate: waiting (15:42:17): 74848       02:43 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (15:47:21): 74848       07:48 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (15:52:25): 74848       12:51 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (15:57:28): 74848       17:54 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (16:02:30): 74848       22:57 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (16:07:33): 74848       27:59 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (16:12:43): 74848       33:09 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (16:17:54): 74848       38:20 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+gate: waiting (16:22:57): 74848       43:24 /Users/s25705/Downloads/pixal3d-cond-sparse/build-metal/trellis-cli
+66542       03:16 ./build-metal-new/trellis-test-pixal3d-cond-sparse
+--- new lr 16:28:21
+exit=0
+gate: waiting (16:29:18): 86070       00:02 ./build-metal-new/trellis-test-pixal3d-cond-sparse

@@ -1,0 +1,100 @@
+== 18:33:35 before gn_oracle_nth.log gpu_util=0 load= 4.60 5.41 7.92 
+  PID  %CPU     ELAPSED ARGS
+  411  47.0 03-09:04:26 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+90749  27.0 03-01:29:49 claude
+ 2212  22.5    01:57:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  12.8 03-09:03:01 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  881  11.5 03-09:03:04 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+  914   9.4 03-09:03:03 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1475   9.3 03-09:02:45 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+== 18:33:51 after gn_oracle_nth.log gpu_util=0 load= 4.09 5.26 7.83 
+  PID  %CPU     ELAPSED ARGS
+  411  51.0 03-09:04:42 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  28.5    01:57:17 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  27.4 03-09:03:17 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  523   9.1 03-09:04:41 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  914   8.2 03-09:03:19 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  881   5.8 03-09:03:20 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager
+ 1475   4.0 03-09:03:01 /Applications/CheatSheet.app/Contents/MacOS/CheatSheet
+-- trellis:
+== 18:39:33 before tbo gpu_util=0 load= 4.69 4.94 6.78 
+  PID  %CPU     ELAPSED ARGS
+  411  44.1 03-09:10:24 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  30.5    02:02:59 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  23.7 03-09:08:59 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  686  10.8 03-09:10:06 /usr/libexec/sysmond
+  523  10.3 03-09:10:23 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   7.4 03-09:10:23 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  914   6.4 03-09:09:01 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+-- trellis:
+== 18:39:33 after tbo gpu_util=0 load= 4.69 4.94 6.78 
+  PID  %CPU     ELAPSED ARGS
+  411  39.7 03-09:10:25 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 2212  25.5    02:03:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1061  19.2 03-09:09:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+ 1498  12.6 03-09:08:43 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/Ma
+  970   6.9 03-09:09:01 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+  914   5.0 03-09:09:02 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+ 1688   4.5 03-09:08:37 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/152.0.7977.83/Helpers/Codex (Render
+-- trellis:
+== 18:46:31 before nafops_T1024_nth_native_1.log gpu_util=0 load= 3.25 4.37 5.83 
+  PID  %CPU     ELAPSED ARGS
+  953  94.3 03-09:15:59 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  924  15.0 03-09:16:00 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  465   7.6 03-09:17:22 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  523   7.0 03-09:17:22 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  418   6.3 03-09:17:23 /usr/libexec/trustd
+  338   5.9 03-09:17:23 /usr/libexec/smd
+ 5887   5.4 03-09:08:29 claude --resume 578b5f45-be04-4b7d-9c78-aa0e2f8afe23
+-- trellis:
+== 18:46:52 after nafops_T1024_nth_native_1.log gpu_util=0 load= 3.02 4.25 5.75 
+  PID  %CPU     ELAPSED ARGS
+  953  91.9 03-09:16:19 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686  38.2 03-09:17:25 /usr/libexec/sysmond
+  926  12.8 03-09:16:20 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor
+  523   7.7 03-09:17:42 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   5.8 03-01:43:06 claude
+  465   5.5 03-09:17:42 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   3.4 03-09:17:43 /usr/libexec/trustd
+-- trellis:
+== 18:48:25 before nafops_T1024_nth_native_2.log gpu_util=0 load= 3.07 3.93 5.47 
+  PID  %CPU     ELAPSED ARGS
+  953  92.7 03-09:17:52 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  523   7.2 03-09:19:15 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   6.2 03-01:44:39 claude
+57872   4.3    18:30:01 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+  465   2.5 03-09:19:15 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+ 2085   2.4 03-09:17:20 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  418   1.9 03-09:19:16 /usr/libexec/trustd
+-- trellis:
+== 18:48:45 after nafops_T1024_nth_native_2.log gpu_util=0 load= 2.69 3.79 5.38 
+  PID  %CPU     ELAPSED ARGS
+  953  86.0 03-09:18:12 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+78996  48.5       00:00 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers
+  914  13.0 03-09:18:13 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+90749   4.3 03-01:44:59 claude
+  523   3.0 03-09:19:35 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+  465   2.9 03-09:19:35 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  924   2.7 03-09:18:13 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+-- trellis:
+== 18:50:36 before nafops_T1024_nth_lowering_1.log gpu_util=0 load= 2.34 3.40 5.04 
+  PID  %CPU     ELAPSED ARGS
+  953  92.1 03-09:20:03 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+59383  14.0    16:42:16 claude
+  523   5.4 03-09:21:26 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+90749   3.3 03-01:46:50 claude
+ 2085   2.3 03-09:19:31 /Users/s25705/.codex/chatgpt-meetings/versions/darwin-arm64-38c2c505fa8d6eaeffa66bfb78068af14cf55d3fd71c847d3c1fa21d
+  465   2.1 03-09:21:26 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd -daemon
+  418   1.5 03-09:21:27 /usr/libexec/trustd
+-- trellis:
+== 18:50:57 after nafops_T1024_nth_lowering_1.log gpu_util=0 load= 2.26 3.31 4.97 
+  PID  %CPU     ELAPSED ARGS
+  953  94.4 03-09:20:24 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd
+  686   7.6 03-09:21:30 /usr/libexec/sysmond
+  523   7.3 03-09:21:47 /Library/Application Support/JAMF/Jamf.app/Contents/MacOS/JamfDaemon.app/Contents/MacOS/JamfDaemon
+57872   4.5    18:32:33 claude --model claude-sonnet-5 --allowedTools Bash(blender:*) Bash(python3:*) Bash(cp:*) Bash(mkdir:*) Bash(ls:*) Ba
+ 6167   4.0 03-09:12:54 claude --resume 68a44b2d-7b31-41f3-a0a3-69af086ca72c
+ 6276   3.4 03-09:12:54 claude --resume d336dc5e-49a1-4bd6-a929-f8197b1f17bc
+90749   3.1 03-01:47:11 claude
+-- trellis:

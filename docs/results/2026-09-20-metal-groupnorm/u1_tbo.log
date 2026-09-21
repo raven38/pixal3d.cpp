@@ -1,0 +1,5 @@
+gate: waiting (18:38:52) gpu=0% others=0
+gate: passed 18:39:33 gpu=0%
+tbo GROUP_NORM exit=0
+tbo GROUP_NORM_MUL_ADD exit=0
+TBO DONE Sun Sep 20 18:39:34 JST 2026

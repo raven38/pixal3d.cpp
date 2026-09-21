@@ -603,6 +603,9 @@ WebGPU のほうが Metal より単一バッファが小さいのは、`naf_ggml
 `direct_conv=true` を選び、encoder の畳み込みが `[K*K*Ci, W*H]` の im2col バッファを作らない
 ため（generic lowering で増えるぶんを上回って効く）。WebGPU 行は real-input full E2E
 (`pixal3d_real_full_run`) の実行ログから。
+（2026-09-20 追記、issue #55: Metal でも GroupNorm だけは同じ `ggml_norm` 再表現を既定にした（`generic_groupnorm`）。
+ggml-metal の `GROUP_NORM` が 32 スレッド/group で 453 ms/op のため。pad / pool は Metal では native のまま。
+上の表の Metal 行の実時間は native GroupNorm のときの値。）
 
 分割の構成（`src/pixal3d_cond_gpu.cpp::cond_slat_gpu_chunked`、view ごとに 4 種のグラフ）:
 
