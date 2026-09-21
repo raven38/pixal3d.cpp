@@ -6,6 +6,7 @@ import { mountMvCalibration, type MvResultDetail } from "./mv_calibration";
 import { renderSettings } from "./settings";
 import { all, clear as clearStore, del as removeRecord, get as getRecord, isEphemeral, newId, put } from "./store";
 import { mountSvPanel, type SvResultDetail } from "./sv_panel";
+import { mountTrellis2MvPanel, type Trellis2MvResultDetail } from "./trellis2_mv_panel";
 import { isTauri, listen, logsDir, saveBytes, saveToOutputDir, serverRunning } from "./tauri";
 import { Viewer } from "./viewer";
 import { DEFAULT_PARAMS, type GenMode, type GenParams, type GenRecord } from "./types";
@@ -177,7 +178,13 @@ async function doGenerate(): Promise<void> {
  * ディスクへの保存を最優先にする（gallery DB や WebGL が死んでも成果物は残す）。
  */
 async function recordResult(r: {
-  mode: GenMode; name: string; params: GenParams; input: Blob; glb: Blob; mv?: GenRecord["mv"];
+  mode: GenMode;
+  name: string;
+  params: GenParams;
+  input: Blob;
+  glb: Blob;
+  mv?: GenRecord["mv"];
+  trellis2Mv?: GenRecord["trellis2Mv"];
 }): Promise<void> {
   const { glb, params } = r;
   const rec: GenRecord = {
@@ -190,6 +197,7 @@ async function recordResult(r: {
     glb,
     thumb: null,
     ...(r.mv ? { mv: r.mv } : {}),
+    ...(r.trellis2Mv ? { trellis2Mv: r.trellis2Mv } : {}),
   };
   currentGlb = glb;
   currentGlbName = `${glbStem(rec)}.glb`;
@@ -242,7 +250,10 @@ async function recordResult(r: {
 }
 
 function modeLabel(mode: GenMode | undefined): string {
-  return mode === "pixal3d-sv" ? "Pixal3D SV" : mode === "pixal3d-mv" ? "Pixal3D MV" : "TRELLIS.2";
+  if (mode === "trellis2-mv") return "TRELLIS.2 MV";
+  if (mode === "pixal3d-sv") return "Pixal3D SV";
+  if (mode === "pixal3d-mv") return "Pixal3D MV";
+  return "TRELLIS.2";
 }
 
 /**
@@ -252,14 +263,17 @@ function modeLabel(mode: GenMode | undefined): string {
  */
 function glbStem(rec: GenRecord): string {
   const base = rec.name.replace(/\.[^.]+$/, "") || "model";
-  const tag = rec.mode === "pixal3d-sv" ? "_sv" : "";
+  const tag = rec.mode === "pixal3d-sv" ? "_sv" : rec.mode === "trellis2-mv" ? "_mv" : "";
   const scale = rec.mv ? `_scale${rec.mv.meshScale.toFixed(3)}` : "";
-  return `${base}${tag}_${rec.params.resolution}_seed${rec.params.seed}${scale}`;
+  const fusion = rec.trellis2Mv ? `_${rec.trellis2Mv.fusion}_v${rec.trellis2Mv.numViews}` : "";
+  return `${base}${tag}_${rec.params.resolution}_seed${rec.params.seed}${scale}${fusion}`;
 }
 
 /** " · mesh_scale 0.250" for multiview records, "" otherwise. */
 function mvCaption(rec: GenRecord): string {
-  return rec.mv ? ` · mesh_scale ${rec.mv.meshScale.toFixed(3)}` : "";
+  if (rec.mv) return ` · mesh_scale ${rec.mv.meshScale.toFixed(3)}`;
+  if (rec.trellis2Mv) return ` · ${rec.trellis2Mv.numViews} views · ${rec.trellis2Mv.fusion}`;
+  return "";
 }
 
 generateBtn.addEventListener("click", doGenerate);
@@ -297,9 +311,24 @@ listen<{ code: number | null; signal: number | null }>("server-exited", (p) => {
   handleServerLost(`server exited (${how})`);
 });
 
-// ---- Pixal3D SV / MV panels ----
+// ---- TRELLIS.2 MV / Pixal3D SV / MV panels ----
+mountTrellis2MvPanel($("trellis2-mv-mount"));
 mountSvPanel($("sv-mount"));
 mountMvCalibration($("mv-calibration-mount"));
+window.addEventListener("trellis2-mv-result", (event) => {
+  const d = (event as CustomEvent<Trellis2MvResultDetail>).detail;
+  void recordResult({
+    mode: "trellis2-mv",
+    name: d.name,
+    params: { resolution: d.resolution, seed: d.seed, bgRemoval: d.bgRemoval, uv: d.uv },
+    input: d.input,
+    glb: d.glb,
+    trellis2Mv: { numViews: d.numViews, fusion: d.fusion },
+  });
+});
+window.addEventListener("trellis2-mv-error", (event) => {
+  toast(`TRELLIS.2 multiview generation failed: ${(event as CustomEvent<string>).detail}`, "err");
+});
 window.addEventListener("pixal3d-sv-result", (event) => {
   const d = (event as CustomEvent<SvResultDetail>).detail;
   void recordResult({
@@ -331,6 +360,7 @@ window.addEventListener("pixal3d-mv-error", (event) => {
 // ---- mode switching ----
 const modePanels: Record<GenMode, HTMLElement> = {
   trellis2: $("trellis2-panel"),
+  "trellis2-mv": $("trellis2-mv-mount"),
   "pixal3d-sv": $("sv-mount"),
   "pixal3d-mv": $("mv-calibration-mount"),
 };
@@ -344,7 +374,10 @@ document.querySelectorAll<HTMLInputElement>('input[name="gen-mode"]').forEach((r
 {
   let saved: string | null = null;
   try { saved = localStorage.getItem("trellis.mode"); } catch { /* ignore */ }
-  const initial: GenMode = saved === "pixal3d-sv" || saved === "pixal3d-mv" ? saved : "trellis2";
+  const initial: GenMode =
+    saved === "trellis2-mv" || saved === "pixal3d-sv" || saved === "pixal3d-mv"
+      ? saved
+      : "trellis2";
   const radio = document.querySelector<HTMLInputElement>(`input[name="gen-mode"][value="${initial}"]`);
   if (radio) radio.checked = true;
   setMode(initial);
@@ -416,7 +449,11 @@ async function refreshGallery(): Promise<void> {
 
     const meta = document.createElement("div");
     meta.className = "gmeta";
-    meta.textContent = r.mode && r.mode !== "trellis2" ? `${r.mode === "pixal3d-sv" ? "SV" : "MV"} ${r.params.resolution}` : `${r.params.resolution}`;
+    meta.textContent =
+      r.mode === "trellis2-mv" ? `T2 MV ${r.params.resolution}` :
+      r.mode === "pixal3d-sv" ? `SV ${r.params.resolution}` :
+      r.mode === "pixal3d-mv" ? `MV ${r.params.resolution}` :
+      `${r.params.resolution}`;
     item.appendChild(meta);
 
     const delBtn = document.createElement("button");
