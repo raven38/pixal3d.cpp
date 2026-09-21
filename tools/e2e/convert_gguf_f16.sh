@@ -14,19 +14,18 @@ TRELLIS_MODELS="${TRELLIS_MODELS:?TRELLIS_MODELS (HF snapshot dir, ckpts/ 直下
 TRELLIS_GGUF_OUT="${TRELLIS_GGUF_OUT:?TRELLIS_GGUF_OUT (出力先ディレクトリ) を指定してください}"
 CONVERT_PY="${CONVERT_PY:?CONVERT_PY (tools/convert.py のパス) を指定してください}"
 DECODER_SRC="${DECODER_SRC:-/nfs/pixal3d_weights/gguf-f16}"
-VENV_DIR="${VENV_DIR:-/nfs/trellis2-mv/convert-venv}"
 
 export TRELLIS_MODELS TRELLIS_GGUF_OUT
 
-echo "=== venv 準備 (${VENV_DIR}) ==="
-if [ ! -x "${VENV_DIR}/bin/python3" ]; then
-    python3 -m venv "${VENV_DIR}"
-fi
-"${VENV_DIR}/bin/pip" install -q --upgrade pip
-"${VENV_DIR}/bin/pip" install -q numpy gguf
+echo "=== 依存パッケージ準備（--user、python3-venv が無い環境向けフォールバック） ==="
+# <cpu-pod> 等の共有 pod は python3-venv が未導入で `python3 -m venv` が失敗することがある
+# （2026-09-21実測）。root の ~/.local へ --user インストールする（既存の共有 venv には触れない）。
+pip3 install --user --break-system-packages -q numpy gguf
 
 echo "=== TRELLIS.2 flow -> f16 GGUF 変換 ==="
-"${VENV_DIR}/bin/python3" "${CONVERT_PY}" ss_flow shape_flow_512 shape_flow_1024 tex_flow_1024
+# tex_flow_512 は --res 512 の非cascade分岐（trellis_cli.cpp:1068）が要求するが
+# 当初の変換対象リストに漏れていたため追加（2026-09-21 FINDING、README.md GAP参照）。
+python3 "${CONVERT_PY}" ss_flow shape_flow_512 shape_flow_1024 tex_flow_1024 tex_flow_512
 
 echo "=== decoder 3本 + dinov3 を共有f16から再利用（コピー） ==="
 mkdir -p "${TRELLIS_GGUF_OUT}"
