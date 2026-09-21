@@ -1,0 +1,145 @@
+diff --git a/src/ggml-cuda/mmq.cuh b/src/ggml-cuda/mmq.cuh
+--- a/src/ggml-cuda/mmq.cuh
++++ b/src/ggml-cuda/mmq.cuh
+@@ -3446,3 +3446,31 @@
++template <int n_ints>
++static __device__ __forceinline__ void mmq_cp_async_q8_y(int * __restrict__ dst, const int * __restrict__ src) {
++#if defined(PIXAL3D_CUDA_Q8_ASYNC_Y) && defined(AMPERE_MMA_AVAILABLE)
++    constexpr int ints_per_copy = 4; // cp.async 16 B
++    constexpr int nthreads = mmq_get_nwarps_device() * ggml_cuda_get_physical_warp_size();
++    const int tid = threadIdx.y * ggml_cuda_get_physical_warp_size() + threadIdx.x;
++#pragma unroll
++    for (int i = ints_per_copy * tid; i < n_ints; i += ints_per_copy * nthreads) {
++        const unsigned smem = __cvta_generic_to_shared(dst + i);
++        asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" :: "r"(smem), "l"(src + i));
++    }
++#else
++    GGML_UNUSED_VARS(dst, src);
++#endif
++}
++
++static __device__ __forceinline__ void mmq_cp_async_commit() {
++#if defined(PIXAL3D_CUDA_Q8_ASYNC_Y) && defined(AMPERE_MMA_AVAILABLE)
++    asm volatile("cp.async.commit_group;\n" ::);
++#endif
++}
++
++static __device__ __forceinline__ void mmq_cp_async_wait_all() {
++#if defined(PIXAL3D_CUDA_Q8_ASYNC_Y) && defined(AMPERE_MMA_AVAILABLE)
++    asm volatile("cp.async.wait_group 0;\n" ::);
++#endif
++}
++
+ template <ggml_type type, int mmq_x, bool need_check, bool fixup>
+ static __device__ __forceinline__ void mul_mat_q_process_tile(
+         const char * __restrict__ x, const int offset_x, const int * __restrict__ y,
+@@ -3456,9 +3484,18 @@
+     constexpr int              mmq_y      = get_mmq_y_device();
+     constexpr load_tiles_mmq_t load_tiles = mmq_type_traits<mmq_x, mmq_y, need_check, type>::load_tiles;
+ 
++#if defined(PIXAL3D_CUDA_Q8_ASYNC_Y) && defined(AMPERE_MMA_AVAILABLE)
++    constexpr bool async_y = type == GGML_TYPE_Q8_0;
++#else
++    constexpr bool async_y = false;
++#endif
++    constexpr int tile_y_ints = mmq_x * MMQ_TILE_Y_K;
++    constexpr int tile_y_padded = GGML_PAD(tile_y_ints, nwarps * warp_size);
++
+     extern __shared__ int data_mul_mat_q[];
+-    int * tile_y = data_mul_mat_q + mmq_x;
+-    int * tile_x = tile_y + GGML_PAD(mmq_x*MMQ_TILE_Y_K, nwarps*warp_size);
++    int * tile_y0 = data_mul_mat_q + mmq_x;
++    int * tile_y1 = async_y ? tile_y0 + tile_y_padded : tile_y0;
++    int * tile_x  = tile_y0 + (async_y ? 2 : 1) * tile_y_padded;
+ 
+ #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+     constexpr vec_dot_mmq_t    vec_dot    = mmq_type_traits<mmq_x, mmq_y, need_check, type>::vec_dot_mma;
+@@ -3484,37 +3521,49 @@
+ 
+     for (int kb0 = kb0_start; kb0 < kb0_stop; kb0 += blocks_per_iter) {
+         load_tiles(x, tile_x, offset_x + kb0, tile_x_max_i, stride_row_x);
+-        {
+-            const int * by0 = y + ncols_y * (kb0 * qk / ne_block) * sz;
++
++        const int * by0 = y + ncols_y * (kb0 * qk / ne_block) * sz;
++        const int * by1 = y + ncols_y * ((kb0 * qk / ne_block) * sz + sz);
++
++        if constexpr (async_y) {
++            // Stage the first 128-K half, then launch the second half asynchronously.
++            // Its HBM->shared transfer overlaps the Tensor Core work on tile_y0.
++            mmq_cp_async_q8_y<tile_y_ints>(tile_y0, by0);
++            mmq_cp_async_commit();
++            mmq_cp_async_wait_all();
++            __syncthreads();
++
++            mmq_cp_async_q8_y<tile_y_ints>(tile_y1, by1);
++            mmq_cp_async_commit();
++
++            vec_dot(tile_x, tile_y0, sum, 0);
++
++            mmq_cp_async_wait_all();
++            __syncthreads();
++
++            vec_dot(tile_x, tile_y1, sum, MMQ_TILE_NE_K);
++            __syncthreads();
++        } else {
+ #pragma unroll
+-            for (int l0 = 0; l0 < mmq_x * MMQ_TILE_Y_K; l0 += nwarps * warp_size) {
+-                int l = l0 + threadIdx.y*warp_size + threadIdx.x;
++            for (int l0 = 0; l0 < tile_y_ints; l0 += nwarps * warp_size) {
++                const int l = l0 + threadIdx.y*warp_size + threadIdx.x;
++                tile_y0[l] = by0[l];
++            }
++            __syncthreads();
+ 
+-                tile_y[l] = by0[l];
++            vec_dot(tile_x, tile_y0, sum, 0);
++            __syncthreads();
++
++#pragma unroll
++            for (int l0 = 0; l0 < tile_y_ints; l0 += nwarps * warp_size) {
++                const int l = l0 + threadIdx.y*warp_size + threadIdx.x;
++                tile_y0[l] = by1[l];
+             }
++            __syncthreads();
++
++            vec_dot(tile_x, tile_y0, sum, MMQ_TILE_NE_K);
++            __syncthreads();
+         }
+-
+-        __syncthreads();
+-
+-        vec_dot(tile_x, tile_y, sum, 0);
+-
+-        __syncthreads();
+-
+-        {
+-            const int * by0 = y + ncols_y * ((kb0 * qk / ne_block) * sz + sz);
+-#pragma unroll
+-            for (int l0 = 0; l0 < mmq_x * MMQ_TILE_Y_K; l0 += nwarps * warp_size) {
+-                int l = l0 + threadIdx.y*warp_size + threadIdx.x;
+-
+-                tile_y[l] = by0[l];
+-            }
+-        }
+-
+-        __syncthreads();
+-
+-        vec_dot(tile_x, tile_y, sum, MMQ_TILE_NE_K);
+-
+-        __syncthreads();
+     }
+ 
+     if (fixup) {
+@@ -3936,5 +3985,10 @@
+     const size_t nbs_ids = mmq_x*sizeof(int);
+     const size_t nbs_x = (turing_mma_available(cc) || amd_mfma_available(cc) || amd_wmma_available(cc)) ? mmq_y*mmq_tile_x_k*sizeof(int) : txs.qs*sizeof(int) + txs.dm*sizeof(half2) + txs.sc*sizeof(int);
+     const size_t nbs_y = mmq_x * (sizeof(block_q8_1_mmq));
+-    return nbs_ids + nbs_x + GGML_PAD(nbs_y, nwarps*warp_size*sizeof(int));
++#if defined(PIXAL3D_CUDA_Q8_ASYNC_Y) && !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
++    const bool async_y = type == GGML_TYPE_Q8_0 && GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_AMPERE;
++#else
++    const bool async_y = false;
++#endif
++    return nbs_ids + nbs_x + (async_y ? 2 : 1) * GGML_PAD(nbs_y, nwarps*warp_size*sizeof(int));
+ }
