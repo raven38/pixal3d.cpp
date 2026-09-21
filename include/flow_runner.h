@@ -91,7 +91,8 @@ std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> samp
                                      const float* neg_cond,
                                      const SamplerParams& sp,
                                      MultiCondMode mode,
-                                     std::vector<std::vector<float>>* trace = nullptr);
+                                     std::vector<std::vector<float>>* trace = nullptr,
+                                     int* stochastic_counter = nullptr);
 
 
 // Pixal3D ProjectAttention variant: the forward functor also takes the proj_cond pointer, threaded
