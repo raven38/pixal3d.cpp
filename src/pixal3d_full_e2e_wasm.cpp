@@ -114,7 +114,7 @@ vector<float> shape_flow(const string& gguf, const vector<array<int,3>>& coords,
     if(!dit_detect_proj_attn(m,p)||p.d_proj!=2048) throw std::runtime_error("bad shape flow checkpoint");
     auto* r=make_sparse_runner(m,p,coords,c.n_global); vector<float> ng(c.global.size(),0), np(c.proj.size(),0);
     FlowFwdProj f=[&](const vector<float>&x,float ts,const float*cn,const float*pj){return r->forward(x,ts,cn,pj);};
-    SamplerParams sp;sp.steps=12;sp.guidance_strength=7.5f;sp.guidance_rescale=.5f;sp.gi0=.6f;sp.gi1=1.f;sp.rescale_t=3.f;
+    SamplerParams sp;sp.steps=12;sp.guidance_strength=7.5f;sp.guidance_rescale=.5f;sp.gi0=.6;sp.gi1=1.;sp.rescale_t=3.;
     auto o=sample_flow(f,noise,c.global.data(),ng.data(),c.proj.data(),np.data(),sp); delete r;m.free();return o;
 }
 
@@ -123,7 +123,7 @@ vector<float> texture_flow(const string& gguf,const vector<array<int,3>>& coords
     if(!dit_detect_proj_attn(m,p)||p.d_proj!=2048) throw std::runtime_error("bad texture flow checkpoint"); auto*r=make_sparse_runner(m,p,coords,c.n_global);
     vector<float> ng(c.global.size(),0),np(c.proj.size(),0),x64((size_t)64*N);
     FlowFwdProj f=[&](const vector<float>&st,float ts,const float*cn,const float*pj){for(int n=0;n<N;++n){for(int k=0;k<32;++k)x64[k+64*n]=st[k+32*n];for(int k=0;k<32;++k)x64[32+k+64*n]=shape_norm[k+32*n];}return r->forward(x64,ts,cn,pj);};
-    SamplerParams sp;sp.steps=12;sp.guidance_strength=1.f;sp.guidance_rescale=0;sp.gi0=.6f;sp.gi1=.9f;sp.rescale_t=3.f;
+    SamplerParams sp;sp.steps=12;sp.guidance_strength=1.f;sp.guidance_rescale=0;sp.gi0=.6;sp.gi1=.9;sp.rescale_t=3.;
     auto o=sample_flow(f,noise,c.global.data(),ng.data(),c.proj.data(),np.data(),sp);delete r;m.free();return o;
 }
 
@@ -137,7 +137,7 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
     // SS
     Pixal3dCond css; {Model d=Model::load(model[0],0);css=pixal3d_cond_ss_gpu(d,v512,512,16,mesh_scale);d.free();}
     vector<float> neg(css.global.size(),0),negp(css.proj.size(),0); Model sm=Model::load(model[2],0);DiTParams spm;spm.in_ch=8;spm.out_ch=8;spm.d_cond=1024;if(!dit_detect_proj_attn(sm,spm))return 3;auto*sr=make_dense_runner(sm,spm,16,css.n_global);
-    FlowFwdProj sf=[&](const vector<float>&x,float ts,const float*c,const float*p){return sr->forward(x,ts,c,p);};SamplerParams ss;ss.steps=12;ss.guidance_strength=7.5f;ss.guidance_rescale=.7f;ss.gi0=.6f;ss.gi1=1;ss.rescale_t=5;
+    FlowFwdProj sf=[&](const vector<float>&x,float ts,const float*c,const float*p){return sr->forward(x,ts,c,p);};SamplerParams ss;ss.steps=12;ss.guidance_strength=7.5f;ss.guidance_rescale=.7f;ss.gi0=.6;ss.gi1=1;ss.rescale_t=5;
     auto z=sample_flow(sf,deterministic_noise(fixture+"/noise.npy",8*4096,seed),css.global.data(),neg.data(),css.proj.data(),negp.data(),ss);delete sr;sm.free();vector<float>zdec(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zdec[(size_t)c*4096+i]=z[c+8*i];
     vector<array<int,3>> coords;{Model d=Model::load(model[3],SS_DEC_BACKEND);auto logits=ss_decode(d,zdec);d.free();coords=ss_coords(logits,64,32);} if(coords.empty())return 4; frep("SS -> %zu coords\n",coords.size());
     // Shape512 live cond + flow

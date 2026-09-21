@@ -241,7 +241,7 @@ static std::vector<float> mv_shape_flow(const std::string& path, const trellis::
         return run->forward(x, ts, c, pj);
     };
     trellis::SamplerParams sp; sp.steps = 12; sp.guidance_strength = cfg.gsh; sp.guidance_rescale = 0.5f;
-    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f;
+    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 3.0;
     std::vector<float> out = trellis::sample_flow(fwd, noise_buf, cnd, ncnd, proj, nproj, sp);
     delete run; m.free();
     return out;
@@ -373,7 +373,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] %s: not a Pixal3D checkpoint\n", W.ss.c_str()); return 1; }
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, c.n_global);
         trellis::FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* cn, const float* pj){ return run->forward(x, ts, cn, pj); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
+        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6; sp.gi1=1.0; sp.rescale_t=5.0;
         vector<float> z = trellis::sample_flow(fwd, noise(8*4096), c.global.data(), neg_g.data(), c.proj.data(), neg_p.data(), sp);
         delete run; m.free();
         cond_lap("flow (load + runner + sampler)");
@@ -549,7 +549,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
                 }
                 return run->forward(x64, ts, cn, pj);
             };
-            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6f; sp.gi1=0.9f; sp.rescale_t=3.0f;
+            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6; sp.gi1=0.9; sp.rescale_t=3.0;
             texlat = trellis::sample_flow(fwdp, noise((size_t)32*N), c.global.data(), neg_g.data(), proj_sp.data(), neg_p.data(), sp);
             delete run; m.free();
             for (int n = 0; n < N; ++n) for (int cc = 0; cc < 32; ++cc) texlat[(size_t)cc + 32*n] = texlat[(size_t)cc + 32*n]*TEX_STD[cc] + TEX_MEAN[cc];
@@ -908,7 +908,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         trellis::DiTParams p; p.in_ch = 8; p.out_ch = 8; p.d_cond = 1024; p.cast_f32 = F32;
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, Lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
+        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6; sp.gi1=1.0; sp.rescale_t=5.0;
         vector<float> z = sample_bank(fwd, noise(8*4096), cond_bank, neg, sp);  // [8,4096] ne0=8
         delete run; m.free();
         // transpose [8,L] -> torch [8,16,16,16] memory (c*4096 + sp)
@@ -936,7 +936,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         trellis::DiTParams p; p.in_ch = 32; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
         trellis::DitRunner* run = trellis::make_sparse_runner(m, p, cds, lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gsh; sp.guidance_rescale=0.5f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=3.0f;
+        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gsh; sp.guidance_rescale=0.5f; sp.gi0=0.6; sp.gi1=1.0; sp.rescale_t=3.0;
         vector<float> sn = sample_bank(fwd, noise((size_t)32*n), bank, ncnd, sp,
                                              t2mv_mode == trellis::MultiCondMode::Stochastic
                                                  ? &shape_stochastic_counter : nullptr);   // [32,n]
@@ -1088,7 +1088,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
                 }
                 return run->forward(x64, ts, c);
             };
-            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6f; sp.gi1=0.9f; sp.rescale_t=3.0f;
+            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6; sp.gi1=0.9; sp.rescale_t=3.0;
             texlat = sample_bank(fwd, noise((size_t)32*tN), tbank, tneg, sp);  // [32,tN]
             delete run; m.free();
             for (int n = 0; n < tN; ++n) for (int c = 0; c < 32; ++c) texlat[(size_t)c + 32*n] = texlat[(size_t)c + 32*n]*TEX_STD[c] + TEX_MEAN[c];

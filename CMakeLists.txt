@@ -172,6 +172,15 @@ add_library(trellis_core STATIC
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)
 target_compile_definitions(trellis_core PRIVATE TRELLIS_GIT_COMMIT="${TRELLIS_GIT_COMMIT}" TRELLIS_GIT_DIRTY=${TRELLIS_GIT_DIRTY} TRELLIS_BUILD_TIMESTAMP="${TRELLIS_BUILD_TIMESTAMP_UTC}" TRELLIS_APP_VERSION="${TRELLIS_APP_VERSION}")
 target_link_libraries(trellis_core PUBLIC ggml ggml-base ggml-cpu)
+# flow_t_schedule()/the guidance-interval decision (src/flow_runner.cpp) must reproduce numpy
+# float64 linspace + rescale bit-for-bit: a fused multiply-add collapses the two roundings numpy's
+# separate multiply and add ufuncs perform into one, which is enough to flip an exact-decimal
+# guidance_interval boundary (e.g. t==0.6) the wrong way. Clang defaults to -ffp-contract=on and
+# GCC to -ffp-contract=fast; disable it for this one file (the sampler loop is not perf-sensitive).
+# MSVC doesn't recognize this GCC/Clang flag (harmless D9002 warning only) -- guard it.
+if(NOT MSVC)
+  set_source_files_properties(src/flow_runner.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
 
 # --- WebP textures (reference-parity GLB export) ---------------------------
 # Optional lossy-WebP textures via EXT_texture_webp. The exporter only advertises

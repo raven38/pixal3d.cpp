@@ -17,14 +17,25 @@ namespace trellis {
 struct Model;
 
 struct SamplerParams {
-    int   steps             = 12;
-    float guidance_strength = 7.5f;
-    float guidance_rescale  = 0.0f;
-    float gi0               = 0.6f;
-    float gi1               = 1.0f;
-    float rescale_t         = 1.0f;
-    float sigma_min         = 1e-5f;
+    int    steps             = 12;
+    float  guidance_strength = 7.5f;
+    float  guidance_rescale  = 0.0f;
+    // gi0/gi1/rescale_t は double: 参照実装（trellis2/pipelines/samplers/flow_euler.py）は
+    // t-schedule を numpy float64 で組み、guidance interval の判定も double で行い、モデルに
+    // 渡す直前（1000*t）だけ float32 に narrow する。float だと 0.6f が
+    // 0.600000023841857910156250 へ widen され、guidance interval の厳密な小数境界（t==0.6）で
+    // 参照実装とずれる（fix(flow) が修正した境界バグ）。呼び出し側は `0.6` のように f サフィックス
+    // なしのリテラルで代入すること。
+    double gi0               = 0.6;
+    double gi1               = 1.0;
+    double rescale_t         = 1.0;
+    float  sigma_min         = 1e-5f;
 };
+
+// numpy `np.linspace(1, 0, steps+1)` + rescale を逐語再現する t-schedule（flow_runner.cpp）。
+// sample_flow / sample_flow_multi 共有の単一の真実源。steps<=0 は std::invalid_argument。
+std::vector<double> flow_t_schedule(int steps, double rescale_t);
+inline bool flow_in_guidance_interval(double t, double gi0, double gi1) { return gi0 <= t && t <= gi1; }
 
 // One DiT graph (built once for a fixed token count N), re-run per sampler step.
 // Token axis N = R^3 (dense) or number of active voxels (sparse); RoPE tables are

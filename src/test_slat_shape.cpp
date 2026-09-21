@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
 
     trellis::SamplerParams sp;
     sp.steps = 12; sp.guidance_strength = GS; sp.guidance_rescale = GR;
-    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f; sp.sigma_min = 1e-5f;
+    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 3.0; sp.sigma_min = 1e-5f;
 
     vector<float> out = trellis::sample_flow(fwd, xt, cn.data.data(), ng.data.data(), sp);
 

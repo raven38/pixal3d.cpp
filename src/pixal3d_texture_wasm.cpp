@@ -161,7 +161,7 @@ int run_impl(const string& dinov3_gguf, const string& ss_flow_gguf, const string
     };
     SamplerParams sp;   // pipeline_mv.json sparse_structure_sampler.params
     sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.7f;
-    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 5.0f; sp.sigma_min = 1e-5f;
+    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 5.0; sp.sigma_min = 1e-5f;
     vector<vector<float>> trace;
     vector<float> out = sample_flow(fwd, sample, cond.global.data(), neg_cond.data(), cond.proj.data(), neg_proj.data(), sp, &trace);
     rep("dit forwards: %d, %.1f ms each, %.1f s total\n", n_fwd, n_fwd ? fwd_ms / n_fwd : 0.0, fwd_ms / 1000.0);
@@ -323,7 +323,7 @@ int run_shape512_impl(const string& dinov3_gguf, const string& naf_gguf, const s
     };
     SamplerParams sp;   // trellis_cli.cpp shape_flow(): steps=12 gs=7.5 gr=0.5 gi=[0.6,1.0] rescale_t=3.0
     sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.5f;
-    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f; sp.sigma_min = 1e-5f;
+    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 3.0; sp.sigma_min = 1e-5f;
     vector<vector<float>> trace;
     vector<float> out = sample_flow(fwd, sample, cond_g.data(), neg_cond.data(), proj.data(), neg_proj.data(), sp, &trace);
     rep("dit forwards: %d, %.1f ms each, %.1f s total\n", n_fwd, n_fwd ? fwd_ms / n_fwd : 0.0, fwd_ms / 1000.0);
@@ -484,13 +484,26 @@ int run_texture_impl(const string& dinov3_gguf, const string& naf_gguf, const st
     };
     SamplerParams sp;   // trellis_cli.cpp tex flow: steps=12 gs=1.0 gr=0.0 gi=[0.6,0.9] rescale_t=3.0
     sp.steps = 12; sp.guidance_strength = 1.0f; sp.guidance_rescale = 0.0f;
-    sp.gi0 = 0.6f; sp.gi1 = 0.9f; sp.rescale_t = 3.0f; sp.sigma_min = 1e-5f;
+    sp.gi0 = 0.6; sp.gi1 = 0.9; sp.rescale_t = 3.0; sp.sigma_min = 1e-5f;
     if (file_exists(sample_dir + "/tex_sampler_params.npy")) {
         npy::Array spa = npy::load(sample_dir + "/tex_sampler_params.npy");   // (steps, gs, gr, gi0, gi1, rescale_t)
         if (spa.numel() >= 6) {
             sp.steps = (int)std::lround((double)spa.data[0]); sp.guidance_strength = spa.data[1]; sp.guidance_rescale = spa.data[2];
-            sp.gi0 = spa.data[3]; sp.gi1 = spa.data[4]; sp.rescale_t = spa.data[5];
-            rep("sampler params from tex_sampler_params.npy: steps=%d gs=%.3f gr=%.3f gi=[%.2f,%.2f] rescale_t=%.2f\n",
+            // gi0/gi1/rescale_t are NOT taken from this file: npy.h only round-trips float32
+            // (`<f4`), so spa.data[3..5] are already float32-quantized (e.g. 0.6 -> 0.600000024),
+            // and widening that to double would reintroduce the exact-decimal guidance_interval
+            // boundary bug fix(flow) removes. The compiled double defaults above are already the
+            // reference's exact values; only warn if the file disagrees beyond float32 rounding.
+            const double tol = 1e-6;
+            if (std::fabs((double)spa.data[3] - sp.gi0) > tol || std::fabs((double)spa.data[4] - sp.gi1) > tol ||
+                std::fabs((double)spa.data[5] - sp.rescale_t) > tol) {
+                rep("WARNING: tex_sampler_params.npy gi=[%.9g,%.9g] rescale_t=%.9g disagrees with the compiled "
+                    "double defaults gi=[%.9g,%.9g] rescale_t=%.9g by more than float32 rounding -- keeping the "
+                    "compiled defaults (gi0/gi1/rescale_t need double precision for the t==0.6 boundary; this "
+                    "npy file can only store float32)\n",
+                    (double)spa.data[3], (double)spa.data[4], (double)spa.data[5], sp.gi0, sp.gi1, sp.rescale_t);
+            }
+            rep("sampler params from tex_sampler_params.npy: steps=%d gs=%.3f gr=%.3f gi=[%.2f,%.2f] rescale_t=%.2f (gi/rescale_t kept at compiled double defaults)\n",
                 sp.steps, sp.guidance_strength, sp.guidance_rescale, sp.gi0, sp.gi1, sp.rescale_t);
         }
     }

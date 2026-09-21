@@ -23,11 +23,11 @@ int main() {
 
     trellis::SamplerParams sp;
     sp.steps = 4;
-    sp.rescale_t = 3.0f;
+    sp.rescale_t = 3.0;
     sp.guidance_strength = 2.5f;
     sp.guidance_rescale = 0.4f;
-    sp.gi0 = 0.35f;
-    sp.gi1 = 0.9f;
+    sp.gi0 = 0.35;
+    sp.gi1 = 0.9;
     sp.sigma_min = 1e-5f;
 
     int pos_calls[3] = {0,0,0}, neg_calls = 0;
