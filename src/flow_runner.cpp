@@ -103,6 +103,10 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
                      const std::vector<float>& rcos, const std::vector<float>& rsin)
     : m_(m), p_(p), N_(N), Lc_(n_cond) {
     const int half = p_.head_dim / 2;
+    // Pixal3D ProjectAttention uses five global DINO tokens whose value is constant
+    // for the entire flow. Opt out for parity/perf A/B or unusual callers that mutate
+    // conditioning in place while keeping the same pointer.
+    use_cross_kv_cache_ = p_.proj_attn && std::getenv("TRELLIS_DISABLE_CROSS_KV_CACHE") == nullptr;
     // sdpa のクエリ分割はチャンク 1 本につき約 8 ノードを足す。30 ブロック x 2 attention で
     // 1 グラフに載るので、チャンク数を増やすとここが先に枯れる（ggml_new_object: not enough
     // space）。枠はホスト側のメタデータだけで 1 テンソル約 368 B なので、広げても数十 MB。
@@ -117,9 +121,14 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     if (p_.proj_attn) {
         gproj_ = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, p_.d_proj, N_); ggml_set_input(gproj_);
     }
+    if (use_cross_kv_cache_) {
+        gcross_kv_ = ggml_new_tensor_3d(ctx_, GGML_TYPE_F32,
+                                        2 * p_.d_model, Lc_, p_.n_blocks);
+        ggml_set_input(gcross_kv_);
+    }
     dbg_nan_ = std::getenv("TRELLIS_DBG_NAN") != nullptr;
     gout_ = build_dit_dense(ctx_, m_, p_, gh0_, gtf_, gcond_, gcos_, gsin_,
-                            dbg_nan_ ? &inter_ : nullptr, gproj_);
+                            dbg_nan_ ? &inter_ : nullptr, gproj_, gcross_kv_);
     g_ = ggml_new_graph_custom(ctx_, 262144, false);
     ggml_build_forward_expand(g_, gout_);
     ggml_set_output(gout_);
@@ -130,13 +139,57 @@ DitRunner::DitRunner(const Model& m, const DiTParams& p, int N, int n_cond,
     alloc_ = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m_.backend));
     if (!ggml_gallocr_alloc_graph(alloc_, g_)) throw std::runtime_error("DitRunner: alloc failed");
     alloc_bytes_ = ggml_gallocr_get_buffer_size(alloc_, 0);
+
+    if (use_cross_kv_cache_) {
+        // Separate tiny graph: [d_cond,Lc] -> concat_i to_kv_i(cond).
+        // It runs only on the first use of each distinct condition (normally pos/neg).
+        const size_t kv_meta = ggml_tensor_overhead() * 512
+                             + ggml_graph_overhead_custom(2048, false) + (1 << 20);
+        kv_ctx_ = ggml_init({ kv_meta, nullptr, true });
+        if (!kv_ctx_) throw std::runtime_error("DitRunner: cross-KV context alloc failed");
+        kv_cond_ = ggml_new_tensor_2d(kv_ctx_, GGML_TYPE_F32, p_.d_cond, Lc_);
+        ggml_set_input(kv_cond_);
+        kv_out_ = build_dit_cross_kv_cache(kv_ctx_, m_, p_, kv_cond_);
+        ggml_set_output(kv_out_);
+        kv_g_ = ggml_new_graph_custom(kv_ctx_, 2048, false);
+        ggml_build_forward_expand(kv_g_, kv_out_);
+        check_graph_supported(m_.backend, kv_g_, "dit_cross_kv_cache");
+        kv_alloc_ = ggml_gallocr_new(ggml_backend_get_default_buffer_type(m_.backend));
+        if (!ggml_gallocr_alloc_graph(kv_alloc_, kv_g_))
+            throw std::runtime_error("DitRunner: cross-KV graph alloc failed");
+    }
+
     check_device_budget();
     rcos_ = rcos; rsin_ = rsin;   // keep; re-upload each forward (gallocr reuses input buffers across runs)
 }
 
 DitRunner::~DitRunner() {
+    if (kv_alloc_) ggml_gallocr_free(kv_alloc_);
+    if (kv_ctx_)   ggml_free(kv_ctx_);
     if (alloc_) ggml_gallocr_free(alloc_);
     if (ctx_)   ggml_free(ctx_);
+}
+
+const std::vector<float>& DitRunner::cross_kv_for(const float* cond) {
+    for (const auto& e : cross_kv_host_) if (e.key == cond) return e.data;
+    if (!cond || !kv_g_ || !kv_cond_ || !kv_out_)
+        throw std::runtime_error("DitRunner: invalid cross-KV cache request");
+
+    ggml_backend_tensor_set(kv_cond_, cond, 0, (size_t)p_.d_cond * Lc_ * sizeof(float));
+    if (ggml_backend_graph_compute(m_.backend, kv_g_) != GGML_STATUS_SUCCESS)
+        throw std::runtime_error("DitRunner: cross-KV precompute failed");
+
+    CrossKvEntry e;
+    e.key = cond;
+    e.data = tensor_to_f32(kv_out_);
+    const size_t expected = (size_t)2 * p_.d_model * Lc_ * p_.n_blocks;
+    if (e.data.size() != expected)
+        throw std::runtime_error("DitRunner: cross-KV cache size mismatch");
+    if (std::getenv("TRELLIS_DBG_CACHE"))
+        fprintf(stderr, "      [cache] cross-KV miss -> %.2f MiB (%d blocks, Lc=%d)\n",
+                e.data.size() * sizeof(float) / 1048576.0, p_.n_blocks, Lc_);
+    cross_kv_host_.push_back(std::move(e));
+    return cross_kv_host_.back().data;
 }
 
 std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scaled, const float* cond,
@@ -144,7 +197,14 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
     std::vector<float> tf; timestep_embedding(t_scaled, tf);
     ggml_backend_tensor_set(gh0_,  xt.data(), 0, xt.size() * 4);
     ggml_backend_tensor_set(gtf_,  tf.data(), 0, tf.size() * 4);
-    ggml_backend_tensor_set(gcond_, cond,     0, (size_t)p_.d_cond * Lc_ * 4);
+    const std::vector<float>* cross_kv_data = nullptr;
+    if (use_cross_kv_cache_) {
+        const auto& cached = cross_kv_for(cond);
+        cross_kv_data = &cached;
+        ggml_backend_tensor_set(gcross_kv_, cached.data(), 0, cached.size() * sizeof(float));
+    } else {
+        ggml_backend_tensor_set(gcond_, cond, 0, (size_t)p_.d_cond * Lc_ * 4);
+    }
     ggml_backend_tensor_set(gcos_, rcos_.data(), 0, rcos_.size() * 4);   // re-upload (buffers reused across runs)
     ggml_backend_tensor_set(gsin_, rsin_.data(), 0, rsin_.size() * 4);
     if (gproj_) {
@@ -169,7 +229,12 @@ std::vector<float> DitRunner::forward(const std::vector<float>& xt, float t_scal
         auto reupload = [&]() {
             ggml_backend_tensor_set(gh0_,  xt.data(), 0, xt.size() * 4);
             ggml_backend_tensor_set(gtf_,  tf.data(), 0, tf.size() * 4);
-            ggml_backend_tensor_set(gcond_, cond,     0, (size_t)p_.d_cond * Lc_ * 4);
+            if (use_cross_kv_cache_) {
+                ggml_backend_tensor_set(gcross_kv_, cross_kv_data->data(), 0,
+                                        cross_kv_data->size() * sizeof(float));
+            } else {
+                ggml_backend_tensor_set(gcond_, cond, 0, (size_t)p_.d_cond * Lc_ * 4);
+            }
             ggml_backend_tensor_set(gcos_, rcos_.data(), 0, rcos_.size() * 4);
             ggml_backend_tensor_set(gsin_, rsin_.data(), 0, rsin_.size() * 4);
             if (gproj_) ggml_backend_tensor_set(gproj_, proj, 0, (size_t)p_.d_proj * N_ * 4);
