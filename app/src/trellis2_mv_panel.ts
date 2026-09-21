@@ -132,7 +132,7 @@ export function mountTrellis2MvPanel(root: HTMLElement): void {
 
   const addFiles = (incoming: FileList | File[]) => {
     const arr = Array.from(incoming).filter((f) => f.type.startsWith("image/"));
-    files = [...files, ...arr].slice(0, 8);
+    files = [...files, ...arr];
     render();
   };
 
