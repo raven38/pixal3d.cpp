@@ -560,6 +560,8 @@ int main(int argc, char** argv) {
 
         constexpr size_t kMaxOne = 64ull * 1024 * 1024;
         constexpr size_t kMaxTotal = 128ull * 1024 * 1024;
+        // /generate-sv と同じ decompression-bomb 対策（デコード前に IHDR の寸法で弾く）。
+        constexpr long long kMaxPixels = 64ll * 1024 * 1024;
         size_t total = 0;
         for (int i = 0; i < num_images; ++i) {
             const std::string key = "image" + std::to_string(i);
@@ -570,6 +572,15 @@ int main(int argc, char** argv) {
             const auto& im = req.get_file_value(key);
             if (im.content.empty() || im.content.size() > kMaxOne) {
                 set_error(res, 400, key + " is empty or exceeds 64 MiB");
+                return;
+            }
+            long long iw = 0, ih = 0;
+            if (!png_dimensions(im.content, iw, ih)) {
+                set_error(res, 400, key + " must be a PNG with an alpha matte");
+                return;
+            }
+            if (iw * ih > kMaxPixels) {
+                set_error(res, 400, key + " exceeds 64 megapixels");
                 return;
             }
             total += im.content.size();
