@@ -212,9 +212,12 @@ here. Native logs: `docs/results/2026-09-21-trellis2-mv-b3/logs/v9-pod-seed-swee
 reference sweep: `docs/results/2026-09-22-trellis2-mv-b3-ref/`. Diagnostic instrumentation
 is on branch `diag/trellis2-mv-b3` only.
 
-**Rank: —** (documented limitation). `multidiffusion` has not shown the failure in the samples
-taken — 0/3 reference seeds and 0/2 native runs — but that is n=5 and is not evidence that it is
-immune; re-rolling `--seed` is the only demonstrated workaround.
+**Rank: —** (documented limitation). Two workarounds are demonstrated: re-rolling `--seed`, and
+switching to `--trellis2-mv-mode multidiffusion` — holding the geometry fixed and swapping only the
+texture stage to multidiffusion on the black seed-42 run recovers colour (base colour mean 0.0254
+vs 0.0065 for the reverse swap, `docs/results/2026-09-21-trellis2-mv-b3/logs/DIAG_shapeStoch_texMultidiff.log`).
+`multidiffusion` has not shown the failure in the samples taken — 0/3 reference seeds and 0/2 native
+runs — but that is n=5 and is not evidence that it is immune.
 
 ## Addendum 5 — guidance-rescale OOD clamp [0.2, 5.0] (issue #77: intentional, kept; measured activation)
 
@@ -248,14 +251,19 @@ active voxel set — `run_1img_baseline_512` 3547 vs 3543, `run_2img_real_multid
 manifest to 1.97e-7.
 
 **Verify.** `trellis-test-trellis2-mv-shape` prints the per-row ratio table (S4 section, 162 hard
-asserts); `docs/results/2026-09-21-trellis2-mv-stages-v3.md` §5 has the shape numbers. For SS,
+asserts); `docs/results/2026-09-21-trellis2-mv-stages-v3.md` has the shape numbers (conclusion item 5, and
+the `S4 clamp条件` row of its frozen-criteria table — that doc has no numbered sections). For SS,
 ① is in the body of issue #77 and ② is in its first comment — quote whichever one you mean.
 
 **Remaining gap.** ② replays predictions captured on the reference, so the clamp's effect is
-measured on real model output, but no run has driven the SS stage with a live `ss_flow.gguf`
-forward and logged the per-step ratio (that GGUF was unavailable during this epic, ORCHESTRATION
-§14). This is narrower than "unmeasured on the real model", which issue #77's comment explicitly
-retracts.
+measured on real model output. What is missing is neither the weights nor a real-weight run — the
+epic converted `ss_flow.gguf` (sha256 `1dfbef1b80ddea42…`) and drove it live through all eight E2E
+runs — but the instrumentation: nothing logs the rescale ratio and a "clamp fired" flag per step at
+the SS stage. Issue #77's ask #1 requested exactly that logging, but named the shape-SLat stage;
+shape is now covered (the 162 points above, obtained by replicating the clamp arithmetic inside
+`trellis-test-trellis2-mv-shape` rather than by adding a `TRELLIS_DBG_*` logger to the product), and
+the SS equivalent was never built. This gap is narrower than "unmeasured on the real model", which
+issue #77's comment explicitly retracts.
 
 **Rank: —** (kept by decision; revisit only if the SS stage has to be bit-compared with the
 reference, or if a real-weight SS measurement contradicts the synthetic one).

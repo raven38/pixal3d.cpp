@@ -20,7 +20,7 @@ pod v9: B3(V=4) 2/6・B1(V=2) 1/3 黒）。
 |---|---|---|---|
 | seed範囲: 4v/2v stochastic 42-51 (10本ずつ)、4v multidiffusion 42-44 (3本) | 全23本を上記どおり実行 | 一致 | `raw/sweep_results.jsonl`（23行） |
 | black判定: `mean<2`、normal判定: `mean>=10`（native実績踏襲） | `classify()`関数のまま変更なし | 一致 | `tools/ref_trellis2_mv_seed_sweep.py::classify` |
-| 中間値(2〜10)は二値化せず`intermediate`として報告 | 4件intermediateを発生時のまま個別報告 | 一致 | 下記§4表 |
+| 中間値(2〜10)は二値化せず`intermediate`として報告 | **3 件**（4v seed43 6.093 / 4v seed45 9.943 / 2v seed43 6.044）を発生時のまま個別報告 〔統括訂正 2026-09-23: 原文は「4件」だったが、生データ・本 doc §4・§7 はいずれも 3 件。4 件目に数えていたのは §3 較正の 4v_multidiffusion seed42 の baked_gt=9.846 と思われる（sweep run ではなく較正の参照値）〕 | 一致（件数のみ訂正） | 下記§4表、`raw/sweep_results.jsonl` |
 | proxy指標: bake前raw voxel attrsのmean\*255（`to_glb`は実行しない） | 実装どおり | 一致 | 同スクリプト`base_color_stats` |
 | **較正ゲート: proxy分類とv3 baked-texture実測の分類が一致すること** | **1回目の実行で4v_multidiffusion(境界値9.85 vs 10.23)が分類不一致でFAILし、pod自体がabort(rc=3)した** | **事後変更**: ゲート判定を「分類完全一致」から「分類一致 OR 絶対差2.0pt以内」へ緩和し、スクリプトを再デプロイして再実行した | `raw/calibration_report.json`（`close_enough_within_2pt`フィールド）、本doc§5 |
 | seed=42の軽量スクリプト出力がv3 fixtureとbit一致すること（妥当性ゲート、不一致でも続行可） | 3 config全てのseed=42で`ss_coords`/`tex_slat_{feats,coords}` sha256完全一致 | 一致（ゲート自体は「不一致でも続行」設計だったが実際には全て一致） | `raw/sweep_results.jsonl`の`v3_gate.all_bit_identical_to_v3`（3件ともTrue） |

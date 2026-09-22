@@ -54,8 +54,17 @@ step 0 で 1.29% の乖離、§6.2）が黒化率を上げている可能性は*
 | TASK-B3 禁止「`feat/trellis2-mv-e2e` worktree を変更しない」 | 触れていない（同自己申告。統括も本セッションで読み取りのみ） | 一致 | 同上 |
 | TASK-B3 / TASK-B3-REF 禁止「push しない」 | 未 push。hardening / diag / mv-59 のいずれも remote へ送っていない（push は go-queue #66 で GO 待ち） | 一致 | `git rev-list --count origin/feat/trellis2-mv..HEAD` |
 | TASK-B3-REF 禁止「v2/v3 fixture を変更しない」 | 変更していない。§6.1 の取り違えも**発見して記録しただけで rename していない**（GO 待ち） | 一致 | 本 doc §6.1、go-queue #66f |
-| TASK-B3-REF 禁止「pod を 2 本同時に走らせない」 | R1 の pod `trellis2mv-b3-ref-sweep` は 1 本。native 側の pod は R1 開始時点で既に全削除済み | 一致 | R1 doc §冒頭 |
-| TASK-B3-REF R3「黒 run と正常 run の tex SLat 統計（mean / std / **max abs**、飽和割合）を並べる」 | 参照側の生データにあるのは `tex_slat_mean` / `tex_slat_std` / `tex_slat_has_nan_or_inf` / `saturation_rate` と per-channel 統計のみ。飽和率は黒 1 件 0.9999911、境界域 3 件 0.3975〜0.5007、正常 19 件 0.0〜0.3675。native 側は per-channel 統計が HANDOVER §「per-channel分析」にある | **事後変更 #6（未達を含む）**: ①並置表そのものが R1 doc に作られなかった（表は `base_color_mean` と `tex_active_voxels` のみ）②**`max abs` は生データのキーにも R1 doc にも存在せず、測定されていない**（`sweep_results.jsonl` の全キーを列挙して確認）。mean/std/飽和率は再構成可能だが max abs は pod 再実行が要る | `raw/sweep_results.jsonl`（キー一覧）、`HANDOVER.md` §「per-channel分析」 |
+| TASK-B3-REF 禁止「pod を 2 本同時に走らせない」 | R1 の pod `trellis2mv-b3-ref-sweep` は 1 本。**native 側 pod との重なりは確認できない** — sweep の開始時刻がどこにも記録されておらず（`sweep.log` に wall-clock 行が 0、`sweep_summary.json` は `finished_at` のみ）、native v9 は 15:15:06〜15:24:54 UTC、v10 は 15:31:54〜15:35:56 UTC、sweep の finish は 16:07:43 UTC。sweep の run 時間合計は 590.2 s だが pipeline load・較正 3 件・pod bootstrap が加わるため開始時刻を逆算できず、v10 と重なっていた可能性を否定できない | **未確認**（「一致」とは書けない） | `raw/sweep.log`、`raw/sweep_summary.json`、`logs/v9-pod-seed-sweep.log`、`logs/v10-pod-tex-dump.log` の各タイムスタンプ |
+| TASK-B3-REF R3「黒 run と正常 run の tex SLat 統計（mean / std / **max abs**、飽和割合）を並べる」 | 参照側の生データで **tex SLat を見ているキーは `tex_slat_mean` / `tex_slat_std` / `tex_slat_has_nan_or_inf` の 3 つだけ**（`tools/ref_trellis2_mv_seed_sweep.py:370-378`、`tex_feats_np` から算出）。`saturation_rate` と `per_channel_mean_0_1` / `per_channel_std_0_1` は **tex SLat ではなく decode 後の PBR 属性**の統計（同 `base_color_stats()`:95-109、`mesh.attrs [Mv,6]` から算出）で、R3 が求めた tex SLat 統計ではない。飽和率は黒 1 件 0.9999911、境界域 3 件 0.3975〜0.5007、正常 19 件 0.0〜0.3675。native 側は per-channel 統計が HANDOVER §「per-channel分析」にある | **事後変更 #6（未達を含む）**: ①並置表そのものが R1 doc に作られなかった（表は `base_color_mean` と `tex_active_voxels` のみ）②**`max abs` は生データのキーにも R1 doc にも存在せず、測定されていない**（`sweep_results.jsonl` の全キーを列挙して確認）。tex SLat の mean/std は生データから引けるが、**`max abs` は保存されておらず mean/std からは再構成できない**（測るには pod 再実行が要る） | `raw/sweep_results.jsonl`（キー一覧）、`HANDOVER.md` §「per-channel分析」 |
+| TASK-B3 手順 5「pod は同時に 1 本のみ」 | native 側の v4〜v10 は同一 pod 名の使い回しで 1 本ずつ。**参照側 R1 と native v10 の重なりは確認できない**（上の「pod を 2 本同時に走らせない」行と同じ理由 — sweep の開始時刻が記録されていない） | **未確認** | 同上 |
+| TASK-B3 手順 1「仮説を先に列挙して doc に書く」 | 仮説 a〜f を列挙し、codex exec と advisor のレビューを反映した設計 doc が着手前に作られている | 一致 | `docs/design/2026-09-21-trellis2-mv-b3-tex-black.md`（冒頭に superseded 注記あり） |
+| TASK-B3 手順 3「flow/cond 側なら cond / counter / SamplerParams を dump して比較」 | 発動した（手順 2 の二分で cond 側の疑いが残ったため）。pod v7/v8 で cond 差し替えを実施したが、**SS voxel 数の変化で noise が再抽選され因果解釈不能**と担当が自己訂正済み。cond / counter / SamplerParams の dump 自体は v10 で実施（NFS `/nfs/trellis2-mv/b3-dump/`） | 一致（実施済み。ただし v7/v8 の結果は交絡により結論に使っていない） | `HANDOVER.md` §「cond差し替え実験（pod v7）」「00:3x 訂正」「TASK-B3-REF向けdump完了」、`logs/v7-pod-cond-swap.log`、`logs/v8-pod-cond-swap-512.log`、`logs/v10-pod-tex-dump.log` |
+
+**行にしなかった凍結文面**（Q1 結論依存・Q2 無言逸脱可能性がともに No、または既存行と証拠が重複するもの）:
+TASK-B3 手順 6「view 順ログは追加不要・何も足さない」の 1 件のみ。証拠が「hardening の src/ に計装が無いこと」で、
+上の「push しない」「fixture テストの期待値を触らない」行および §7 の「診断用計装は `diag/trellis2-mv-b3` にのみ存在」と
+完全に重複するため落とした。行の採否は「黙って省略・変更したときに本 doc の結論・限定文・数値表が変わりうるか」で判定した。
+
 
 事後変更 #1〜#6 のうち、結論に影響しうるのは #2（凍結分岐で判定不能）と #4（決定打未実施）。どちらも §0 の限定文に反映した。
 #6（tex SLat 統計の並置表が未作成）は結論を変えないが、飽和の機構を主張する材料が生データ止まりであることを意味する。
