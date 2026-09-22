@@ -58,12 +58,16 @@ step 0 で 1.29% の乖離、§6.2）が黒化率を上げている可能性は*
 | TASK-B3-REF R3「黒 run と正常 run の tex SLat 統計（mean / std / **max abs**、飽和割合）を並べる」 | 参照側の生データで **tex SLat を見ているキーは `tex_slat_mean` / `tex_slat_std` / `tex_slat_has_nan_or_inf` の 3 つだけ**（`tools/ref_trellis2_mv_seed_sweep.py:370-378`、`tex_feats_np` から算出）。`saturation_rate` と `per_channel_mean_0_1` / `per_channel_std_0_1` は **tex SLat ではなく decode 後の PBR 属性**の統計（同 `base_color_stats()`:95-109、`mesh.attrs [Mv,6]` から算出）で、R3 が求めた tex SLat 統計ではない。飽和率は黒 1 件 0.9999911、境界域 3 件 0.3975〜0.5007、正常 19 件 0.0〜0.3675。native 側は per-channel 統計が HANDOVER §「per-channel分析」にある | **事後変更 #6（未達を含む）**: ①並置表そのものが R1 doc に作られなかった（表は `base_color_mean` と `tex_active_voxels` のみ）②**`max abs` は生データのキーにも R1 doc にも存在せず、測定されていない**（`sweep_results.jsonl` の全キーを列挙して確認）。tex SLat の mean/std は生データから引けるが、**`max abs` は保存されておらず mean/std からは再構成できない**（測るには pod 再実行が要る） | `raw/sweep_results.jsonl`（キー一覧）、`HANDOVER.md` §「per-channel分析」 |
 | TASK-B3 手順 5「pod は同時に 1 本のみ」 | native 側の v4〜v10 は同一 pod 名の使い回しで 1 本ずつ。**参照側 R1 と native v10 の重なりは確認できない**（上の「pod を 2 本同時に走らせない」行と同じ理由 — sweep の開始時刻が記録されていない） | **未確認** | 同上 |
 | TASK-B3 手順 1「仮説を先に列挙して doc に書く」 | 仮説 a〜f を列挙し、codex exec と advisor のレビューを反映した設計 doc が着手前に作られている | 一致 | `docs/design/2026-09-21-trellis2-mv-b3-tex-black.md`（冒頭に superseded 注記あり） |
-| TASK-B3 手順 3「flow/cond 側なら cond / counter / SamplerParams を dump して比較」 | 発動した（手順 2 の二分で cond 側の疑いが残ったため）。pod v7/v8 で cond 差し替えを実施したが、**SS voxel 数の変化で noise が再抽選され因果解釈不能**と担当が自己訂正済み。cond / counter / SamplerParams の dump 自体は v10 で実施（NFS `/nfs/trellis2-mv/b3-dump/`） | 一致（実施済み。ただし v7/v8 の結果は交絡により結論に使っていない） | `HANDOVER.md` §「cond差し替え実験（pod v7）」「00:3x 訂正」「TASK-B3-REF向けdump完了」、`logs/v7-pod-cond-swap.log`、`logs/v8-pod-cond-swap-512.log`、`logs/v10-pod-tex-dump.log` |
+| TASK-B3 手順 3「flow/cond 側なら cond / counter / SamplerParams を dump して比較」 | 発動した（手順 2 の二分で cond 側の疑いが残ったため）。**3 つの対象で経路が違う**: **cond** は pod v7（cond_1024 差し替え）と v8（cond_512 差し替え）で差し替え実験、v10 で `tex_cond_view{v}.npy` として dump。**SamplerParams** は v10 で `tex_sampler_params.txt` として dump。**counter は dump していない** — コード実測（`sample_bank` 呼び出しで tex に counter を渡していない = nullptr）と凍結仕様「SS and texture each get a fresh counter」で棄却済み。手順 3 が求めた「各 step で選ばれた view index」は `[flow-mv-step] i= 0 seq=0 view=0/4 …` として DIAG ログに出ている | 一致（実施済み）。**ただし cond 差し替えの結果は結論に使っていない**。v8 は cond_512 を差し替えたことで SS の active voxel 数が変わり、shape-LR 以降の noise が丸ごと別サンプルになるため因果解釈不能（HANDOVER 00:3x 訂正）。v7 は cond_512 が native のままで noise ストリームが同一なので**この機構には当たらず**、00:3x は「因果として言えるのは v7 のみ」と明記している。その v7 も 00:5x の v9 シード掃引の後に「単に別の noise draw を引いただけの可能性が高い」へ格下げされており、**HANDOVER 内で v7 の扱いが 00:3x と 00:5x で食い違っている**（本 doc は v7/v8 いずれの結果も結論の根拠にしていない） | `HANDOVER.md` L241-244（00:3x、v7 は noise 同一）・L303-304（00:5x、v7/v8 とも別 draw 説）・L320-332（v10 の dump 一覧、counter 無し）・L36-37（counter nullptr）、`logs/v7-pod-cond-swap.log`、`logs/v8-pod-cond-swap-512.log`、`logs/v10-pod-tex-dump.log`、`logs/DIAG_B3_4view_stochastic.log` L22-25 |
 
-**行にしなかった凍結文面**（Q1 結論依存・Q2 無言逸脱可能性がともに No、または既存行と証拠が重複するもの）:
-TASK-B3 手順 6「view 順ログは追加不要・何も足さない」の 1 件のみ。証拠が「hardening の src/ に計装が無いこと」で、
-上の「push しない」「fixture テストの期待値を触らない」行および §7 の「診断用計装は `diag/trellis2-mv-b3` にのみ存在」と
-完全に重複するため落とした。行の採否は「黙って省略・変更したときに本 doc の結論・限定文・数値表が変わりうるか」で判定した。
+**行にしなかった凍結文面**（Q1 結論依存・Q2 無言逸脱可能性がともに No、または既存行と証拠が重複するもの）。
+行の採否は「黙って省略・変更したときに本 doc の結論・限定文・数値表が変わりうるか」で判定した:
+- TASK-B3 手順 6「view 順ログは追加不要・何も足さない」— 証拠が「hardening の src/ に計装が無いこと」で、
+  上の「push しない」「fixture テストの期待値を触らない」行および §7 の「診断用計装は `diag/trellis2-mv-b3` にのみ存在」と重複。
+- **運用指示の類**（結論に関わらないもの）: 両 brief の報告フォーマット（`PARTIAL:` 各 2 種・`DONE:` 3 行・日本語で応答）、
+  冒頭の「まず COMMON.md を読んでから着手すること」、worktree / cwd の指定、TASK-B3-REF R1「率は『N 本中 k 本』と書き」、
+  同 R2「注入した noise が使われたことを sha256 でログに残す」（R2 自体が未実施なので従属）、同 R3「結論（a/b）は統括が下すので
+  事実と p 値だけ書く」（R1 doc がそのとおりに書かれていることは §0 の引用で担保済み）。
 
 
 事後変更 #1〜#6 のうち、結論に影響しうるのは #2（凍結分岐で判定不能）と #4（決定打未実施）。どちらも §0 の限定文に反映した。

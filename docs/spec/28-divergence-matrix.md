@@ -212,12 +212,21 @@ here. Native logs: `docs/results/2026-09-21-trellis2-mv-b3/logs/v9-pod-seed-swee
 reference sweep: `docs/results/2026-09-22-trellis2-mv-b3-ref/`. Diagnostic instrumentation
 is on branch `diag/trellis2-mv-b3` only.
 
-**Rank: —** (documented limitation). Two workarounds are demonstrated: re-rolling `--seed`, and
-switching to `--trellis2-mv-mode multidiffusion` — holding the geometry fixed and swapping only the
-texture stage to multidiffusion on the black seed-42 run recovers colour (base colour mean 0.0254
-vs 0.0065 for the reverse swap, `docs/results/2026-09-21-trellis2-mv-b3/logs/DIAG_shapeStoch_texMultidiff.log`).
-`multidiffusion` has not shown the failure in the samples taken — 0/3 reference seeds and 0/2 native
-runs — but that is n=5 and is not evidence that it is immune.
+**Rank: —** (documented limitation). Two workarounds are demonstrated at the product surface:
+re-rolling `--seed`, and `--trellis2-mv-mode multidiffusion` — on the black seed 42, a full
+multidiffusion run comes back normal (B4, tex-decode base colour mean 0.0238 vs 0.0021 for the
+black stochastic run at the same seed). `multidiffusion` has not shown the failure in the samples
+taken — 0/3 reference seeds and 0/2 native runs — but that is n=5 and is not evidence that it is
+immune.
+
+Separately, and as mechanism rather than workaround: holding the geometry fixed and swapping *only*
+the texture stage to multidiffusion on that same seed also recovers colour (0.0254, vs 0.0065 for
+the reverse swap), which localises the failure to the texture stage's stochastic sampling. That
+experiment used `TRELLIS_DBG_TEX_MODE`, which exists only on `diag/trellis2-mv-b3` — the shipped
+flag switches every stage, so it cannot reproduce this split. Logs:
+`docs/results/2026-09-21-trellis2-mv-b3/logs/DIAG_{B3_4view_stochastic,B4_4view_multidiff,shapeStoch_texMultidiff,shapeMultidiff_texStoch}.log`
+(all four figures above are that log line's `tex_decode base color, post-clamp` mean, so they are
+comparable to each other but not to the baked `out_base.png` means quoted elsewhere).
 
 ## Addendum 5 — guidance-rescale OOD clamp [0.2, 5.0] (issue #77: intentional, kept; measured activation)
 
