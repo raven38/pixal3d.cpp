@@ -96,6 +96,29 @@
 4. `TRELLIS_THREADS=4` で再実行（COMMON.md §6）、結果は変わらず全PASS
    （§冒頭の実行ログ参照、603 ok / 0 FAIL / informational 1件）。
 
+## hardening への merge 後の再実行（2026-09-22、統括）
+
+`feat/trellis2-mv-stages`（元 tip 221af49）を `feat/trellis2-mv-hardening`（B3 決着 3 コミット込み、
+tip e2a9add）へ rebase し、`git merge --ff-only` で hardening に取り込んだ（rebase 後 tip **b367532**、
+src/ の内容は 221af49 と差分ゼロ: `git diff --stat 221af49 HEAD -- src/` が空）。その上で同じコマンドで再実行:
+
+```
+TRELLIS_THREADS=4 cmake --build build --target trellis-test-trellis2-mv-shape trellis-test-trellis2-mv-tex -j4   # rc=0
+TRELLIS_THREADS=4 flock -w 600 /tmp/pixal3d-metal-gpu.lock -c './build/trellis-test-trellis2-mv-shape'           # rc=0
+TRELLIS_THREADS=4 flock -w 600 /tmp/pixal3d-metal-gpu.lock -c './build/trellis-test-trellis2-mv-tex'             # rc=0
+```
+
+| 項目 | 凍結値（rebase 前、`full_run_log.txt`） | 再実行実測（`full_run_log_hardening_b367532.txt`） | 一致 |
+|---|---|---|---|
+| shape: 真の check（`grep -c '^ok '`） | 603 | **603** | 一致 |
+| shape: `grep -c '^FAIL'` | 0 | **0** | 一致 |
+| shape: informational（`grep -c '^info '`） | 1（S3-upsample q8_0 のみ） | **1** | 一致 |
+| shape: プロセス exit code | 0 | **0** | 一致 |
+| shape: ログ全文 | — | ポインタアドレス（`0x…`）と時間表示を伏せた差分 **0 行** | 一致 |
+| tex: `^ok ` / `^FAIL` / exit | （本 doc 対象外、参考） | **150 / 0 / 0**（`tex_run_log_hardening_b367532.txt`） | — |
+
+Metal GPU は他セッションと共有のため `/tmp/pixal3d-metal-gpu.lock` 下で実行した。
+
 ## 既知の限界・申し送り
 
 - S3-upsample は q8_0 decoder 限定の diagnostic。native バグの有無を判定するには f16（or 元の

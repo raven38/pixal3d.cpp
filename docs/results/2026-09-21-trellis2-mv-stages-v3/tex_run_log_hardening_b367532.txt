@@ -1,0 +1,239 @@
+-- tex input concat: x64[0:32]=state, x64[32:64]=fixed shape_slat_norm, per token --
+ok   concat output size is 64*N
+ok   every token's first 32ch == current state, next 32ch == fixed shape_slat_norm
+-- tex sampler: step0/8/11 guidance-interval membership --
+ok   step0 (t=1.000000) is outside [0.6,0.9]
+ok   step8 (t=0.600000) is inside [0.6,0.9]
+ok   step11 (t=0.214286) is outside [0.6,0.9]
+== texture step{0,8,11} CFG vs pinned reference (gr=0.0 -> sample-independent, no clamp path) ==
+ok   run_1img_baseline_512 (V=1, stochastic): coords has no duplicate rows (N=3543)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_512 (V=1, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_baseline_512 (V=1, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_baseline_512 (V=1, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_baseline_512 (V=1, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.4975e-08, N=3543)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_512 (V=1, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_baseline_512 (V=1, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_1img_baseline_512 (V=1, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_1img_baseline_512 (V=1, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.9592e-08, N=3543)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_512 (V=1, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_baseline_512 (V=1, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_baseline_512 (V=1, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_baseline_512 (V=1, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=9.2075e-08, N=3543)
+ok   run_1img_injected_stochastic_512 (V=1, stochastic): coords has no duplicate rows (N=3543)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.4975e-08, N=3543)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_1img_injected_stochastic_512 (V=1, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.9592e-08, N=3543)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_injected_stochastic_512 (V=1, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=9.2075e-08, N=3543)
+ok   run_2img_real_stochastic_512 (V=2, stochastic): coords has no duplicate rows (N=970)
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.6389e-08, N=970)
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_2img_real_stochastic_512 (V=2, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=5.0836e-08, N=970)
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_stochastic_512 (V=2, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=5.5167e-08, N=970)
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion): coords has no duplicate rows (N=963)
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step0: consumed every recorded pos/neg call for this step (2/2)
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.3717e-08, N=963)
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step8: consumed every recorded pos/neg call for this step (2/2)
+info run_2img_real_multidiffusion_512 (V=2, multidiffusion) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.4924e-08, N=963)
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step11: consumed every recorded pos/neg call for this step (2/2)
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_multidiffusion_512 (V=2, multidiffusion) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.4463e-08, N=963)
+ok   run_4img_real_stochastic_512 (V=4, stochastic): coords has no duplicate rows (N=952)
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=2.1209e-08, N=952)
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_4img_real_stochastic_512 (V=4, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.8840e-08, N=952)
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_stochastic_512 (V=4, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=8.5139e-08, N=952)
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion): coords has no duplicate rows (N=948)
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step0: consumed every recorded pos/neg call for this step (4/4)
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=2.2513e-08, N=948)
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step8: consumed every recorded pos/neg call for this step (4/4)
+info run_4img_real_multidiffusion_512 (V=4, multidiffusion) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.7465e-08, N=948)
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step11: consumed every recorded pos/neg call for this step (4/4)
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_multidiffusion_512 (V=4, multidiffusion) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.7299e-08, N=948)
+ok   run_1img_baseline_1024c (V=1, stochastic): coords has no duplicate rows (N=16516)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_1024c (V=1, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_baseline_1024c (V=1, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_baseline_1024c (V=1, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_baseline_1024c (V=1, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.9379e-08, N=16516)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_1024c (V=1, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_baseline_1024c (V=1, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_1img_baseline_1024c (V=1, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_1img_baseline_1024c (V=1, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.5731e-08, N=16516)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_baseline_1024c (V=1, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_baseline_1024c (V=1, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_baseline_1024c (V=1, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_baseline_1024c (V=1, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.7151e-08, N=16516)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic): coords has no duplicate rows (N=16516)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.9379e-08, N=16516)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_1img_injected_stochastic_1024c (V=1, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.5731e-08, N=16516)
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 1 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_1img_injected_stochastic_1024c (V=1, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.7151e-08, N=16516)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic): coords has no duplicate rows (N=4442)
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.0267e-08, N=4442)
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_2img_real_stochastic_1024c (V=2, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=7.0126e-08, N=4442)
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 2 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_stochastic_1024c (V=2, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=7.0487e-08, N=4442)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion): coords has no duplicate rows (N=4431)
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step0: consumed every recorded pos/neg call for this step (2/2)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.1472e-08, N=4431)
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step8: consumed every recorded pos/neg call for this step (2/2)
+info run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=7.3419e-08, N=4431)
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 2 views, 2 forwards, mode=multidiffusion, 0.0s
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step11: consumed every recorded pos/neg call for this step (2/2)
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_2img_real_multidiffusion_1024c (V=2, multidiffusion) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.9094e-08, N=4431)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic): coords has no duplicate rows (N=4183)
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step0: consumed every recorded pos/neg call for this step (1/1)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.9259e-08, N=4183)
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step8: consumed every recorded pos/neg call for this step (1/1)
+info run_4img_real_stochastic_1024c (V=4, stochastic) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.8502e-08, N=4183)
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+      [flow-mv] 1 steps, 4 views, 1 forwards, mode=stochastic, 0.0s
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step11: consumed every recorded pos/neg call for this step (1/1)
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_stochastic_1024c (V=4, stochastic) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.9195e-08, N=4183)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion): coords has no duplicate rows (N=4171)
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step0: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step0: consumed every recorded pos/neg call for this step (4/4)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step0: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step0: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=4.2877e-08, N=4171)
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step8: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step8: consumed every recorded pos/neg call for this step (4/4)
+info run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step8: real step was guided but sp.steps=1 forces not-guided (no neg call) -- valid here only because gs=1.0 makes both branches algebraically identical (pred=pos); see file header comment
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step8: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.6894e-08, N=4171)
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+      [flow-mv] 1 steps, 4 views, 4 forwards, mode=multidiffusion, 0.0s
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step11: determinism -- same replay input run twice natively is bit-identical
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step11: consumed every recorded pos/neg call for this step (4/4)
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step11: pos/neg call pattern matches the recorded (not-guided) branch exactly
+ok   run_4img_real_multidiffusion_1024c (V=4, multidiffusion) step11: CFG pred (via real sample_flow_multi, sp.steps=1) matches recorded cfg.npy (rel=3.7739e-08, N=4171)
+ok   all 12 texture fixture runs (512 x6 + 1024cascade x6) were present and checked (ran=12/12)
+
+ALL PASS
