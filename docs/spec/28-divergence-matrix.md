@@ -214,8 +214,9 @@ is on branch `diag/trellis2-mv-b3` only.
 
 **Rank: —** (documented limitation). Two workarounds are demonstrated at the product surface:
 re-rolling `--seed`, and `--trellis2-mv-mode multidiffusion` — on the black seed 42, a full
-multidiffusion run comes back normal (B4, tex-decode base colour mean 0.0238 vs 0.0021 for the
-black stochastic run at the same seed). `multidiffusion` has not shown the failure in the samples
+multidiffusion run comes back normal (tex-decode base colour mean 0.0238 vs 0.0021 for the black
+stochastic run at the same seed; both from the diag pod re-runs of the E2E B3/B4 conditions, since
+the E2E runs themselves only recorded the baked `out_base.png` mean). `multidiffusion` has not shown the failure in the samples
 taken — 0/3 reference seeds and 0/2 native runs — but that is n=5 and is not evidence that it is
 immune.
 
