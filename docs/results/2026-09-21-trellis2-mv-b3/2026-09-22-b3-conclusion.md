@@ -19,9 +19,9 @@
    （2-view stochastic、seed 42）の bake 済みテクスチャは全 texel = 0 で、R1 掃引の seed 42 と bit 一致
    （`ss_coords` / `tex_slat_{feats,coords}` の sha256）。参照側の黒 run（2v seed 42）は `saturation_rate` 0.9999911、
    native 側 HANDOVER が観測した「decoder 飽和」と同じ機構。
-   ただし飽和率は黒 run（0.9999911）以外では分離が弱い — 4v の境界域 2 run が 0.3975 / 0.4898 なのに対し、
-   正常 run 21 本の範囲は 0.0〜0.3675 で、境界域と正常の飽和率はほぼ地続き。飽和率で黒を判定しているのではなく、
-   完全な黒 1 件だけが飽和率でも突出している、という事実に留める。
+   ただし飽和率は黒 run（n=1、0.9999911）以外では分離が弱い — 境界域 3 run（4v seed43 0.3975 / 4v seed45 0.4898 /
+   2v seed43 0.5007）に対し、正常 19 run の範囲は 0.0〜0.3675 で、両者の飽和率はほぼ地続き。飽和率で黒を
+   判定しているのではなく、完全な黒 1 件だけが飽和率でも突出している、という事実に留める。
 2. **native と参照の黒化率に統計的な差は検出されなかった**（Fisher exact 両側、config 別 p = 0.125 / 0.423、
    pooled p = 0.076、感度分析 p = 0.60〜1.00。§3）。
 
@@ -55,7 +55,7 @@ step 0 で 1.29% の乖離、§6.2）が黒化率を上げている可能性は*
 | TASK-B3 / TASK-B3-REF 禁止「push しない」 | 未 push。hardening / diag / mv-59 のいずれも remote へ送っていない（push は go-queue #66 で GO 待ち） | 一致 | `git rev-list --count origin/feat/trellis2-mv..HEAD` |
 | TASK-B3-REF 禁止「v2/v3 fixture を変更しない」 | 変更していない。§6.1 の取り違えも**発見して記録しただけで rename していない**（GO 待ち） | 一致 | 本 doc §6.1、go-queue #66f |
 | TASK-B3-REF 禁止「pod を 2 本同時に走らせない」 | R1 の pod `trellis2mv-b3-ref-sweep` は 1 本。native 側の pod は R1 開始時点で既に全削除済み | 一致 | R1 doc §冒頭 |
-| TASK-B3-REF R3「黒 run と正常 run の tex SLat 統計（mean/std/max abs、飽和割合）を並べる」 | 参照側は全 23 run の `saturation_rate` / per-channel 統計が生データにあり（黒 0.9999911、境界域 0.3975 / 0.4898、正常 0.0〜0.3675）。native 側は per-channel 統計が HANDOVER §「per-channel分析」にある | **事後変更 #6**: R1 doc の表は `base_color_mean` と `tex_active_voxels` のみを載せ、tex SLat の mean/std/max abs を並置した表は作られなかった（生データには `per_channel_mean_0_1` / `per_channel_std_0_1` があるので再構成は可能） | `raw/sweep_results.jsonl`、`HANDOVER.md` §「per-channel分析」 |
+| TASK-B3-REF R3「黒 run と正常 run の tex SLat 統計（mean / std / **max abs**、飽和割合）を並べる」 | 参照側の生データにあるのは `tex_slat_mean` / `tex_slat_std` / `tex_slat_has_nan_or_inf` / `saturation_rate` と per-channel 統計のみ。飽和率は黒 1 件 0.9999911、境界域 3 件 0.3975〜0.5007、正常 19 件 0.0〜0.3675。native 側は per-channel 統計が HANDOVER §「per-channel分析」にある | **事後変更 #6（未達を含む）**: ①並置表そのものが R1 doc に作られなかった（表は `base_color_mean` と `tex_active_voxels` のみ）②**`max abs` は生データのキーにも R1 doc にも存在せず、測定されていない**（`sweep_results.jsonl` の全キーを列挙して確認）。mean/std/飽和率は再構成可能だが max abs は pod 再実行が要る | `raw/sweep_results.jsonl`（キー一覧）、`HANDOVER.md` §「per-channel分析」 |
 
 事後変更 #1〜#6 のうち、結論に影響しうるのは #2（凍結分岐で判定不能）と #4（決定打未実施）。どちらも §0 の限定文に反映した。
 #6（tex SLat 統計の並置表が未作成）は結論を変えないが、飽和の機構を主張する材料が生データ止まりであることを意味する。
@@ -141,7 +141,7 @@ da945908a20a1afb  yoimiya_2view/Frame4.png   <- 4view/Frame3.png と同一
 生速度が fixture の `tex_step0_cfg.npy` と rel 1.29e-2、step 8 で 4.45e-2、step 11 で 5.12e-2。既存の
 `trellis-test-trellis2-mv-tex` は ReplayModel（記録済みテンソルを返す）なので CFG 算術しか見ておらず、この乖離は見えない。
 
-- 本件の黒化との因果は**未確立**（参照側も同率で黒化するので、1.29% が黒化率を押し上げているかは R2 待ち）。
+- 本件の黒化との因果は**未確立**（参照側でも黒化が起き、n=10/6 では率の差を検出できなかったため、1.29% が native の黒化率を押し上げているかどうかは R2 待ち。§0 のとおり「率が同じ」とは言えない）。
 - f16 重み量子化 / FlashAttention（bf16、`--no-fa` 未試行。FA 設定はログ未記録）/ CUDA 演算順のどれが主因かは未切り分け。
 - 継承 trellis.cpp には tex flow の実重み parity テストが無い（`trellis-test-shape-flow` はある）ので、
   **single-image 経路にも共通する可能性**がある。#65 の範囲外 → 別 issue として起票する候補（go-queue #66g）。

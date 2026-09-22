@@ -230,21 +230,32 @@ with the activation rate recorded here because the upstream premise does not hol
 
 **Measured activation** (per stage, at production sampler parameters):
 
-| Stage | Params | Measurement points | ratio range | Clamp fires |
-|---|---|---|---|---|
-| Sparse structure | gs=7.5, gr=0.5 | 3 of the 9 in-interval steps, synthetic sampler fixture | **0.138–0.154** | **yes** (below the 0.2 floor) |
-| Shape SLat LR + HR | gs=7.5, gr=0.5 | 162 points (18 run-sides x 9 in-interval steps), v3 real-weight fixture | min **0.2462**, max **0.9575** | no (0/162) |
-| Texture SLat | gs=1.0, **gr=0.0** | — | — | structurally n/a (rescale is not applied) |
+There are **two separate SS measurements**; they are not the same experiment and their ratio
+ranges differ. Keep them apart.
 
-**Expected impact.** Confined to the SS stage: about 10 % rel per clamped step, final-sample
-divergence 0.0108 abs on the synthetic fixture, and 3547 vs 3543 decoded coords downstream.
-Shape is unaffected — clamp-on vs `TRELLIS_NOFIX=1` 12-step traces are bit-identical across all
-18 run-sides, and native's ratios match the reference manifest to 1.97e-7.
+| Stage | Measurement | Params | Points | ratio range | Clamp fires |
+|---|---|---|---|---|---|
+| Sparse structure | ① synthetic sampler fixture, pinned Python reference run directly | gs=7.5, gr=0.5 | 3 of the 9 in-interval steps | **0.156–0.187** | **yes** (below the 0.2 floor) |
+| Sparse structure | ② `trellis-test-trellis2-mv-ss` replaying the #59 v2 golden fixtures (**real TRELLIS.2-4B predictions**, captured on an A100) | gs=7.5 | 6 runs, clamp on vs `TRELLIS_NOFIX=1` | **0.138–0.154** | **yes** |
+| Shape SLat LR + HR | v3 real-weight fixture, `trellis-test-trellis2-mv-shape` S4 | gs=7.5, gr=0.5 | 162 points (18 run-sides x 9 in-interval steps) | min **0.2462**, max **0.9575** | no (0/162) |
+| Texture SLat | — | gs=1.0, **gr=0.0** | — | — | structurally n/a (rescale is not applied) |
+
+**Expected impact.** Confined to the SS stage. From ①: final-sample divergence 0.0108 abs. From
+②: per-step max rel error 9.9–11.6 % with the clamp on (1.0e-6–1.6e-6 with it off), and a shifted
+active voxel set — `run_1img_baseline_512` 3547 vs 3543, `run_2img_real_multidiffusion_512` 966 vs
+963, `run_4img_real_stochastic_512` 954 vs 952. Shape is unaffected — clamp-on vs `TRELLIS_NOFIX=1`
+12-step traces are bit-identical across all 18 run-sides, and native's ratios match the reference
+manifest to 1.97e-7.
 
 **Verify.** `trellis-test-trellis2-mv-shape` prints the per-row ratio table (S4 section, 162 hard
-asserts); `docs/results/2026-09-21-trellis2-mv-stages-v3.md` §5 has the shape numbers, issue #77
-has the SS ones. The SS figure is from the synthetic fixture — a real-weight per-step ratio log
-for the SS stage has not been taken.
+asserts); `docs/results/2026-09-21-trellis2-mv-stages-v3.md` §5 has the shape numbers. For SS,
+① is in the body of issue #77 and ② is in its first comment — quote whichever one you mean.
+
+**Remaining gap.** ② replays predictions captured on the reference, so the clamp's effect is
+measured on real model output, but no run has driven the SS stage with a live `ss_flow.gguf`
+forward and logged the per-step ratio (that GGUF was unavailable during this epic, ORCHESTRATION
+§14). This is narrower than "unmeasured on the real model", which issue #77's comment explicitly
+retracts.
 
 **Rank: —** (kept by decision; revisit only if the SS stage has to be bit-compared with the
 reference, or if a real-weight SS measurement contradicts the synthetic one).
