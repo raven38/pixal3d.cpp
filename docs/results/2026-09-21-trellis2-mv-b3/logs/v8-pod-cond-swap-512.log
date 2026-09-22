@@ -1,0 +1,134 @@
+=== Mon Sep 21 15:04:45 UTC 2026 apt bootstrap ===
+W: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease: Key is stored in legacy trusted.gpg keyring (/etc/apt/trusted.gpg), see the DEPRECATION section in apt-key(8) for details.
+Setting up g++ (4:13.2.0-7ubuntu1) ...
+update-alternatives: using /usr/bin/g++ to provide /usr/bin/c++ (c++) in auto mode
+update-alternatives: warning: skip creation of /usr/share/man/man1/c++.1.gz because associated file /usr/share/man/man1/g++.1.gz (of link group c++) doesn't exist
+Setting up build-essential (12.10ubuntu1) ...
+Setting up libheif1:amd64 (1.17.6-1ubuntu4.8) ...
+Setting up libgd3:amd64 (2.3.3-9ubuntu5) ...
+Setting up libc-devtools (2.39-0ubuntu8.9) ...
+Setting up libheif-plugin-aomdec:amd64 (1.17.6-1ubuntu4.8) ...
+Setting up libheif-plugin-aomenc:amd64 (1.17.6-1ubuntu4.8) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.9) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 20597 files and directories currently installed.)
+Preparing to unpack .../cuda-cccl-12-8_12.8.90-1_amd64.deb ...
+Unpacking cuda-cccl-12-8 (12.8.90-1) ...
+Preparing to unpack .../cuda-toolkit-12-8-config-common_12.8.90-1_all.deb ...
+Unpacking cuda-toolkit-12-8-config-common (12.8.90-1) over (12.8.57-1) ...
+Preparing to unpack .../cuda-cudart-12-8_12.8.90-1_amd64.deb ...
+Unpacking cuda-cudart-12-8 (12.8.90-1) over (12.8.57-1) ...
+Selecting previously unselected package cuda-driver-dev-12-8.
+Preparing to unpack .../cuda-driver-dev-12-8_12.8.90-1_amd64.deb ...
+Unpacking cuda-driver-dev-12-8 (12.8.90-1) ...
+Selecting previously unselected package cuda-cudart-dev-12-8.
+Preparing to unpack .../cuda-cudart-dev-12-8_12.8.57-1_amd64.deb ...
+Unpacking cuda-cudart-dev-12-8 (12.8.57-1) ...
+Setting up cuda-toolkit-12-8-config-common (12.8.90-1) ...
+Setting alternatives
+Setting up cuda-driver-dev-12-8 (12.8.90-1) ...
+Setting up cuda-cccl-12-8 (12.8.90-1) ...
+Setting up cuda-cudart-12-8 (12.8.90-1) ...
+Setting up cuda-cudart-dev-12-8 (12.8.57-1) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.9) ...
+debconf: delaying package configuration, since apt-utils is not installed
+Selecting previously unselected package libcublas-dev-12-8.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 22368 files and directories currently installed.)
+Preparing to unpack .../libcublas-dev-12-8_12.8.3.14-1_amd64.deb ...
+Unpacking libcublas-dev-12-8 (12.8.3.14-1) ...
+Setting up libcublas-dev-12-8 (12.8.3.14-1) ...
+debconf: delaying package configuration, since apt-utils is not installed
+Selecting previously unselected package cuda-crt-12-8.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 22391 files and directories currently installed.)
+Preparing to unpack .../cuda-crt-12-8_12.8.93-1_amd64.deb ...
+Unpacking cuda-crt-12-8 (12.8.93-1) ...
+Selecting previously unselected package cuda-nvvm-12-8.
+Preparing to unpack .../cuda-nvvm-12-8_12.8.93-1_amd64.deb ...
+Unpacking cuda-nvvm-12-8 (12.8.93-1) ...
+Selecting previously unselected package cuda-nvcc-12-8.
+Preparing to unpack .../cuda-nvcc-12-8_12.8.93-1_amd64.deb ...
+Unpacking cuda-nvcc-12-8 (12.8.93-1) ...
+Setting up cuda-crt-12-8 (12.8.93-1) ...
+Setting up cuda-nvvm-12-8 (12.8.93-1) ...
+Setting up cuda-nvcc-12-8 (12.8.93-1) ...
+=== Mon Sep 21 15:06:05 UTC 2026 READY_FOR_COPY_V8 (waiting up to 300s for kubectl cp + touch /nfs/trellis2-mv/b3-diag/COPY_DONE_V8) ===
+=== Mon Sep 21 15:06:25 UTC 2026 COPY_DONE_V8 seen after 5x5s ===
+=== Mon Sep 21 15:06:25 UTC 2026 reconfigure + build trellis-cli, trellis-tool-png-mean (-j16) ===
+256
+-- Performing Test WEBP_HAVE_FLAG_MIPS_DSP_R2 - Failed
+-- Performing Test WEBP_HAVE_FLAG_MIPS_DSP_R2
+-- Performing Test WEBP_HAVE_FLAG_MIPS_DSP_R2 - Failed
+-- Performing Test HAS_COMPILE_FLAG
+-- Performing Test HAS_COMPILE_FLAG - Failed
+-- Performing Test WEBP_HAVE_FLAG_NEON
+-- Performing Test WEBP_HAVE_FLAG_NEON - Failed
+-- Performing Test WEBP_HAVE_FLAG_NEON
+-- Performing Test WEBP_HAVE_FLAG_NEON - Failed
+-- Performing Test WEBP_HAVE_FLAG_MSA
+-- Performing Test WEBP_HAVE_FLAG_MSA - Failed
+-- Performing Test WEBP_HAVE_FLAG_MSA
+-- Performing Test WEBP_HAVE_FLAG_MSA - Failed
+-- Performing Test HAS_COMPILE_FLAG
+-- Performing Test HAS_COMPILE_FLAG - Failed
+-- trellis.cpp: WebP texture encoding enabled
+-- trellis.cpp: CUDA backend enabled ()
+-- Configuring done (2.2s)
+-- Generating done (0.2s)
+-- Build files have been written to: /nfs/trellis2-mv/src/0d4cfc5/build
+[1/35] Building CXX object CMakeFiles/trellis_core.dir/src/dual_grid.cpp.o
+[2/35] Building CXX object CMakeFiles/trellis_core.dir/src/ss_decoder.cpp.o
+[3/35] Building CXX object CMakeFiles/trellis_core.dir/src/trellis_model.cpp.o
+[4/35] Building CXX object CMakeFiles/trellis_core.dir/src/dit.cpp.o
+[5/35] Building CXX object CMakeFiles/trellis_core.dir/src/dinov3.cpp.o
+[6/35] Building CXX object CMakeFiles/trellis_core.dir/src/tri_bvh.cpp.o
+[7/35] Building CXX object CMakeFiles/trellis_core.dir/thirdparty/meshoptimizer/simplifier.cpp.o
+[8/35] Building CXX object CMakeFiles/trellis_core.dir/src/proj_grid.cpp.o
+[9/35] Building CXX object CMakeFiles/trellis_core.dir/src/sparse.cpp.o
+[10/35] Building CXX object CMakeFiles/trellis_core.dir/src/remesh_dc.cpp.o
+[11/35] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond.cpp.o
+[12/35] Building CXX object CMakeFiles/trellis_core.dir/src/shape_decoder.cpp.o
+[13/35] Building CXX object CMakeFiles/trellis_core.dir/src/image_preprocess.cpp.o
+[14/35] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_input.cpp.o
+[15/35] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_postprocess.cpp.o
+[16/35] Building CXX object CMakeFiles/trellis_core.dir/src/decimate_qem.cpp.o
+[17/35] Building CXX object CMakeFiles/trellis_core.dir/src/birefnet.cpp.o
+[18/35] Building CXX object CMakeFiles/trellis_core.dir/src/naf_gpu.cpp.o
+[19/35] Building CXX object CMakeFiles/trellis_core.dir/src/flow_runner.cpp.o
+[20/35] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond_gpu.cpp.o
+[21/35] Building CXX object CMakeFiles/trellis_core.dir/src/naf.cpp.o
+[22/35] Building CUDA object CMakeFiles/trellis_core.dir/src/deform_conv.cu.o
+[23/35] Building CXX object CMakeFiles/trellis_core.dir/src/graph_dump.cpp.o
+[24/35] Building CXX object CMakeFiles/trellis_core.dir/src/transforms_json.cpp.o
+[25/35] Building CXX object CMakeFiles/trellis_core.dir/src/model_manifest.cpp.o
+[26/35] Building CUDA object CMakeFiles/trellis_core.dir/src/naf_attn.cu.o
+[27/35] Building CXX object CMakeFiles/trellis_core.dir/src/mesh_glb.cpp.o
+[28/35] Building CXX object CMakeFiles/trellis_core.dir/src/preprocess.cpp.o
+[29/35] Building CXX object CMakeFiles/trellis_core.dir/thirdparty/xatlas/xatlas.cpp.o
+[30/35] Building CXX object CMakeFiles/trellis-cli.dir/src/trellis_cli.cpp.o
+[31/35] Building CXX object CMakeFiles/trellis_core.dir/src/uv_bake.cpp.o
+[32/35] Building CUDA object CMakeFiles/trellis_core.dir/src/decimate_qem.cu.o
+[33/35] Linking CXX static library libtrellis_core.a
+[34/35] Linking CXX executable trellis-tool-png-mean
+[35/35] Linking CXX executable trellis-cli
+-rwxr-xr-x 1 root root 3220928 Sep 21 15:06 build/trellis-cli
+-rwxr-xr-x 1 root root  371280 Sep 21 15:06 build/trellis-tool-png-mean
+=== Mon Sep 21 15:06:42 UTC 2026 build rc=0 ===
+=== Mon Sep 21 15:06:42 UTC 2026 [iv] ALL views, BOTH 512 and 1024 cond overridden with reference ===
+[iv] rc=0
+/nfs/trellis2-mv/b3-diag/cond-swap-iv/out_base.png: 2048x2048 mean=39.9450
+=== Mon Sep 21 15:08:04 UTC 2026 [v] ALL views, cond_512 ONLY overridden (cond1024 stays native) ===
+[v] rc=0
+/nfs/trellis2-mv/b3-diag/cond-swap-v/out_base.png: 2048x2048 mean=29.8403
+=== Mon Sep 21 15:09:03 UTC 2026 SUMMARY ===
+[iv] both 512+1024 all overridden: /nfs/trellis2-mv/b3-diag/cond-swap-iv/out_base.png: 2048x2048 mean=39.9450
+[v]  512-only all overridden:       /nfs/trellis2-mv/b3-diag/cond-swap-v/out_base.png: 2048x2048 mean=29.8403
+=== Mon Sep 21 15:09:03 UTC 2026 per-view native-vs-ref rel, cond_512 (from arm [v]'s stderr log) ===
+      [dbg] cond_1024 (DINOv3@1024) view0 native-vs-ref: max|d|=5.7244e+00 mean|d|=1.3269e-01 rel=1.9514e-01
+      [dbg] cond_1024 (DINOv3@1024) view1 native-vs-ref: max|d|=5.6619e+00 mean|d|=1.2292e-01 rel=1.9301e-01
+      [dbg] cond_1024 (DINOv3@1024) view2 native-vs-ref: max|d|=4.1077e+00 mean|d|=1.2580e-01 rel=1.4003e-01
+      [dbg] cond_1024 (DINOv3@1024) view3 native-vs-ref: max|d|=5.8680e+00 mean|d|=1.2064e-01 rel=2.0004e-01
+      [dbg] cond_512 (DINOv3@512) view0 native-vs-ref: max|d|=4.7077e+00 mean|d|=1.2872e-01 rel=1.6046e-01
+      [dbg] cond_512 (DINOv3@512) view1 native-vs-ref: max|d|=5.3434e+00 mean|d|=1.1354e-01 rel=1.8212e-01
+      [dbg] cond_512 (DINOv3@512) view2 native-vs-ref: max|d|=4.1161e+00 mean|d|=1.2738e-01 rel=1.4029e-01
+      [dbg] cond_512 (DINOv3@512) view3 native-vs-ref: max|d|=5.5041e+00 mean|d|=1.1737e-01 rel=1.8760e-01
+=== Mon Sep 21 15:09:03 UTC 2026 ALL V8 COND-SWAP RUNS DONE ===
+B3_DIAG_POD_V8_COMPLETE

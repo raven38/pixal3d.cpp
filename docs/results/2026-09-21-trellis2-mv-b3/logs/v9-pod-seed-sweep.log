@@ -1,0 +1,37 @@
+=== Mon Sep 21 15:15:06 UTC 2026 lightweight bootstrap (reusing NFS build, no rebuild) ===
+W: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease: Key is stored in legacy trusted.gpg keyring (/etc/apt/trusted.gpg), see the DEPRECATION section in apt-key(8) for details.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5323 files and directories currently installed.)
+Preparing to unpack .../libgcc-s1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libgcc-s1:amd64 (14.2.0-4ubuntu2~24.04.1) over (14.2.0-4ubuntu2~24.04) ...
+Setting up libgcc-s1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libgomp1:amd64.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5323 files and directories currently installed.)
+Preparing to unpack .../libgomp1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libgomp1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up libgomp1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.3) ...
+=== Mon Sep 21 15:15:48 UTC 2026 ldd check on existing NFS binaries ===
+trellis-cli missing libs: none
+=== Mon Sep 21 15:15:48 UTC 2026 [B3] native cond, 4-view stochastic, seeds 42-47 ===
+B3 seed=42 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed42/out_base.png: 2048x2048 mean=0.0687 |       active voxels @res32 = 936
+B3 seed=43 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed43/out_base.png: 2048x2048 mean=47.2500 |       active voxels @res32 = 955
+B3 seed=44 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed44/out_base.png: 2048x2048 mean=0.5782 |       active voxels @res32 = 959
+B3 seed=45 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed45/out_base.png: 2048x2048 mean=38.8000 |       active voxels @res32 = 920
+B3 seed=46 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed46/out_base.png: 2048x2048 mean=37.9008 |       active voxels @res32 = 956
+B3 seed=47 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed47/out_base.png: 2048x2048 mean=50.4579 |       active voxels @res32 = 943
+=== Mon Sep 21 15:22:03 UTC 2026 [B1] native cond, 2-view stochastic, seeds 42-44 (control) ===
+B1 seed=42 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B1_seed42/out_base.png: 2048x2048 mean=10.9994 |       active voxels @res32 = 958
+B1 seed=43 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B1_seed43/out_base.png: 2048x2048 mean=31.2708 |       active voxels @res32 = 934
+B1 seed=44 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B1_seed44/out_base.png: 2048x2048 mean=1.7203 |       active voxels @res32 = 972
+=== Mon Sep 21 15:24:54 UTC 2026 SUMMARY ===
+B3 seed=42 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed42/out_base.png: 2048x2048 mean=0.0687 |       active voxels @res32 = 936
+B3 seed=43 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed43/out_base.png: 2048x2048 mean=47.2500 |       active voxels @res32 = 955
+B3 seed=44 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed44/out_base.png: 2048x2048 mean=0.5782 |       active voxels @res32 = 959
+B3 seed=45 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed45/out_base.png: 2048x2048 mean=38.8000 |       active voxels @res32 = 920
+B3 seed=46 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed46/out_base.png: 2048x2048 mean=37.9008 |       active voxels @res32 = 956
+B3 seed=47 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B3_seed47/out_base.png: 2048x2048 mean=50.4579 |       active voxels @res32 = 943
+B1 seed=42 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B1_seed42/out_base.png: 2048x2048 mean=10.9994 |       active voxels @res32 = 958
+B1 seed=43 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B1_seed43/out_base.png: 2048x2048 mean=31.2708 |       active voxels @res32 = 934
+B1 seed=44 rc=0 /nfs/trellis2-mv/b3-diag/seed-sweep/B1_seed44/out_base.png: 2048x2048 mean=1.7203 |       active voxels @res32 = 972
+=== Mon Sep 21 15:24:54 UTC 2026 ALL V9 SEED-SWEEP RUNS DONE ===
+B3_DIAG_POD_V9_COMPLETE

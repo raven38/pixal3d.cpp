@@ -1,0 +1,19 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 81151 MiB):
+  Device 0: NVIDIA A100-SXM4-80GB, compute capability 8.0, VMM: yes, VRAM: 81151 MiB
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB)
+N=3000 Cin=32 Nimg=1029 Dc=1024 GS=7.5 GR=0.5
+      [flow] [....................]  0/12    0.0s  starting    
+      [flow] [#...................]  1/12    0.5s  ~6s left    
+      [flow] [###.................]  2/12    0.9s  ~5s left    
+      [flow] [#####...............]  3/12    1.4s  ~4s left    
+      [flow] [######..............]  4/12    1.8s  ~4s left    
+      [flow] [########............]  5/12    2.2s  ~3s left    
+      [flow] [##########..........]  6/12    2.6s  ~3s left    
+      [flow] [###########.........]  7/12    3.0s  ~2s left    
+      [flow] [#############.......]  8/12    3.5s  ~2s left    
+      [flow] [###############.....]  9/12    3.9s  ~1s left    
+      [flow] [################....] 10/12    4.1s  ~1s left    
+      [flow] [##################..] 11/12    4.3s  ~0s left    
+      [flow] [####################] 12/12    4.5s  ~0s left    
+      [flow] 12 steps, 21 forwards, 4.5s
+samples: max|d|=1.0106e+00 mean|d|=7.7271e-03 rel=2.3349e-01  **

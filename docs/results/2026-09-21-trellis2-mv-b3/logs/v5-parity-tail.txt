@@ -1,0 +1,40 @@
+[9/34] Building CXX object CMakeFiles/trellis_core.dir/src/proj_grid.cpp.o
+[10/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond.cpp.o
+[11/34] Building CXX object CMakeFiles/trellis_core.dir/src/remesh_dc.cpp.o
+[12/34] Building CXX object CMakeFiles/trellis_core.dir/src/shape_decoder.cpp.o
+[13/34] Building CXX object CMakeFiles/trellis_core.dir/src/image_preprocess.cpp.o
+[14/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_input.cpp.o
+[15/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_postprocess.cpp.o
+[16/34] Building CXX object CMakeFiles/trellis_core.dir/src/decimate_qem.cpp.o
+[17/34] Building CXX object CMakeFiles/trellis_core.dir/src/birefnet.cpp.o
+[18/34] Building CXX object CMakeFiles/trellis_core.dir/src/flow_runner.cpp.o
+[19/34] Building CXX object CMakeFiles/trellis_core.dir/src/naf_gpu.cpp.o
+[20/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond_gpu.cpp.o
+[21/34] Building CXX object CMakeFiles/trellis_core.dir/src/naf.cpp.o
+[22/34] Building CUDA object CMakeFiles/trellis_core.dir/src/deform_conv.cu.o
+[23/34] Building CXX object CMakeFiles/trellis_core.dir/src/graph_dump.cpp.o
+[24/34] Building CXX object CMakeFiles/trellis-test-trellis2-mv-tex-realweight-parity.dir/src/test_trellis2_mv_tex_realweight_parity.cpp.o
+[25/34] Building CXX object CMakeFiles/trellis_core.dir/src/transforms_json.cpp.o
+[26/34] Building CXX object CMakeFiles/trellis_core.dir/src/model_manifest.cpp.o
+[27/34] Building CXX object CMakeFiles/trellis_core.dir/src/mesh_glb.cpp.o
+[28/34] Building CUDA object CMakeFiles/trellis_core.dir/src/naf_attn.cu.o
+[29/34] Building CXX object CMakeFiles/trellis_core.dir/src/preprocess.cpp.o
+[30/34] Building CXX object CMakeFiles/trellis_core.dir/thirdparty/xatlas/xatlas.cpp.o
+[31/34] Building CXX object CMakeFiles/trellis_core.dir/src/uv_bake.cpp.o
+[32/34] Building CUDA object CMakeFiles/trellis_core.dir/src/decimate_qem.cu.o
+[33/34] Linking CXX static library libtrellis_core.a
+[34/34] Linking CXX executable trellis-test-trellis2-mv-tex-realweight-parity
+-rwxr-xr-x 1 root root 235272 Sep 21 14:20 build/trellis-test-trellis2-mv-tex-realweight-parity
+=== Mon Sep 21 14:20:06 UTC 2026 parity probe build rc=0 ===
+=== Mon Sep 21 14:20:06 UTC 2026 run real-weight parity probe against the pinned v2 fixture ===
+parity probe rc=0 -> /nfs/trellis2-mv/b3-diag/realweight_parity/parity.log
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 81151 MiB):
+  Device 0: NVIDIA A100-SXM4-80GB, compute capability 8.0, VMM: yes, VRAM: 81151 MiB
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB)
+N=4183 V=4 L=4101 Dc=1024
+      [flow-mv] 12 steps, 4 views, 12 forwards, mode=stochastic, 5.0s
+step 0: max|d|=7.8122e-02 mean|d|=9.1894e-03 rel=1.2864e-02 (gmax=6.0729e+00)
+step 8: max|d|=2.7576e-01 mean|d|=1.3664e-02 rel=4.4532e-02 (gmax=6.1924e+00)
+step11: max|d|=3.1154e-01 mean|d|=2.1822e-02 rel=5.1215e-02 (gmax=6.0829e+00)
+=== Mon Sep 21 14:20:17 UTC 2026 ALL DIAG RUNS DONE ===
+B3_DIAG_POD_COMPLETE

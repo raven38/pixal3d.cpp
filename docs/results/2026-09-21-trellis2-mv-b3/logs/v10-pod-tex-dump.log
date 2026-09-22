@@ -1,0 +1,210 @@
+=== Mon Sep 21 15:31:54 UTC 2026 apt bootstrap ===
+W: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease: Key is stored in legacy trusted.gpg keyring (/etc/apt/trusted.gpg), see the DEPRECATION section in apt-key(8) for details.
+Setting up g++ (4:13.2.0-7ubuntu1) ...
+update-alternatives: using /usr/bin/g++ to provide /usr/bin/c++ (c++) in auto mode
+update-alternatives: warning: skip creation of /usr/share/man/man1/c++.1.gz because associated file /usr/share/man/man1/g++.1.gz (of link group c++) doesn't exist
+Setting up build-essential (12.10ubuntu1) ...
+Setting up libheif1:amd64 (1.17.6-1ubuntu4.8) ...
+Setting up libgd3:amd64 (2.3.3-9ubuntu5) ...
+Setting up libc-devtools (2.39-0ubuntu8.9) ...
+Setting up libheif-plugin-aomdec:amd64 (1.17.6-1ubuntu4.8) ...
+Setting up libheif-plugin-aomenc:amd64 (1.17.6-1ubuntu4.8) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.9) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 20597 files and directories currently installed.)
+Preparing to unpack .../cuda-cccl-12-8_12.8.90-1_amd64.deb ...
+Unpacking cuda-cccl-12-8 (12.8.90-1) ...
+Preparing to unpack .../cuda-toolkit-12-8-config-common_12.8.90-1_all.deb ...
+Unpacking cuda-toolkit-12-8-config-common (12.8.90-1) over (12.8.57-1) ...
+Preparing to unpack .../cuda-cudart-12-8_12.8.90-1_amd64.deb ...
+Unpacking cuda-cudart-12-8 (12.8.90-1) over (12.8.57-1) ...
+Selecting previously unselected package cuda-driver-dev-12-8.
+Preparing to unpack .../cuda-driver-dev-12-8_12.8.90-1_amd64.deb ...
+Unpacking cuda-driver-dev-12-8 (12.8.90-1) ...
+Selecting previously unselected package cuda-cudart-dev-12-8.
+Preparing to unpack .../cuda-cudart-dev-12-8_12.8.57-1_amd64.deb ...
+Unpacking cuda-cudart-dev-12-8 (12.8.57-1) ...
+Setting up cuda-toolkit-12-8-config-common (12.8.90-1) ...
+Setting alternatives
+Setting up cuda-driver-dev-12-8 (12.8.90-1) ...
+Setting up cuda-cccl-12-8 (12.8.90-1) ...
+Setting up cuda-cudart-12-8 (12.8.90-1) ...
+Setting up cuda-cudart-dev-12-8 (12.8.57-1) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.9) ...
+debconf: delaying package configuration, since apt-utils is not installed
+Selecting previously unselected package libcublas-dev-12-8.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 22368 files and directories currently installed.)
+Preparing to unpack .../libcublas-dev-12-8_12.8.3.14-1_amd64.deb ...
+Unpacking libcublas-dev-12-8 (12.8.3.14-1) ...
+Setting up libcublas-dev-12-8 (12.8.3.14-1) ...
+debconf: delaying package configuration, since apt-utils is not installed
+Selecting previously unselected package cuda-crt-12-8.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 22391 files and directories currently installed.)
+Preparing to unpack .../cuda-crt-12-8_12.8.93-1_amd64.deb ...
+Unpacking cuda-crt-12-8 (12.8.93-1) ...
+Selecting previously unselected package cuda-nvvm-12-8.
+Preparing to unpack .../cuda-nvvm-12-8_12.8.93-1_amd64.deb ...
+Unpacking cuda-nvvm-12-8 (12.8.93-1) ...
+Selecting previously unselected package cuda-nvcc-12-8.
+Preparing to unpack .../cuda-nvcc-12-8_12.8.93-1_amd64.deb ...
+Unpacking cuda-nvcc-12-8 (12.8.93-1) ...
+Setting up cuda-crt-12-8 (12.8.93-1) ...
+Setting up cuda-nvvm-12-8 (12.8.93-1) ...
+Setting up cuda-nvcc-12-8 (12.8.93-1) ...
+=== Mon Sep 21 15:32:59 UTC 2026 READY_FOR_COPY_V10 (waiting up to 300s) ===
+=== Mon Sep 21 15:33:19 UTC 2026 COPY_DONE_V10 seen after 5x5s ===
+=== Mon Sep 21 15:33:19 UTC 2026 reconfigure + build trellis-cli (-j16) ===
+256
+-- Performing Test WEBP_HAVE_FLAG_MIPS_DSP_R2 - Failed
+-- Performing Test WEBP_HAVE_FLAG_MIPS_DSP_R2
+-- Performing Test WEBP_HAVE_FLAG_MIPS_DSP_R2 - Failed
+-- Performing Test HAS_COMPILE_FLAG
+-- Performing Test HAS_COMPILE_FLAG - Failed
+-- Performing Test WEBP_HAVE_FLAG_NEON
+-- Performing Test WEBP_HAVE_FLAG_NEON - Failed
+-- Performing Test WEBP_HAVE_FLAG_NEON
+-- Performing Test WEBP_HAVE_FLAG_NEON - Failed
+-- Performing Test WEBP_HAVE_FLAG_MSA
+-- Performing Test WEBP_HAVE_FLAG_MSA - Failed
+-- Performing Test WEBP_HAVE_FLAG_MSA
+-- Performing Test WEBP_HAVE_FLAG_MSA - Failed
+-- Performing Test HAS_COMPILE_FLAG
+-- Performing Test HAS_COMPILE_FLAG - Failed
+-- trellis.cpp: WebP texture encoding enabled
+-- trellis.cpp: CUDA backend enabled ()
+-- Configuring done (2.3s)
+-- Generating done (0.2s)
+-- Build files have been written to: /nfs/trellis2-mv/src/0d4cfc5/build
+[1/34] Building CXX object CMakeFiles/trellis_core.dir/src/dual_grid.cpp.o
+[2/34] Building CXX object CMakeFiles/trellis_core.dir/src/ss_decoder.cpp.o
+[3/34] Building CXX object CMakeFiles/trellis_core.dir/src/trellis_model.cpp.o
+[4/34] Building CXX object CMakeFiles/trellis_core.dir/src/dinov3.cpp.o
+[5/34] Building CXX object CMakeFiles/trellis_core.dir/src/dit.cpp.o
+[6/34] Building CXX object CMakeFiles/trellis_core.dir/src/tri_bvh.cpp.o
+[7/34] Building CXX object CMakeFiles/trellis_core.dir/thirdparty/meshoptimizer/simplifier.cpp.o
+[8/34] Building CXX object CMakeFiles/trellis_core.dir/src/proj_grid.cpp.o
+[9/34] Building CXX object CMakeFiles/trellis_core.dir/src/sparse.cpp.o
+[10/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond.cpp.o
+[11/34] Building CXX object CMakeFiles/trellis_core.dir/src/remesh_dc.cpp.o
+[12/34] Building CXX object CMakeFiles/trellis_core.dir/src/shape_decoder.cpp.o
+[13/34] Building CXX object CMakeFiles/trellis_core.dir/src/image_preprocess.cpp.o
+[14/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_input.cpp.o
+[15/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_postprocess.cpp.o
+[16/34] Building CXX object CMakeFiles/trellis_core.dir/src/decimate_qem.cpp.o
+[17/34] Building CXX object CMakeFiles/trellis_core.dir/src/birefnet.cpp.o
+[18/34] Building CXX object CMakeFiles/trellis_core.dir/src/flow_runner.cpp.o
+[19/34] Building CXX object CMakeFiles/trellis_core.dir/src/naf_gpu.cpp.o
+[20/34] Building CXX object CMakeFiles/trellis_core.dir/src/pixal3d_cond_gpu.cpp.o
+[21/34] Building CXX object CMakeFiles/trellis_core.dir/src/naf.cpp.o
+[22/34] Building CUDA object CMakeFiles/trellis_core.dir/src/deform_conv.cu.o
+[23/34] Building CXX object CMakeFiles/trellis_core.dir/src/graph_dump.cpp.o
+[24/34] Building CXX object CMakeFiles/trellis_core.dir/src/transforms_json.cpp.o
+[25/34] Building CXX object CMakeFiles/trellis_core.dir/src/model_manifest.cpp.o
+[26/34] Building CXX object CMakeFiles/trellis_core.dir/src/mesh_glb.cpp.o
+[27/34] Building CUDA object CMakeFiles/trellis_core.dir/src/naf_attn.cu.o
+[28/34] Building CXX object CMakeFiles/trellis_core.dir/src/preprocess.cpp.o
+[29/34] Building CXX object CMakeFiles/trellis_core.dir/thirdparty/xatlas/xatlas.cpp.o
+[30/34] Building CXX object CMakeFiles/trellis-cli.dir/src/trellis_cli.cpp.o
+[31/34] Building CXX object CMakeFiles/trellis_core.dir/src/uv_bake.cpp.o
+[32/34] Building CUDA object CMakeFiles/trellis_core.dir/src/decimate_qem.cu.o
+[33/34] Linking CXX static library libtrellis_core.a
+[34/34] Linking CXX executable trellis-cli
+-rwxr-xr-x 1 root root 3233808 Sep 21 15:33 build/trellis-cli
+=== Mon Sep 21 15:33:36 UTC 2026 build rc=0 ===
+=== Mon Sep 21 15:33:36 UTC 2026 [B3 seed42, 4-view stochastic] dumping tex stage inputs ===
+[B3 seed42] rc=0
+      [dump] TRELLIS_DUMP_TEX_INPUTS -> /nfs/trellis2-mv/b3-dump/B3_seed42 (coords, noise0, 12 trace steps, 4 cond views, final slat, params)
+=== Mon Sep 21 15:34:58 UTC 2026 [B1 seed44, 2-view stochastic] dumping tex stage inputs ===
+[B1 seed44] rc=0
+      [dump] TRELLIS_DUMP_TEX_INPUTS -> /nfs/trellis2-mv/b3-dump/B1_seed44 (coords, noise0, 12 trace steps, 2 cond views, final slat, params)
+=== Mon Sep 21 15:35:55 UTC 2026 file listing + sha256 ===
+--- /nfs/trellis2-mv/b3-dump/B3_seed42 ---
+total 73292
+drwxr-xr-x 2 root root     4096 Sep 21 15:34 .
+drwxr-xr-x 4 root root     4096 Sep 21 15:33 ..
+-rw-r--r-- 1 root root     6052 Sep 21 15:34 run.log
+-rw-r--r-- 1 root root 16797824 Sep 21 15:34 tex_cond_view0.npy
+-rw-r--r-- 1 root root 16797824 Sep 21 15:34 tex_cond_view1.npy
+-rw-r--r-- 1 root root 16797824 Sep 21 15:34 tex_cond_view2.npy
+-rw-r--r-- 1 root root 16797824 Sep 21 15:34 tex_cond_view3.npy
+-rw-r--r-- 1 root root    66096 Sep 21 15:34 tex_hr_coords.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_noise0.npy
+-rw-r--r-- 1 root root      144 Sep 21 15:34 tex_sampler_params.txt
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_slat_final_denorm.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step0.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step1.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step10.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step11.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step2.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step3.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step4.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step5.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step6.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step7.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step8.npy
+-rw-r--r-- 1 root root   527872 Sep 21 15:34 tex_trace_step9.npy
+4e172c91f600ab2f2acbb0b3fe4ba10934dce40eee133184cc848b270816d282  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_hr_coords.npy
+e7f836e90033a3e220e4d3ec38cf06ea97864edfc085d117910b6beff3a67719  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_noise0.npy
+9f5c31dcd123b0efdf79f54a46d30c7a60651f16a352fc3f3f219ab791f875c9  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step0.npy
+d10510a96b0be9e7af29589c78acab139068d45c01112239dd8ed139be7f5af1  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step1.npy
+a53ef6e24c3f31eade34b94807840606faa66f92ab09752a1f6ab1ea9617e423  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step2.npy
+ed6012a994327e33fe79a488684b680df550eb907a6e6e3b1cdefa7ea59be7dd  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step3.npy
+6070501ad1615266bf371fab82a1e4f273e03adc91d0918a03a660b61cede918  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step4.npy
+a1ae3a4d5d8d9c95f21ed8866a3889d279a017db8fe96cad17a6bcff1bc77bfe  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step5.npy
+5350e16d427a6acf2727ee6681e4c5e1eac794e3dd57e2be686fb7271dab74e9  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step6.npy
+9de7e56c3343cdeca36847267fd34cc6f86170785ba93e735d16d54193bdff75  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step7.npy
+9f17aa4169503f2b68f5bf5f0e0a59579c3d7081f37145389abd1001504a566d  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step8.npy
+a6c577e28458b2a34998f5ae5e50465e50796d0479808bb2f0f44a0796c9ee3e  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step9.npy
+6b734f606a335c4ed646118b0f1b99c070d7495c5444f8939dd8a641abe8688a  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step10.npy
+c18781f46eda8691af49f7364eb88f58f5c692823088464392ffe2b199d39085  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_trace_step11.npy
+73508ca3dcef603ef29bfe10fa4435b65b5c57dc785f93824bdc52cd143f1655  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_slat_final_denorm.npy
+2b0dcf4a98d4c7e41ce9767806df5ccb53ce4b3946a1c07be49e2d8670ab19f7  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_cond_view0.npy
+d6e6fafa3cc7dea15d65ff7b3b6868daba1936d5a208677c32992f05535c6a44  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_cond_view1.npy
+2916f49ef5868882629c4fc29b0a295f8036cf86fdde850bfe6639d54bb46cba  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_cond_view2.npy
+00b15b7b0e58d5a9ebf204efc0d30b9a591256fcda6e0deefc3492f506b436c7  /nfs/trellis2-mv/b3-dump/B3_seed42/tex_cond_view3.npy
+--- /nfs/trellis2-mv/b3-dump/B1_seed44 ---
+total 40840
+drwxr-xr-x 2 root root     4096 Sep 21 15:35 .
+drwxr-xr-x 4 root root     4096 Sep 21 15:33 ..
+-rw-r--r-- 1 root root     5249 Sep 21 15:35 run.log
+-rw-r--r-- 1 root root 16797824 Sep 21 15:35 tex_cond_view0.npy
+-rw-r--r-- 1 root root 16797824 Sep 21 15:35 tex_cond_view1.npy
+-rw-r--r-- 1 root root    70384 Sep 21 15:35 tex_hr_coords.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_noise0.npy
+-rw-r--r-- 1 root root      144 Sep 21 15:35 tex_sampler_params.txt
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_slat_final_denorm.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step0.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step1.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step10.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step11.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step2.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step3.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step4.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step5.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step6.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step7.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step8.npy
+-rw-r--r-- 1 root root   562176 Sep 21 15:35 tex_trace_step9.npy
+4a0b3445848a032ca7bb045dc8bdabe0d645fce731baa8dddecea63ff8e219a0  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_hr_coords.npy
+706396c154f41eb22fae87936f92ddddeedc8cdb067d44551a6c66a71aac6f75  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_noise0.npy
+99e8ca9f8f6fef5966c1aee66b24efad841f0b04e160cbf02dab3d9bfdd54f1a  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step0.npy
+6ce57746993b69a381101ffe1642cc62a55607cd5a33a04411cddd9de524cfc0  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step1.npy
+ca3a436c296c0d6f01ddb0ed5824d09bdd66758dff3973e6c9ac262120ca1062  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step2.npy
+2b5e0d4774f0fb9b98d81586e13e0f5ec70e71f414aa2dd34df8aecb6409fecf  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step3.npy
+7af495db00f619da528c6489eb7b52c2763444ace6d7ae3c0153191d90c3011d  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step4.npy
+d5e64b6b2f44990925f3c7daf0de8fc901ca1b98c1388284037128dbfbcbd0d1  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step5.npy
+50346952c0b4b9cd9e56c9c8426b575874c6d4e5ad1f124b2a37e94ca20e1ef7  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step6.npy
+afb08132c29b5e4864ea6ac548e063134135dcd55fb94cfb18e66b1aaed0a789  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step7.npy
+c2f0c95ee2108b28718e2202707f5eb7879987ba80b557fdcb8b95be4ed36ae9  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step8.npy
+7c4291fd9be99c07cb76bc175289c3dea23a210a43d7ffc1d359b64a2d340552  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step9.npy
+dfca6b957d2b03d338e2c1976751104dd2d93f60d8462c04b348ab5fd3631ca6  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step10.npy
+4a7fd7c3f8d49a08beb4cecaec723f16bb3a99691b6c675892c8a28faa6293fb  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_trace_step11.npy
+f16425a95a9ecdb67f780836619b5483cfbb2f68134d8ac7687ff497e5c1d9fb  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_slat_final_denorm.npy
+2b0dcf4a98d4c7e41ce9767806df5ccb53ce4b3946a1c07be49e2d8670ab19f7  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_cond_view0.npy
+2916f49ef5868882629c4fc29b0a295f8036cf86fdde850bfe6639d54bb46cba  /nfs/trellis2-mv/b3-dump/B1_seed44/tex_cond_view1.npy
+=== Mon Sep 21 15:35:56 UTC 2026 out_base.png mean sanity check (should match the earlier seed sweep) ===
+python3 present, but PIL may not be -- using trellis-tool-png-mean instead
+[1/1] Linking CXX executable trellis-tool-png-mean
+/nfs/trellis2-mv/b3-diag/b3-dump-run/B3_seed42_out_base.png: 2048x2048 mean=0.0712
+/nfs/trellis2-mv/b3-diag/b3-dump-run/B1_seed44_out_base.png: 2048x2048 mean=1.7438
+=== Mon Sep 21 15:35:56 UTC 2026 ALL V10 DUMP RUNS DONE ===
+B3_DIAG_POD_V10_COMPLETE

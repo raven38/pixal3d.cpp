@@ -1,0 +1,221 @@
+--- pattern1: 1-image dir ---
+[trellis] generating model with seed 2867988264 (auto)
+[trellis] --trellis2-mv requires 2..8 images; found 1
+rc=1
+--- pattern2: 9-image dir ---
+[trellis] generating model with seed 3965578913 (auto)
+[trellis] --trellis2-mv requires 2..8 images; found 9
+rc=1
+--- pattern3: two positional outputs ---
+[trellis] --trellis2-mv accepts only one positional output path
+usage: /nfs/trellis2-mv/src/0d4cfc5/build/trellis-cli <image.png> <out.glb> [options]
+   or: /nfs/trellis2-mv/src/0d4cfc5/build/trellis-cli --image <image.png> --output <out.glb> [options]
+
+  -i, --image PATH        input image                  (image->3D)
+  -o, --output PATH       output .glb                  (default model.glb)
+      --copyright TEXT    glTF asset.copyright metadata
+  -m, --models DIR        GGUF model directory
+      --gpu N             explicit GPU index, <0 = CPU (default: auto)
+  -s, --seed N            RNG seed                     (default 42)
+      --res 512|1024|1536 geometry resolution
+      --max-tokens N      HR token budget              (default 49152)
+      --trellis2-mv DIR   TRELLIS.2 multi-image mode: 2..8 images, natural order;
+                          pose-free fusion, no transforms.json/camera metadata
+      --trellis2-mv-mode M stochastic | multidiffusion (default stochastic)
+      --views DIR         Pixal3D multiview mode: DIR has transforms.json + RGBA
+      --sv-image PATH     Pixal3D single-view mode: one pre-matted RGBA image.
+                          Crops it like the reference preprocess, synthesizes the
+                          front gauge camera (mesh_scale 1.0) and runs the SV flow
+                          weights. Mutually exclusive with --views and an input image.
+                          The staged crop + transforms.json are kept next to the GLB.
+      --fov RAD           --sv-image gauge FOV in radians (default 0.349066 = 20 deg).
+      --pixal3d-weights V sv|mv flow weights (default mv). sv expects 1 view;
+                          mv expects 4. Requires --views.
+                          views (frame 0 = main/front view). Mutually exclusive
+                          with the positional/--image input; mandatory cascade
+                          (--res 512 is not supported -- no res-512 texture flow)
+      --num-views N       use only the first N transforms.json frames (default: all)
+      --mesh-scale F      Pixal3D projection scale (> 0). Required when --views DIR
+                          has no transforms.json (exactly 4 turntable views, natural
+                          filename order = front, right, back, left, elevation 0,
+                          FOV 20 deg); with transforms.json it overrides its value.
+      --bg-removal MODE   threshold | birefnet   (default: auto -- a pre-matted
+                          image keeps its alpha; otherwise BiRefNet when its model
+                          is present. The plain threshold matte cuts out specular
+                          highlights, which the flow then turns into holes.)
+      --birefnet          alias for --bg-removal birefnet
+      --no-texture        geometry only
+      --xatlas            xatlas UV unwrap (default)
+      --box-uv            voxel-native box projection (faster)
+      --band N            narrow-band DC remesh band width (default: auto —
+                          res/512, i.e. 1 @512 / 2 @1024, which suppresses the
+                          res-1024 outer-skin speckle; N forces that width)
+      --decim GRID        legacy cluster-grid decimation (default: quadric
+                          simplify to 300K faces @1024 / 150K @512; 0 = none)
+      --atlas PX          UV atlas size (default 2048 @1024 / 1024 @512)
+      --tex-res N         texture PBR resolution 512/1024 (default: auto — drops
+                          a dense res-1024 decode to a clean res-512 PBR volume)
+      --webp on|off       encode GLB textures as WebP (default: on when built with
+                          WebP support; off = PNG)
+      --dump-bg           also write the background-removal cutout as <out>_cutout.png
+      --dump-post PATH    write the raw decoded mesh + sparse PBR volume to PATH and
+                          exit (skips remesh/decimate/UV/bake/GLB) -- for external
+                          post-processing pipelines
+      --bg-only           background removal only: write the cutout and skip the rest
+      --f32               f32 sparse-conv compute
+      --no-fa             disable FlashAttention
+      --profile           time one forward of every flow DiT node by node and print
+                          the per-role / per-op / per-block breakdown
+      --profile-cond      print per-view / per-stage wall-clock laps of the conditioning
+                          (DINOv3 / NAF / projection) and the sparse decoders ([cond-v] lines;
+                          printf only, no extra compute -- unlike --profile)
+      --require-gpu       refuse CPU fallback
+      --threads N         CPU backend threads      (default all cores)
+      --gss F  --gsh F    guidance strengths
+      --host H  --port P  trellis-server bind address
+      --voxply            also dump the voxel point cloud as .ply
+      --dump-slat         dump the structured latent to disk
+  -h, --help              show this help
+rc=1
+--- pattern4: --trellis2-mv-mode without --trellis2-mv ---
+[trellis] --trellis2-mv-mode requires --trellis2-mv DIR
+usage: /nfs/trellis2-mv/src/0d4cfc5/build/trellis-cli <image.png> <out.glb> [options]
+   or: /nfs/trellis2-mv/src/0d4cfc5/build/trellis-cli --image <image.png> --output <out.glb> [options]
+
+  -i, --image PATH        input image                  (image->3D)
+  -o, --output PATH       output .glb                  (default model.glb)
+      --copyright TEXT    glTF asset.copyright metadata
+  -m, --models DIR        GGUF model directory
+      --gpu N             explicit GPU index, <0 = CPU (default: auto)
+  -s, --seed N            RNG seed                     (default 42)
+      --res 512|1024|1536 geometry resolution
+      --max-tokens N      HR token budget              (default 49152)
+      --trellis2-mv DIR   TRELLIS.2 multi-image mode: 2..8 images, natural order;
+                          pose-free fusion, no transforms.json/camera metadata
+      --trellis2-mv-mode M stochastic | multidiffusion (default stochastic)
+      --views DIR         Pixal3D multiview mode: DIR has transforms.json + RGBA
+      --sv-image PATH     Pixal3D single-view mode: one pre-matted RGBA image.
+                          Crops it like the reference preprocess, synthesizes the
+                          front gauge camera (mesh_scale 1.0) and runs the SV flow
+                          weights. Mutually exclusive with --views and an input image.
+                          The staged crop + transforms.json are kept next to the GLB.
+      --fov RAD           --sv-image gauge FOV in radians (default 0.349066 = 20 deg).
+      --pixal3d-weights V sv|mv flow weights (default mv). sv expects 1 view;
+                          mv expects 4. Requires --views.
+                          views (frame 0 = main/front view). Mutually exclusive
+                          with the positional/--image input; mandatory cascade
+                          (--res 512 is not supported -- no res-512 texture flow)
+      --num-views N       use only the first N transforms.json frames (default: all)
+      --mesh-scale F      Pixal3D projection scale (> 0). Required when --views DIR
+                          has no transforms.json (exactly 4 turntable views, natural
+                          filename order = front, right, back, left, elevation 0,
+                          FOV 20 deg); with transforms.json it overrides its value.
+      --bg-removal MODE   threshold | birefnet   (default: auto -- a pre-matted
+                          image keeps its alpha; otherwise BiRefNet when its model
+                          is present. The plain threshold matte cuts out specular
+                          highlights, which the flow then turns into holes.)
+      --birefnet          alias for --bg-removal birefnet
+      --no-texture        geometry only
+      --xatlas            xatlas UV unwrap (default)
+      --box-uv            voxel-native box projection (faster)
+      --band N            narrow-band DC remesh band width (default: auto —
+                          res/512, i.e. 1 @512 / 2 @1024, which suppresses the
+                          res-1024 outer-skin speckle; N forces that width)
+      --decim GRID        legacy cluster-grid decimation (default: quadric
+                          simplify to 300K faces @1024 / 150K @512; 0 = none)
+      --atlas PX          UV atlas size (default 2048 @1024 / 1024 @512)
+      --tex-res N         texture PBR resolution 512/1024 (default: auto — drops
+                          a dense res-1024 decode to a clean res-512 PBR volume)
+      --webp on|off       encode GLB textures as WebP (default: on when built with
+                          WebP support; off = PNG)
+      --dump-bg           also write the background-removal cutout as <out>_cutout.png
+      --dump-post PATH    write the raw decoded mesh + sparse PBR volume to PATH and
+                          exit (skips remesh/decimate/UV/bake/GLB) -- for external
+                          post-processing pipelines
+      --bg-only           background removal only: write the cutout and skip the rest
+      --f32               f32 sparse-conv compute
+      --no-fa             disable FlashAttention
+      --profile           time one forward of every flow DiT node by node and print
+                          the per-role / per-op / per-block breakdown
+      --profile-cond      print per-view / per-stage wall-clock laps of the conditioning
+                          (DINOv3 / NAF / projection) and the sparse decoders ([cond-v] lines;
+                          printf only, no extra compute -- unlike --profile)
+      --require-gpu       refuse CPU fallback
+      --threads N         CPU backend threads      (default all cores)
+      --gss F  --gsh F    guidance strengths
+      --host H  --port P  trellis-server bind address
+      --voxply            also dump the voxel point cloud as .ply
+      --dump-slat         dump the structured latent to disk
+  -h, --help              show this help
+rc=1
+--- pattern5: mode typo ---
+[trellis] --trellis2-mv-mode expects 'stochastic' or 'multidiffusion', got 'bogus'
+usage: /nfs/trellis2-mv/src/0d4cfc5/build/trellis-cli <image.png> <out.glb> [options]
+   or: /nfs/trellis2-mv/src/0d4cfc5/build/trellis-cli --image <image.png> --output <out.glb> [options]
+
+  -i, --image PATH        input image                  (image->3D)
+  -o, --output PATH       output .glb                  (default model.glb)
+      --copyright TEXT    glTF asset.copyright metadata
+  -m, --models DIR        GGUF model directory
+      --gpu N             explicit GPU index, <0 = CPU (default: auto)
+  -s, --seed N            RNG seed                     (default 42)
+      --res 512|1024|1536 geometry resolution
+      --max-tokens N      HR token budget              (default 49152)
+      --trellis2-mv DIR   TRELLIS.2 multi-image mode: 2..8 images, natural order;
+                          pose-free fusion, no transforms.json/camera metadata
+      --trellis2-mv-mode M stochastic | multidiffusion (default stochastic)
+      --views DIR         Pixal3D multiview mode: DIR has transforms.json + RGBA
+      --sv-image PATH     Pixal3D single-view mode: one pre-matted RGBA image.
+                          Crops it like the reference preprocess, synthesizes the
+                          front gauge camera (mesh_scale 1.0) and runs the SV flow
+                          weights. Mutually exclusive with --views and an input image.
+                          The staged crop + transforms.json are kept next to the GLB.
+      --fov RAD           --sv-image gauge FOV in radians (default 0.349066 = 20 deg).
+      --pixal3d-weights V sv|mv flow weights (default mv). sv expects 1 view;
+                          mv expects 4. Requires --views.
+                          views (frame 0 = main/front view). Mutually exclusive
+                          with the positional/--image input; mandatory cascade
+                          (--res 512 is not supported -- no res-512 texture flow)
+      --num-views N       use only the first N transforms.json frames (default: all)
+      --mesh-scale F      Pixal3D projection scale (> 0). Required when --views DIR
+                          has no transforms.json (exactly 4 turntable views, natural
+                          filename order = front, right, back, left, elevation 0,
+                          FOV 20 deg); with transforms.json it overrides its value.
+      --bg-removal MODE   threshold | birefnet   (default: auto -- a pre-matted
+                          image keeps its alpha; otherwise BiRefNet when its model
+                          is present. The plain threshold matte cuts out specular
+                          highlights, which the flow then turns into holes.)
+      --birefnet          alias for --bg-removal birefnet
+      --no-texture        geometry only
+      --xatlas            xatlas UV unwrap (default)
+      --box-uv            voxel-native box projection (faster)
+      --band N            narrow-band DC remesh band width (default: auto —
+                          res/512, i.e. 1 @512 / 2 @1024, which suppresses the
+                          res-1024 outer-skin speckle; N forces that width)
+      --decim GRID        legacy cluster-grid decimation (default: quadric
+                          simplify to 300K faces @1024 / 150K @512; 0 = none)
+      --atlas PX          UV atlas size (default 2048 @1024 / 1024 @512)
+      --tex-res N         texture PBR resolution 512/1024 (default: auto — drops
+                          a dense res-1024 decode to a clean res-512 PBR volume)
+      --webp on|off       encode GLB textures as WebP (default: on when built with
+                          WebP support; off = PNG)
+      --dump-bg           also write the background-removal cutout as <out>_cutout.png
+      --dump-post PATH    write the raw decoded mesh + sparse PBR volume to PATH and
+                          exit (skips remesh/decimate/UV/bake/GLB) -- for external
+                          post-processing pipelines
+      --bg-only           background removal only: write the cutout and skip the rest
+      --f32               f32 sparse-conv compute
+      --no-fa             disable FlashAttention
+      --profile           time one forward of every flow DiT node by node and print
+                          the per-role / per-op / per-block breakdown
+      --profile-cond      print per-view / per-stage wall-clock laps of the conditioning
+                          (DINOv3 / NAF / projection) and the sparse decoders ([cond-v] lines;
+                          printf only, no extra compute -- unlike --profile)
+      --require-gpu       refuse CPU fallback
+      --threads N         CPU backend threads      (default all cores)
+      --gss F  --gsh F    guidance strengths
+      --host H  --port P  trellis-server bind address
+      --voxply            also dump the voxel point cloud as .ply
+      --dump-slat         dump the structured latent to disk
+  -h, --help              show this help
+rc=1
