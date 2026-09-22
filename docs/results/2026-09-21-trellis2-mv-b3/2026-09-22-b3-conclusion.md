@@ -17,8 +17,11 @@
 
 1. **参照実装（PyTorch、pinned `75fbf018`）でも黒化が起きる**。v3 fixture の `run_2img_real_stochastic_1024c`
    （2-view stochastic、seed 42）の bake 済みテクスチャは全 texel = 0 で、R1 掃引の seed 42 と bit 一致
-   （`ss_coords` / `tex_slat_{feats,coords}` の sha256）。参照側の黒 run は `saturation_rate` 0.99999、
-   境界域（intermediate）2 run も 0.40〜0.50 で、native 側 HANDOVER が観測した「decoder 飽和」と同じ機構。
+   （`ss_coords` / `tex_slat_{feats,coords}` の sha256）。参照側の黒 run（2v seed 42）は `saturation_rate` 0.9999911、
+   native 側 HANDOVER が観測した「decoder 飽和」と同じ機構。
+   ただし飽和率は黒 run（0.9999911）以外では分離が弱い — 4v の境界域 2 run が 0.3975 / 0.4898 なのに対し、
+   正常 run 21 本の範囲は 0.0〜0.3675 で、境界域と正常の飽和率はほぼ地続き。飽和率で黒を判定しているのではなく、
+   完全な黒 1 件だけが飽和率でも突出している、という事実に留める。
 2. **native と参照の黒化率に統計的な差は検出されなかった**（Fisher exact 両側、config 別 p = 0.125 / 0.423、
    pooled p = 0.076、感度分析 p = 0.60〜1.00。§3）。
 

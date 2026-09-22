@@ -198,7 +198,7 @@ seed with `multidiffusion` is fine.
 
 **Class: none detected (shared with the reference).** The pinned PyTorch reference
 (`75fbf018`) shows the same failure: the v3 fixture `run_2img_real_stochastic_1024c`
-(2-view, seed 42) bakes a texture with every texel = 0, `saturation_rate` 0.99999. Measured
+(2-view, seed 42) bakes a texture with every texel = 0, `saturation_rate` 0.9999911. Measured
 rates (Fisher exact, two-sided): 4-view stochastic reference 0/10 vs native 2/6 (p = 0.125),
 2-view 1/10 vs 1/3 (p = 0.423), pooled 1/20 vs 3/9 (p = 0.076). **At n = 10/6 no difference
 is detectable; this is not a proof that the rates are equal** — the 4-view point estimate is
