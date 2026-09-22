@@ -214,3 +214,36 @@ is on branch `diag/trellis2-mv-b3` only.
 
 **Rank: —** (documented limitation; `multidiffusion` is the robust mode, and the `--seed`
 knob is the workaround).
+
+## Addendum 5 — guidance-rescale OOD clamp [0.2, 5.0] (issue #77: intentional, kept; measured activation)
+
+**What differs.** `sample_flow` / `sample_flow_multi` (`src/flow_runner.cpp`) clamp the
+guidance-rescale ratio `std_pos / std_cfg` to `[0.2, 5.0]`. The pinned TRELLIS.2 reference
+(`flow_euler.py` / `guidance_interval_mixin.py` at `75fbf018`) has **no clamp**. The guard is
+inherited from upstream `c26fc76` (2026-06-22), whose stated premise is that OOD inputs drive
+`vc` toward zero, the ratio explodes and the SLAT comes back all-NaN — and that in-distribution
+the ratio sits near 1.0, so the clamp is a no-op.
+
+**Class: ours-extra (deliberate robustness divergence). Decision: keep** (user, 2026-09-22),
+with the activation rate recorded here because the upstream premise does not hold everywhere.
+
+**Measured activation** (per stage, at production sampler parameters):
+
+| Stage | Params | Measurement points | ratio range | Clamp fires |
+|---|---|---|---|---|
+| Sparse structure | gs=7.5, gr=0.5 | 3 of the 9 in-interval steps, synthetic sampler fixture | **0.138–0.154** | **yes** (below the 0.2 floor) |
+| Shape SLat LR + HR | gs=7.5, gr=0.5 | 162 points (18 run-sides x 9 in-interval steps), v3 real-weight fixture | min **0.2462**, max **0.9575** | no (0/162) |
+| Texture SLat | gs=1.0, **gr=0.0** | — | — | structurally n/a (rescale is not applied) |
+
+**Expected impact.** Confined to the SS stage: about 10 % rel per clamped step, final-sample
+divergence 0.0108 abs on the synthetic fixture, and 3547 vs 3543 decoded coords downstream.
+Shape is unaffected — clamp-on vs `TRELLIS_NOFIX=1` 12-step traces are bit-identical across all
+18 run-sides, and native's ratios match the reference manifest to 1.97e-7.
+
+**Verify.** `trellis-test-trellis2-mv-shape` prints the per-row ratio table (S4 section, 162 hard
+asserts); `docs/results/2026-09-21-trellis2-mv-stages-v3.md` §5 has the shape numbers, issue #77
+has the SS ones. The SS figure is from the synthetic fixture — a real-weight per-step ratio log
+for the SS stage has not been taken.
+
+**Rank: —** (kept by decision; revisit only if the SS stage has to be bit-compared with the
+reference, or if a real-weight SS measurement contradicts the synthetic one).
