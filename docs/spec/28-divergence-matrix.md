@@ -188,3 +188,29 @@ clusters more than theirs); turret welded-boundary 3.1k vs 81 (pre-existing in
 the decimated geometry, not opened by the bake); our WebP files are larger
 (noisier inpaint far-field + alpha channel content); zero-UV-area faces 1.8%
 (the kept point-collapsed faces the reference deletes).
+
+## Addendum 4 — trellis2-mv stochastic mode: seed-dependent texture black-out (not a divergence; recorded to stop re-investigation)
+
+**Symptom.** With `--trellis2-mv <dir> --trellis2-mv-mode stochastic` the texture stage can
+land in the decoder's saturation region and bake an (almost) all-black base colour, with
+finite `tex_slat` and no NaN/Inf anywhere. Whether it happens depends on the seed; the same
+seed with `multidiffusion` is fine.
+
+**Class: none detected (shared with the reference).** The pinned PyTorch reference
+(`75fbf018`) shows the same failure: the v3 fixture `run_2img_real_stochastic_1024c`
+(2-view, seed 42) bakes a texture with every texel = 0, `saturation_rate` 0.99999. Measured
+rates (Fisher exact, two-sided): 4-view stochastic reference 0/10 vs native 2/6 (p = 0.125),
+2-view 1/10 vs 1/3 (p = 0.423), pooled 1/20 vs 3/9 (p = 0.076). **At n = 10/6 no difference
+is detectable; this is not a proof that the rates are equal** — the 4-view point estimate is
+higher on native, and the native tex-DiT real-weight forward differs from the reference by
+1.29 % rel at step 0 (f16 GGUF, unresolved, own issue candidate). The decisive test (inject
+native's noise into the reference and watch the same trajectory) has not been run.
+
+**Verify / details.** `docs/results/2026-09-21-trellis2-mv-b3/2026-09-22-b3-conclusion.md`
+(frozen-criteria contrast table, raw counts, refutation path) — all numbers live there, not
+here. Native logs: `docs/results/2026-09-21-trellis2-mv-b3/logs/v9-pod-seed-sweep.log`;
+reference sweep: `docs/results/2026-09-22-trellis2-mv-b3-ref/`. Diagnostic instrumentation
+is on branch `diag/trellis2-mv-b3` only.
+
+**Rank: —** (documented limitation; `multidiffusion` is the robust mode, and the `--seed`
+knob is the workaround).
