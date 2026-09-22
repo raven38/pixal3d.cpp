@@ -14,8 +14,10 @@
 > `TRELLIS_DBG_TEX_MODE` / `TRELLIS_DBG_MV_STEP` / `TRELLIS_DUMP_TEX_INPUTS` / `TRELLIS_DUMP_TEXSLAT`、
 > `trellis-test-trellis2-mv-{tex,shape}-realweight-parity`、`trellis-tool-dump-threshold-matte`、
 > `trellis-tool-png-mean`）は **`feat/trellis2-mv-hardening` には含めず、ブランチ `diag/trellis2-mv-b3`
-> （tip 2649e61、0d4cfc5 + wip 10 コミット）にのみ存在する**。このブランチ上で `grep -rn TRELLIS_DBG_COND src/`
-> が空なのは意図どおり。
+> （tip 2649e61、0d4cfc5 + wip 10 コミット）にのみ存在する**。hardening 側で
+> `grep -rn 'TRELLIS_DBG_COND_NPY\|TRELLIS_DBG_COND_OVERRIDE\|TRELLIS_DBG_TEX_MODE\|TRELLIS_DUMP_TEX' src/ CMakeLists.txt`
+> が 0 件なのは意図どおり（`TRELLIS_DBG_COND` 単体は `src/pixal3d_cond_gpu.cpp:270` に 0d4cfc5 以前から在る別物で、
+> B3 の計装とは無関係）。
 
 
 **仮説a/b/c/d/e/fは全て静的・実測で棄却/精緻化し、真因を「tex flow (tex_flow_1024.gguf) の

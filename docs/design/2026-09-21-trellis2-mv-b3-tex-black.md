@@ -3,6 +3,12 @@
 日付: 2026-09-21 / 対象ブランチ: `feat/trellis2-mv-hardening`（HEAD `0d4cfc5`）/
 ステータス: 設計中（実装前レビュー待ち） / 親: `/Users/<redacted-user>/Downloads/claude-work/docs/briefs/trellis2-mv/{COMMON,TASK-B3}.md`
 
+> **【2026-09-22 統括追記・superseded】** 本 doc は調査着手時の仮説・診断計画で、下記「事実」節の前提
+> （B3 のみ黒・B1/B2/B4 正常・参照は正常 = trellis.cpp 固有のバグ）は**その後の実測で全て崩れている**:
+> native B3 は 6 seed 中 4 本が正常、B1 も 3 本中 1 本が黒、参照側も 2-view seed 42 が全 texel 0 で黒化する。
+> 最終的な決着は `../results/2026-09-21-trellis2-mv-b3/2026-09-22-b3-conclusion.md` を読むこと。
+> ここに書かれた診断計装は `diag/trellis2-mv-b3`（tip 2649e61）にのみ存在する。
+
 ## 事実（担当 `mve2e` の報告、読むだけ。`~/Downloads/pixal3d-mv-e2e/docs/results/2026-09-21-trellis2-mv-e2e/README.md`）
 
 - CUDA pod（A100）、`0d4cfc5`、`--seed 42 --res 1024`、v2 fixture 実写4-view。

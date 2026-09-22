@@ -49,9 +49,16 @@ step 0 で 1.29% の乖離、§6.2）が黒化率を上げている可能性は*
 | TASK-B3-REF R1 較正ゲート「proxy 分類と baked 実測の分類が一致」 | 4v multidiffusion が境界値（9.85 vs 10.23）で不一致 → 「分類一致 or 絶対差 2.0pt 以内」へ緩和して再実行 | **事後変更 #3**（R1 担当が R1 doc §2 に申告済み。本 doc はそれを引き継ぐ） | R1 doc §2・§5、`raw/calibration_report.json` |
 | TASK-B3-REF R2「native の noise + 参照 cond を PyTorch tex に注入、PyTorch も黒くなるなら (a)」 | **未実施**。dump に `tex_shape_guide_norm.npy`（64ch concat の guide 半分）が無く tex DiT forward を呼べない | **事後変更 #4**: R2 なしで決着。R2 は本 doc の反証経路として §5 に残す | R1 doc §8、`HANDOVER.md` §「TASK-B3-REF向けdump完了」 |
 | 統括 doc §14 の advisor 判定基準「B3 で 1 本でも正常なら失敗率問題（構造バグでない）」 | native B3 6 seed 中 4 本正常（mean 37.9〜50.5） | 一致 | `logs/v9-pod-seed-sweep.log` L16〜21 |
-| COMMON.md「pod は自然終了型、完了後削除、kubectl cp は sha256 照合」 | R1: 自然終了型 driver、sha256 照合済み（R1 doc §冒頭）。native v4〜v10 は `trellis2mv-b3-diag` を再利用（sleep 常駐型、HANDOVER に自己申告あり）、全 pod 削除済み（本セッション 2026-09-22 の `kubectl get pods` で trellis2/b3 系 0 件を再確認） | R1 一致 / native 側は**事後変更 #5**（常駐 pod 使用、HANDOVER §「禁止事項の遵守状況」に申告） | R1 doc、`HANDOVER.md` 末尾 |
+| COMMON.md「pod は自然終了型、完了後削除、kubectl cp は sha256 照合」 | R1: 自然終了型 driver、sha256 照合済み（R1 doc §冒頭）。native 側は同一 pod 名 `trellis2mv-b3-diag` を v1〜v10 で使い回しており（HANDOVER の各節が同名 pod を参照）、自然終了型では成立しないので**常駐型だったと推定される**。全 pod 削除済み（本セッション 2026-09-22 の `kubectl get pods` で trellis2/b3 系 0 件を再確認） | R1 一致 / native 側は**事後変更 #5**。**ただし HANDOVER §「禁止事項の遵守状況」は pod 形態に触れておらず、担当の自己申告は無い**（本 doc で統括が後から推定して記録した） | R1 doc、`HANDOVER.md` §「禁止事項の遵守状況」（L433〜、pod 形態の記載無しを確認） |
+| TASK-B3 禁止「fixture テストの期待値を触らない」 | `src/test_trellis2_mv_tex.cpp` 未変更（HANDOVER §「禁止事項の遵守状況」の自己申告、`git diff 0d4cfc5 diag/trellis2-mv-b3 -- src/test_trellis2_mv_tex.cpp` が空） | 一致 | `HANDOVER.md` L433〜 |
+| TASK-B3 禁止「`feat/trellis2-mv-e2e` worktree を変更しない」 | 触れていない（同自己申告。統括も本セッションで読み取りのみ） | 一致 | 同上 |
+| TASK-B3 / TASK-B3-REF 禁止「push しない」 | 未 push。hardening / diag / mv-59 のいずれも remote へ送っていない（push は go-queue #66 で GO 待ち） | 一致 | `git rev-list --count origin/feat/trellis2-mv..HEAD` |
+| TASK-B3-REF 禁止「v2/v3 fixture を変更しない」 | 変更していない。§6.1 の取り違えも**発見して記録しただけで rename していない**（GO 待ち） | 一致 | 本 doc §6.1、go-queue #66f |
+| TASK-B3-REF 禁止「pod を 2 本同時に走らせない」 | R1 の pod `trellis2mv-b3-ref-sweep` は 1 本。native 側の pod は R1 開始時点で既に全削除済み | 一致 | R1 doc §冒頭 |
+| TASK-B3-REF R3「黒 run と正常 run の tex SLat 統計（mean/std/max abs、飽和割合）を並べる」 | 参照側は全 23 run の `saturation_rate` / per-channel 統計が生データにあり（黒 0.9999911、境界域 0.3975 / 0.4898、正常 0.0〜0.3675）。native 側は per-channel 統計が HANDOVER §「per-channel分析」にある | **事後変更 #6**: R1 doc の表は `base_color_mean` と `tex_active_voxels` のみを載せ、tex SLat の mean/std/max abs を並置した表は作られなかった（生データには `per_channel_mean_0_1` / `per_channel_std_0_1` があるので再構成は可能） | `raw/sweep_results.jsonl`、`HANDOVER.md` §「per-channel分析」 |
 
-事後変更 #1〜#5 のうち、結論に影響しうるのは #2（凍結分岐で判定不能）と #4（決定打未実施）。どちらも §0 の限定文に反映した。
+事後変更 #1〜#6 のうち、結論に影響しうるのは #2（凍結分岐で判定不能）と #4（決定打未実施）。どちらも §0 の限定文に反映した。
+#6（tex SLat 統計の並置表が未作成）は結論を変えないが、飽和の機構を主張する材料が生データ止まりであることを意味する。
 
 ## 2. 事実（native 側と参照側を並べる）
 

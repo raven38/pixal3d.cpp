@@ -212,8 +212,9 @@ here. Native logs: `docs/results/2026-09-21-trellis2-mv-b3/logs/v9-pod-seed-swee
 reference sweep: `docs/results/2026-09-22-trellis2-mv-b3-ref/`. Diagnostic instrumentation
 is on branch `diag/trellis2-mv-b3` only.
 
-**Rank: —** (documented limitation; `multidiffusion` is the robust mode, and the `--seed`
-knob is the workaround).
+**Rank: —** (documented limitation). `multidiffusion` has not shown the failure in the samples
+taken — 0/3 reference seeds and 0/2 native runs — but that is n=5 and is not evidence that it is
+immune; re-rolling `--seed` is the only demonstrated workaround.
 
 ## Addendum 5 — guidance-rescale OOD clamp [0.2, 5.0] (issue #77: intentional, kept; measured activation)
 
