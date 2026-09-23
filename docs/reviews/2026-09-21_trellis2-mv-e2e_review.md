@@ -1,6 +1,6 @@
 # 設計レビュー: trellis2-mv 実重み E2E（#65）2026-09-21
 
-対象: `docs/design/2026-09-21-trellis2-mv-e2e.md`
+対象: trellis2-mv 実重み E2E の設計
 
 ## 経緯
 

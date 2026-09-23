@@ -1,6 +1,6 @@
 # #65 実重み E2E + fix(flow) 単一画像回帰測定 結果
 
-担当: TASK-E2E.md。設計: `docs/design/2026-09-21-trellis2-mv-e2e.md`（反証レビュー: `docs/reviews/2026-09-21_trellis2-mv-e2e_review.md`）。
+担当: TASK-E2E.md。反証レビュー: `docs/reviews/2026-09-21_trellis2-mv-e2e_review.md`。
 
 実行環境: <internal-cloud> namespace `<redacted-namespace>`、pod `<redacted-pod-a>`
 （`nvidia/cuda:12.8.0-cudnn-runtime-ubuntu24.04` + `cuda-nvcc-12-8`/`libcublas-dev-12-8` 追加導入、
