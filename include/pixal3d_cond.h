@@ -8,6 +8,7 @@
 #pragma once
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace trellis {
@@ -56,6 +57,12 @@ struct Pixal3dCondStats {
     double total_ms = 0;         // wall time of the whole call
     double view_ms_max = 0;      // slowest single view (graph build + alloc + compute)
     int views = 0;
+    // pixal3d_cond_slat_gpu preflight (#82): the largest single device tensor it plans to create
+    // (uint64, computed before any allocation) and the backend's per-buffer limit
+    // (ggml_backend_get_max_size: maxStorageBufferBindingSize on WebGPU). A plan above the limit
+    // throws before allocating instead of surfacing as an allocator/OOM failure.
+    uint64_t largest_planned_bytes = 0;
+    uint64_t backend_max_buffer = 0;
 };
 
 // Device-resident variant of pixal3d_cond_ss with identical semantics: per view, one ggml graph
@@ -84,6 +91,21 @@ struct Pixal3dSlatCondParams {
     // 1つに対応する d x d = (T/h)^2 画素）。
     int naf_block_chunk = 0;
 };
+
+// Memory plan of one pixal3d_cond_slat_gpu call (#82), computed in uint64 before anything is
+// allocated. tokens = active sparse tokens (sparse) or R^3 (dense). largest_bytes is the largest
+// single device tensor among the accumulators and the known large intermediates (DINOv3 attention
+// scores, NAF encoder / attention tensors) -- what a WebGPU maxStorageBufferBindingSize bounds;
+// what names it. It is the up-front estimate; the exact per-node gate is check_graph_supported
+// (ggml-webgpu's supports_op rejects any node or source above the binding size, before allocation).
+struct Pixal3dCondSlatPlan {
+    bool sparse = true, chunked = false;
+    int64_t tokens = 0;
+    uint64_t largest_bytes = 0;
+    const char* what = "";
+    uint64_t host_proj_bytes = 0;   // the [tokens, 2048] f32 host result
+};
+Pixal3dCondSlatPlan pixal3d_cond_slat_plan(const Pixal3dSlatCondParams& prm, int64_t tokens, bool sparse);
 
 // Computes the Pixal3D SLAT-stage (shape/texture) fused condition from V posed
 // views (view 0 = main/front view). Per view: ImageNet-normalize -> dinov3_encode(S)
