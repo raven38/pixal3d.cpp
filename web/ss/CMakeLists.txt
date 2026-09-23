@@ -60,3 +60,11 @@ target_link_libraries(pixal3d-webgpu-real-geometry-wasm PRIVATE ggml ggml-base g
 target_compile_options(pixal3d-webgpu-real-geometry-wasm PRIVATE "-fwasm-exceptions")
 target_link_options(pixal3d-webgpu-real-geometry-wasm PRIVATE "--use-port=emdawnwebgpu" "--profiling-funcs" "-sJSPI" "-fwasm-exceptions" "-lworkerfs.js" "-sFORCE_FILESYSTEM=1" "-sALLOW_MEMORY_GROWTH=1" "-sINITIAL_MEMORY=268435456" "-sMAXIMUM_MEMORY=4294967296" "-sEXPORTED_FUNCTIONS=[_pixal3d_real_geometry_run,_pixal3d_real_full_run,_pixal3d_real_set_ss_res,_pixal3d_real_setenv,_malloc,_free]" "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPU8]" "-sMODULARIZE=1" "-sEXPORT_NAME=createPixal3dRealGeometry" "-sJSPI_EXPORTS=[pixal3d_real_geometry_run,pixal3d_real_full_run]" "-sENVIRONMENT=worker")
 set_target_properties(pixal3d-webgpu-real-geometry-wasm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${REPO}/web/real_e2e" OUTPUT_NAME "pixal3d_real_geometry" SUFFIX ".js")
+
+# #83: the Pixal3D postprocess tail alone, as a wasm32 Node program with the browser build's 4 GiB
+# heap ceiling and allocator (no WebGPU): node web/tail_replay/pixal3d_tail_replay.js <dump_dir> <out.glb> ...
+add_executable(pixal3d-tail-replay-node ${REPO}/src/pixal3d_tail_replay.cpp ${PIXAL3D_POSTPROCESS})
+target_include_directories(pixal3d-tail-replay-node PRIVATE ${REPO}/include ${REPO}/thirdparty/stb ${REPO}/thirdparty/xatlas ${REPO}/thirdparty/meshoptimizer ${REPO}/thirdparty/fqms)
+target_compile_options(pixal3d-tail-replay-node PRIVATE "-fwasm-exceptions")
+target_link_options(pixal3d-tail-replay-node PRIVATE "-fwasm-exceptions" "-sNODERAWFS=1" "-sALLOW_MEMORY_GROWTH=1" "-sINITIAL_MEMORY=268435456" "-sMAXIMUM_MEMORY=4294967296" "-sENVIRONMENT=node" "-sEXIT_RUNTIME=1")
+set_target_properties(pixal3d-tail-replay-node PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${REPO}/web/tail_replay" OUTPUT_NAME "pixal3d_tail_replay" SUFFIX ".js")

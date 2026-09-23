@@ -495,6 +495,10 @@ set_target_properties(trellis-cli PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 # Resident HTTP server (keeps the process warm; wraps trellis_run).
 find_package(Threads REQUIRED)
+add_executable(trellis-pixal3d-tail-replay src/pixal3d_tail_replay.cpp)
+target_link_libraries(trellis-pixal3d-tail-replay PRIVATE trellis_core)
+set_target_properties(trellis-pixal3d-tail-replay PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(post-replay src/post_replay.cpp)
 target_link_libraries(post-replay PRIVATE trellis_core Threads::Threads)
 set_target_properties(post-replay PROPERTIES BUILD_RPATH "${GGML_RPATH}")

@@ -186,10 +186,14 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
     vector<float>pbr(raw.size());for(size_t i=0;i<raw.size();++i)pbr[i]=std::clamp(.5f*raw[i]+.5f,0.f,1.f);
     Pixal3dPostprocessOptions opt;opt.remesh_band=1;opt.use_xatlas=false;opt.use_webp=false;opt.texture_size=4096;
 #ifdef __EMSCRIPTEN__
- // wasm32 のヒープは 4 GiB が上限。res=1024 の narrow-band remesh は実測 7.8M 頂点 /
- // 15.6M 面を作り、その後の QEM と合わせて収まらない（std::bad_alloc）。粗いグリッドで
- // 同じ経路を回す。使った値は postprocess の report 行に出る。
- opt.remesh_res=512;opt.target_faces=500000;
+ // wasm32 のヒープは 4 GiB が上限（#83）。remesh は native と同じ decode 解像度から始め、
+ // tail の有界ポリシー（pixal3d_postprocess.h host_budget_bytes）が「tail 開始時の live +
+ // 予測ピーク」が予算に入る段（res, 3/4, 1/2, 3/8）を選ぶ。予測を外して std::bad_alloc に
+ // なっても 1 段下げて再試行し、段が尽きたら HOST_HEAP_EXHAUSTED で明示的に失敗する。
+ // 実測（2026-09-24, cyclops decode 944 万面, wasm32 tail replay）: クリーンなヒープなら
+ // 1024 でもピーク 3 809 MiB で完走、live 918 MiB を抱えた状態では 768 に落ちて 3 601 MiB。
+ // 旧既定の remesh_res=512 固定は live に関係なく品質を捨てていた（docs/spec/33 §6）。
+ opt.remesh_res=0;opt.target_faces=500000;opt.host_budget_bytes=kPixal3dWasm32TailBudget;
 #else
  opt.target_faces=1000000;
 #endif
