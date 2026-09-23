@@ -14,6 +14,7 @@
 #include "remesh_dc.h"
 #include "stb_image_write.h"
 #include "trellis_run.h"
+#include "pixal3d_cascade.h"
 #include "pixal3d_cond.h"
 #include "proj_grid.h"   // mat4_inverse_d: 入力段で transform_matrix の可逆性を確認する
 #include "transforms_json.h"
@@ -330,6 +331,11 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         return 1;
     }
     const bool do_tex = cfg.texture;
+    const int ss_res = cfg.ss_res;
+    if (!trellis::pixal3d_ss_res_supported(ss_res)) {
+        fprintf(stderr, "[trellis] unsupported sparse-structure resolution %d (32 or 64)\n", ss_res);
+        return 1;
+    }
 
     printf("[1/6] Pixal3D multiview: load %s\n", cfg.views.c_str());
     std::vector<trellis::Pixal3dView> views512, views1024;
@@ -381,12 +387,13 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         for (int cc = 0; cc < 8; ++cc) for (int spx = 0; spx < 4096; ++spx) zdec[(size_t)cc*4096 + spx] = z[cc + 8*spx];
         trellis::Model d = trellis::Model::load(M + "/ss_dec.gguf", gpu);
         vector<float> logits = trellis::ss_decode(d, zdec); d.free();
-        coords = trellis::ss_coords(logits, 64, 32);
+        coords = trellis::ss_coords(logits, 64, ss_res);
         cond_lap("ss_decode (load + decode + coords)");
     }
-    if (cfg.voxply) { FILE*f=fopen("out/myvox.ply","wb"); fprintf(f,"ply\nformat binary_little_endian 1.0\nelement vertex %zu\nproperty float x\nproperty float y\nproperty float z\nelement face 0\nproperty list uchar int vertex_indices\nend_header\n",coords.size()); for(auto&c:coords){float pp[3]={(c[0]+0.5f)/32-0.5f,(c[1]+0.5f)/32-0.5f,(c[2]+0.5f)/32-0.5f}; fwrite(pp,4,3,f);} fclose(f); }
+    if (cfg.voxply) { FILE*f=fopen("out/myvox.ply","wb"); fprintf(f,"ply\nformat binary_little_endian 1.0\nelement vertex %zu\nproperty float x\nproperty float y\nproperty float z\nelement face 0\nproperty list uchar int vertex_indices\nend_header\n",coords.size()); for(auto&c:coords){float pp[3]={(c[0]+0.5f)/ss_res-0.5f,(c[1]+0.5f)/ss_res-0.5f,(c[2]+0.5f)/ss_res-0.5f}; fwrite(pp,4,3,f);} fclose(f); }
     cond_stage_end("SS");
-    printf("      active voxels @res32 = %d  (%.1fs)\n", (int)coords.size(), now() - t_stage);
+    { int cmax = -1; for (auto& c : coords) cmax = std::max({cmax, c[0], c[1], c[2]});
+      printf("      active voxels @res%d = %d, max coord %d  (%.1fs)\n", ss_res, (int)coords.size(), cmax, now() - t_stage); }
     if (coords.empty()) { fprintf(stderr, "no voxels produced\n"); return 1; }
     cond_stage_begin();
 
@@ -397,13 +404,14 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         { trellis::Model dino = trellis::Model::load(M + "/dinov3.gguf", gpu);
           trellis::Model naf  = trellis::Model::load(M + "/pixal3d_naf.gguf", gpu);
           cond_lap("load dinov3 + naf");
-          trellis::Pixal3dSlatCondParams prm{512, 32, 512, mesh_scale};
+          // LR projection grid == the SS coord domain (ss_res), never inferred from max(coord)+1.
+          trellis::Pixal3dSlatCondParams prm{512, ss_res, 512, mesh_scale};
           // Use the same sparse/device-resident conditioning path as HR/texture. For T=512
           // force the measured split-graph chunk size so the large single graph is avoided.
           prm.naf_block_chunk = 256;
           c = trellis::pixal3d_cond_slat_gpu(dino, naf, views512, prm, nullptr, &coords);
           dino.free(); naf.free(); }
-        cond_lap("cond_slat S=512 R=32 T=512 (device sparse)");
+        cond_lap(ss_res == 32 ? "cond_slat S=512 R=32 T=512 (device sparse)" : "cond_slat S=512 R=64 T=512 (device sparse)");
         vector<float> proj_sp = std::move(c.proj);
         vector<float> neg_g(c.global.size(), 0.0f), neg_p(proj_sp.size(), 0.0f);
         vector<float> nz = noise((size_t)32 * coords.size());
@@ -416,7 +424,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
     lr_dn.resize(lr_norm.size());
     for (size_t n = 0; n < coords.size(); ++n) for (int c = 0; c < 32; ++c)
         lr_dn[(size_t)c + 32*n] = lr_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
-    slat_stats("LR slat (res32, MV)", lr_dn);
+    slat_stats(ss_res == 32 ? "LR slat (res32, MV)" : "LR slat (res64, MV)", lr_dn);
     cond_lap("denorm + stats");
     cond_stage_end("LR shape SLAT");
     printf("      LR shape SLAT (%.1fs)\n", now() - t_stage); cond_stage_begin();
@@ -426,37 +434,28 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
       cond_lap("load shape_dec");
       hr_coords = trellis::shape_upsample(m, lr_dn, coords); m.free(); }
     cond_lap("shape_upsample (decoder stages, coords only)");
-    int hr_res = cfg.hr_res;
-    vector<std::array<int,3>> shc;
-    for (;;) {
-        // Pixal3DImageTo3DPipeline.run()'s OWN inlined 1024_cascade/1536_cascade
-        // quantization (verified against tools/ref_pixal3d_hr_sample.py's fixture,
-        // 2026-09-06) -- NOT the TRELLIS.2 sample_shape_slat_cascade() helper's formula
-        // (int() truncation, grid_res, no round) that trellis_cli.cpp's single-image
-        // cascade path below still uses unchanged. Two differences: round() instead of
-        // truncation, and (grid_res - 1) instead of grid_res as the scale. For
-        // hr_res==1024 the token-budget check never actually fires -- the reference's
-        // own break condition is `... or actual_hr_resolution == 1024`, so only
-        // 1536_cascade ever backs off; 1024_cascade always quantizes once at grid 64.
-        const int gi = hr_res / 16;
-        const float gm1 = (float)(gi - 1);
-        std::set<std::array<int,3>> q;
-        for (auto& c : hr_coords)
-            q.insert({ (int)std::lround((c[0]+0.5f)/512.f*gm1),
-                       (int)std::lround((c[1]+0.5f)/512.f*gm1),
-                       (int)std::lround((c[2]+0.5f)/512.f*gm1) });
-        if ((int)q.size() < cfg.max_tokens || hr_res == 1024) {
-            shc.assign(q.begin(), q.end());
-            printf("      upsampled coords @res512=%d -> quantized @res%d (grid %d, Pixal3D round/grid-1 formula) = %d tokens\n",
-                   (int)hr_coords.size(), hr_res, gi, (int)shc.size());
-            break;
-        }
-        printf("      res%d (grid %d) -> %d tokens >= %d, backing off -128\n", hr_res, gi, (int)q.size(), cfg.max_tokens);
-        hr_res -= 128;
-    }
+    // Pixal3DImageTo3DPipeline.run()'s OWN inlined 1024_cascade/1536_cascade
+    // quantization (verified against tools/ref_pixal3d_hr_sample.py's fixture,
+    // 2026-09-06) -- NOT the TRELLIS.2 sample_shape_slat_cascade() helper's formula
+    // (int() truncation, grid_res, no round) that trellis_cli.cpp's single-image
+    // cascade path below still uses unchanged. Two differences: round() instead of
+    // truncation, and (grid_res - 1) instead of grid_res as the scale. For
+    // hr_res==1024 the token-budget check never actually fires -- the reference's
+    // own break condition is `... or actual_hr_resolution == 1024`, so only
+    // 1536_cascade ever backs off; 1024_cascade always quantizes once at grid 64.
+    // The source span is ss_res*16 (512 at the reference's ss_res=32), see pixal3d_cascade.h.
+    const trellis::Pixal3dCascadeCoords sel =
+        trellis::pixal3d_cascade_select(hr_coords, ss_res, cfg.hr_res, cfg.max_tokens, /*verbose=*/true);
+    const int hr_res = sel.hr_res;
+    const vector<std::array<int,3>>& shc = sel.coords;
+    { int umax = -1, qmax = -1;
+      for (auto& c : hr_coords) umax = std::max({umax, c[0], c[1], c[2]});
+      for (auto& c : shc) qmax = std::max({qmax, c[0], c[1], c[2]});
+      printf("      upsampled coords @res%d=%d (max %d) -> quantized @res%d (grid %d, Pixal3D round/grid-1 formula) = %d tokens (max %d)\n",
+             trellis::pixal3d_ss_source_span(ss_res), (int)hr_coords.size(), umax, hr_res, sel.grid, (int)shc.size(), qmax); }
     const int grid = hr_res / 16;
     const int RES = hr_res;
-    cond_lap("quantize res512 -> grid (std::set)");
+    cond_lap("quantize upsample span -> grid (std::set)");
 
     vector<float> slat_norm;
     {
@@ -979,6 +978,9 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         //     (sample_shape_slat_cascade): start at hr_target, step -128 toward the 1024 floor while
         //     the unique token count would exceed max_num_tokens. grid = hr_res//16 is integral since
         //     128/16 = 8 (1536->96, 1408->88, ..., 1024->64).
+        //     512 is the upsample span of the res-32 SS coords above (ss_res=32 is fixed on this
+        //     TRELLIS.2 path; --ss-res is Pixal3D-only). Deliberately not pixal3d_cascade_select():
+        //     the reference helper here truncates and scales by grid, not round/(grid-1).
         int hr_res = hr_target;
         for (;;) {
             const int gi = hr_res / 16;          // integral grid (ref's hr_resolution//16)

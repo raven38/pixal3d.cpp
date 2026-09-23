@@ -7,6 +7,7 @@
 //    Texture conditioning は分割グラフ版 pixal3d_cond_slat_gpu（sparse coords）で、
 //    NAF@1024 の [1024, 1024^2] を一度に materialize しない（docs/PIXAL3D_WEBGPU_MEMORY.md）。
 #include "pixal3d_input.h"
+#include "pixal3d_cascade.h"
 #include "pixal3d_cond.h"
 #include "trellis_model.h"
 #include "flow_runner.h"
@@ -44,6 +45,7 @@
 using std::array;using std::string;using std::vector;using namespace trellis;
 namespace {
 string g_dump_fixture;   // native の --dump-fixture 用（browser では常に空）
+int g_ss_res=32;         // sparse-structure resolution（32|64、pixal3d_real_set_ss_res / --ss-res）
 string report;void rlog(const char*f,...){char b[1024];va_list a;va_start(a,f);vsnprintf(b,sizeof b,f,a);va_end(a);report+=b;fputs(b,stdout);fflush(stdout);} 
 // wasm32 の 4 GiB ヒープの内訳を段ごとに残す（内訳の読み方は full_e2e 側の fheap を見よ）。
 void rheap(const char*tag){
@@ -116,10 +118,10 @@ int run(const vector<string>&m,const string&views,const string&out,uint32_t seed
  if(getenv("TRELLIS_NOFA")) g_no_fa=true;   // native から browser と同じ経路を踏むとき
 #endif
  Pixal3dInputViews in;string err;if(!pixal3d_load_input_views(views,in,err)){rlog("input error: %s\n",err.c_str());return 2;}rlog("real input: V=%zu mesh_scale=%.4f\n",in.views512.size(),in.mesh_scale);
- Pixal3dCond cs;{Model d=Model::load(m[0],0);cs=pixal3d_cond_ss_gpu(d,in.views512,512,16,in.mesh_scale);d.free();}log_vec("ss_cond_glob",cs.global);log_vec("ss_cond_proj",cs.proj);vector<float>ng(cs.global.size(),0),np(cs.proj.size(),0);Model sm=Model::load(m[2],0);DiTParams dp;dp.in_ch=8;dp.out_ch=8;dp.d_cond=1024;if(!dit_detect_proj_attn(sm,dp))return 3;auto*dr=make_dense_runner(sm,dp,16,cs.n_global);FlowFwdProj ff=[&](const vector<float>&x,float t,const float*a,const float*b){return dr->forward(x,t,a,b);};SamplerParams s;s.steps=12;s.guidance_strength=7.5f;s.guidance_rescale=.7f;s.gi0=.6;s.gi1=1;s.rescale_t=5;auto z=sample_flow(ff,noise(8*4096,seed),cs.global.data(),ng.data(),cs.proj.data(),np.data(),s);delete dr;sm.free();log_vec("ss_latent",z);vector<float>zd(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zd[(size_t)c*4096+i]=z[c+8*i];vector<array<int,3>>co;{Model d=Model::load(m[3],SS_DEC_BACKEND);auto l=ss_decode(d,zd);d.free();log_vec("ss_logits",l);co=ss_coords(l,64,32);}if(co.empty())return 4;log_coords("ss_coords@64",co);
- Pixal3dCond c5;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);c5=pixal3d_cond_slat_gpu(d,n,in.views512,{512,32,512,in.mesh_scale},nullptr,&co);d.free();n.free();}log_vec("s512_cond_glob",c5.global);log_vec("s512_cond_proj",c5.proj);auto ln=sflow(m[4],co,c5,noise(32*co.size(),seed+1));log_vec("s512_latent",ln);vector<float>ld(ln.size());for(size_t i=0;i<co.size();++i)for(int c=0;c<32;++c)ld[c+32*i]=ln[c+32*i]*STD[c]+MEAN[c];vector<array<int,3>>up;{Model d=Model::load(m[5],0);up=shape_upsample(d,ld,co);d.free();}log_coords("upsample@512",up);std::set<array<int,3>>q;for(auto&c:up)q.insert({(int)std::lround((c[0]+.5f)/512.f*63),(int)std::lround((c[1]+.5f)/512.f*63),(int)std::lround((c[2]+.5f)/512.f*63)});vector<array<int,3>>hr(q.begin(),q.end());rlog("live Shape1024 tokens=%zu\n",hr.size());log_coords("hr_coords@64",hr);
- // hr が確定したら SS / Shape512 側は一切読まない。q は node-based container で vector より重い。
- std::set<array<int,3>>().swap(q);up.clear();up.shrink_to_fit();
+ Pixal3dCond cs;{Model d=Model::load(m[0],0);cs=pixal3d_cond_ss_gpu(d,in.views512,512,16,in.mesh_scale);d.free();}log_vec("ss_cond_glob",cs.global);log_vec("ss_cond_proj",cs.proj);vector<float>ng(cs.global.size(),0),np(cs.proj.size(),0);Model sm=Model::load(m[2],0);DiTParams dp;dp.in_ch=8;dp.out_ch=8;dp.d_cond=1024;if(!dit_detect_proj_attn(sm,dp))return 3;auto*dr=make_dense_runner(sm,dp,16,cs.n_global);FlowFwdProj ff=[&](const vector<float>&x,float t,const float*a,const float*b){return dr->forward(x,t,a,b);};SamplerParams s;s.steps=12;s.guidance_strength=7.5f;s.guidance_rescale=.7f;s.gi0=.6;s.gi1=1;s.rescale_t=5;auto z=sample_flow(ff,noise(8*4096,seed),cs.global.data(),ng.data(),cs.proj.data(),np.data(),s);delete dr;sm.free();log_vec("ss_latent",z);vector<float>zd(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zd[(size_t)c*4096+i]=z[c+8*i];vector<array<int,3>>co;{Model d=Model::load(m[3],SS_DEC_BACKEND);auto l=ss_decode(d,zd);d.free();log_vec("ss_logits",l);co=ss_coords(l,64,g_ss_res);}if(co.empty())return 4;rlog("ss_res=%d source_span=%d\n",g_ss_res,pixal3d_ss_source_span(g_ss_res));log_coords("ss_coords@64",co);
+ Pixal3dCond c5;{Model d=Model::load(m[0],0),n=Model::load(m[1],0);c5=pixal3d_cond_slat_gpu(d,n,in.views512,{512,g_ss_res,512,in.mesh_scale},nullptr,&co);d.free();n.free();}log_vec("s512_cond_glob",c5.global);log_vec("s512_cond_proj",c5.proj);auto ln=sflow(m[4],co,c5,noise(32*co.size(),seed+1));log_vec("s512_latent",ln);vector<float>ld(ln.size());for(size_t i=0;i<co.size();++i)for(int c=0;c<32;++c)ld[c+32*i]=ln[c+32*i]*STD[c]+MEAN[c];vector<array<int,3>>up;{Model d=Model::load(m[5],0);up=shape_upsample(d,ld,co);d.free();}log_coords("upsample@512",up);vector<array<int,3>>hr=pixal3d_quantize_hr_coords(up,g_ss_res,1024);rlog("live Shape1024 tokens=%zu\n",hr.size());log_coords("hr_coords@64",hr);
+ // hr が確定したら SS / Shape512 側は一切読まない。
+ up.clear();up.shrink_to_fit();
  cs=Pixal3dCond{};c5=Pixal3dCond{};ng.clear();ng.shrink_to_fit();np.clear();np.shrink_to_fit();
  z.clear();z.shrink_to_fit();zd.clear();zd.shrink_to_fit();ln.clear();ln.shrink_to_fit();ld.clear();ld.shrink_to_fit();
  in.views512.clear();in.views512.shrink_to_fit();rheap("after Shape512");
@@ -168,6 +170,11 @@ int run(const vector<string>&m,const string&views,const string&out,uint32_t seed
  FILE*f=fopen(out.c_str(),"rb");long bytes=-1;if(f){fseek(f,0,SEEK_END);bytes=ftell(f);fclose(f);}
  rlog("REAL_INPUT_LIVE_SS=1\nREAL_INPUT_LIVE_SHAPE512=1\nREAL_INPUT_LIVE_SHAPE1024=1\nREAL_INPUT_LIVE_TEXTURE_COND=1\nREAL_INPUT_TEXTURE_COND_BLOCKED=0\nREAL_FULL_E2E_RESULT: OK V=%d F=%d glb_bytes=%ld atlas=%d\n",mesh.V(),mesh.F(),bytes,opt.texture_size);return 0;}
 }
+// 次の run の sparse-structure resolution を選ぶ（32|64）。未対応値は 0 を返して何も変えない。
+extern "C" PXEXP int pixal3d_real_set_ss_res(int ss_res){if(!pixal3d_ss_res_supported(ss_res))return 0;g_ss_res=ss_res;return 1;}
+// harness 用: wasm の環境変数（TRELLIS_DBG_* や TRELLIS_ALLOW_OVER_BUDGET などの既存トグル）を run 前に設定する。
+extern "C" PXEXP int pixal3d_real_setenv(const char*k,const char*v){return k&&v&&setenv(k,v,1)==0;}
+
 extern "C" PXEXP const char* pixal3d_real_full_run(const char*dino,const char*naf,const char*ssf,const char*ssd,const char*s512,const char*sdec,const char*s1024,const char*texf,const char*texd,const char*views,const char*out,int seed){report.clear();try{int rc=run({dino,naf,ssf,ssd,s512,sdec,s1024,texf,texd},views?views:"",out?out:"/out/real_full.glb",seed?seed:1);rlog(rc==0?"REAL_FULL_RESULT: OK\n":"REAL_FULL_RESULT: FAIL rc=%d\n",rc);}catch(const std::exception&e){rlog("REAL_FULL_RESULT: EXCEPTION %s\n",e.what());}return report.c_str();}
 
 extern "C" PXEXP const char* pixal3d_real_geometry_run(const char*dino,const char*naf,const char*ssf,const char*ssd,const char*s512,const char*sdec,const char*s1024,const char*views,const char*out,int seed){report.clear();try{int rc=run({dino,naf,ssf,ssd,s512,sdec,s1024},views?views:"",out?out:"/out/real_geometry.glb",seed?seed:1);rlog(rc==0?"REAL_GEOMETRY_RESULT: OK\n":"REAL_GEOMETRY_RESULT: FAIL rc=%d\n",rc);}catch(const std::exception&e){rlog("REAL_GEOMETRY_RESULT: EXCEPTION %s\n",e.what());}return report.c_str();}
@@ -175,8 +182,13 @@ extern "C" PXEXP const char* pixal3d_real_geometry_run(const char*dino,const cha
 #ifndef __EMSCRIPTEN__
 // native ドライバ（browser へ投げる前に同一 C++ 経路を Metal/CUDA で通すための dry-run）。
 //   trellis-test-pixal3d-real-e2e <dino> <naf> <ss_flow> <ss_dec> <shape512> <shape_dec>
-//                                 <shape1024> <views_dir> <out.glb> [seed] [tex_flow] [tex_dec]
+//                                 <shape1024> <views_dir> <out.glb> [seed] [tex_flow] [tex_dec] [--ss-res 32|64]
 int main(int argc,char**argv){
+    for(int i=1;i<argc;){   // --ss-res N を位置引数の前に抜き取る（値は厳密に 32|64、何度出ても全部検査）
+        if(strcmp(argv[i],"--ss-res")){++i;continue;}
+        char*end=nullptr;const long v=i+1<argc?strtol(argv[i+1],&end,10):0;
+        if(i+1>=argc||!end||*end||end==argv[i+1]||!pixal3d_real_set_ss_res((int)v)){fprintf(stderr,"--ss-res expects 32 or 64\n");return 2;}
+        for(int j=i;j+2<=argc;++j)argv[j]=argv[j+2];argc-=2;}
     if(argc<10){fprintf(stderr,"usage: %s <dinov3.gguf> <pixal3d_naf.gguf> <pixal3d_ss_flow_mv.gguf> <ss_dec.gguf>"
         " <pixal3d_shape_flow_512_mv.gguf> <shape_dec.gguf> <pixal3d_shape_flow_1024_mv.gguf>"
         " <views_dir> <out.glb> [seed] [pixal3d_tex_flow_1024_mv.gguf] [tex_dec.gguf]\n",argv[0]);return 2;}

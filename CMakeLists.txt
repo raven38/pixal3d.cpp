@@ -160,6 +160,7 @@ add_library(trellis_core STATIC
   src/proj_grid.cpp
   src/pixal3d_cond.cpp
   src/pixal3d_cond_gpu.cpp
+  src/pixal3d_cascade.cpp
   src/naf.cpp
   src/naf_gpu.cpp
   src/transforms_json.cpp

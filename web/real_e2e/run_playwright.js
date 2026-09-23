@@ -2,7 +2,7 @@
 // models_dir に texture 2本（pixal3d_tex_flow_1024_mv.gguf / tex_dec.gguf）が入っていれば
 // live Texture conditioning 込みの true full E2E、無ければ geometry E2E になる。
 // Usage:
-//   node web/real_e2e/run_playwright.js <models_dir> <views_dir> [seed]
+//   node web/real_e2e/run_playwright.js <models_dir> <views_dir> [seed] [ss_res]
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -15,12 +15,16 @@ for (const sig of ['SIGINT', 'SIGTERM'])
   process.on(sig, async () => { await shutdown(); process.exit(130); });
 
 (async () => {
-  const [modelsDir, viewsDir, seed] = process.argv.slice(2);
+  const [modelsDir, viewsDir, seed, ssRes] = process.argv.slice(2);
   if (!modelsDir || !viewsDir) throw new Error('need <models_dir> <views_dir> [seed]');
   const models = fs.readdirSync(modelsDir).filter(x => x.endsWith('.gguf')).map(x => path.join(modelsDir, x));
-  // #views は webkitdirectory なのでディレクトリパスを渡す
-  const views = path.resolve(viewsDir);
-  browser = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu'] });
+  // #views には個々のファイルを渡す（calibration.js はファイル名で transforms.json と照合する）。
+  // ディレクトリ渡しは Playwright のバージョンによって "does not support directories" で落ちる。
+  const views = fs.readdirSync(viewsDir).map(x => path.resolve(viewsDir, x)).filter(x => fs.statSync(x).isFile());
+  // PIXAL3D_CHROME_CHANNEL=chrome uses the installed Chrome instead of Playwright's bundled
+  // Chromium (whose JSPI may still be behind a flag on older Playwright releases).
+  browser = await chromium.launch({ headless: false, channel: process.env.PIXAL3D_CHROME_CHANNEL || undefined,
+                                    args: ['--enable-unsafe-webgpu'] });
   const page = await browser.newPage();
   const readBlob = async (u) => {
     // 大きい GLB（geometry only は 100 MB 超）は Array.from で RangeError になるので、
@@ -45,6 +49,13 @@ for (const sig of ['SIGINT', 'SIGTERM'])
   await page.setInputFiles('#models', models);
   await page.setInputFiles('#views', views);
   if (seed) await page.fill('#seed', String(seed));
+  if (ssRes) await page.selectOption('#ss-res', String(ssRes));
+  // PIXAL3D_WASM_ENV="K=V,K2=V2": wasm-side env toggles for this run (e.g. TRELLIS_ALLOW_OVER_BUDGET=1
+  // on a discrete GPU whose WebGPU adapter reports maxBufferSize, not VRAM, as its memory).
+  if (process.env.PIXAL3D_WASM_ENV) {
+    const env = Object.fromEntries(process.env.PIXAL3D_WASM_ENV.split(',').map(kv => kv.split('=')));
+    await page.evaluate(e => { window.PIXAL3D_WASM_ENV = e; }, env);
+  }
   await page.click('#run');
   // ページ内 #log は worker からの postMessage で伸びるので、進捗を定期的に吐く
   let shown = 0;

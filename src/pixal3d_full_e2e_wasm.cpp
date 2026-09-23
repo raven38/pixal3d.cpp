@@ -10,6 +10,7 @@
 // （docs/PIXAL3D_WEBGPU_MEMORY.md）。fixture 注入は残っていない。
 // PIXAL3D_TEX_COND_FIXTURE=1 を渡したときだけ、旧 fixture 経路を debug 用に使う。
 
+#include "pixal3d_cascade.h"
 #include "pixal3d_cond.h"
 #include "trellis_model.h"
 #include "flow_runner.h"
@@ -47,6 +48,8 @@ using std::array; using std::string; using std::vector;
 using namespace trellis;
 
 namespace {
+// fixture 駆動の full E2E は reference fixture（ss_res=32）の noise/coords に合わせて固定。
+constexpr int kSsRes = 32;
 string g_full_report;
 void frep(const char* fmt, ...) {
     char b[2048]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
@@ -139,13 +142,13 @@ int run_full_fixture(const vector<string>& model,const string& fixture,const str
     vector<float> neg(css.global.size(),0),negp(css.proj.size(),0); Model sm=Model::load(model[2],0);DiTParams spm;spm.in_ch=8;spm.out_ch=8;spm.d_cond=1024;if(!dit_detect_proj_attn(sm,spm))return 3;auto*sr=make_dense_runner(sm,spm,16,css.n_global);
     FlowFwdProj sf=[&](const vector<float>&x,float ts,const float*c,const float*p){return sr->forward(x,ts,c,p);};SamplerParams ss;ss.steps=12;ss.guidance_strength=7.5f;ss.guidance_rescale=.7f;ss.gi0=.6;ss.gi1=1;ss.rescale_t=5;
     auto z=sample_flow(sf,deterministic_noise(fixture+"/noise.npy",8*4096,seed),css.global.data(),neg.data(),css.proj.data(),negp.data(),ss);delete sr;sm.free();vector<float>zdec(8*4096);for(int c=0;c<8;++c)for(int i=0;i<4096;++i)zdec[(size_t)c*4096+i]=z[c+8*i];
-    vector<array<int,3>> coords;{Model d=Model::load(model[3],SS_DEC_BACKEND);auto logits=ss_decode(d,zdec);d.free();coords=ss_coords(logits,64,32);} if(coords.empty())return 4; frep("SS -> %zu coords\n",coords.size());
+    vector<array<int,3>> coords;{Model d=Model::load(model[3],SS_DEC_BACKEND);auto logits=ss_decode(d,zdec);d.free();coords=ss_coords(logits,64,kSsRes);} if(coords.empty())return 4; frep("SS -> %zu coords\n",coords.size());
     // Shape512 live cond + flow
-    Pixal3dCond c512;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{512,32,512,mesh_scale};c512=pixal3d_cond_slat_gpu(d,n,v512,prm,nullptr,&coords);d.free();n.free();}auto lrnorm=shape_flow(model[4],coords,c512,deterministic_noise(fixture+"/shape_noise.npy",32*coords.size(),seed+1));vector<float>lrdn(lrnorm.size());for(size_t n=0;n<coords.size();++n)for(int c=0;c<32;++c)lrdn[c+32*n]=lrnorm[c+32*n]*SHAPE_STD[c]+SHAPE_MEAN[c];
+    Pixal3dCond c512;{Model d=Model::load(model[0],0),n=Model::load(model[1],0);Pixal3dSlatCondParams prm{512,kSsRes,512,mesh_scale};c512=pixal3d_cond_slat_gpu(d,n,v512,prm,nullptr,&coords);d.free();n.free();}auto lrnorm=shape_flow(model[4],coords,c512,deterministic_noise(fixture+"/shape_noise.npy",32*coords.size(),seed+1));vector<float>lrdn(lrnorm.size());for(size_t n=0;n<coords.size();++n)for(int c=0;c<32;++c)lrdn[c+32*n]=lrnorm[c+32*n]*SHAPE_STD[c]+SHAPE_MEAN[c];
     // upsample + Pixal3D quantize to grid64
-    vector<array<int,3>> up;{Model d=Model::load(model[5],0);up=shape_upsample(d,lrdn,coords);d.free();}std::set<array<int,3>>qs;for(auto&c:up)qs.insert({(int)std::lround((c[0]+.5f)/512.f*63.f),(int)std::lround((c[1]+.5f)/512.f*63.f),(int)std::lround((c[2]+.5f)/512.f*63.f)});vector<array<int,3>>hr(qs.begin(),qs.end());frep("Shape512 -> Shape1024 tokens=%zu\n",hr.size());
-    // hr が確定したらもう要らない。qs は node-based container なので vector より遥かに重い。
-    std::set<array<int,3>>().swap(qs);up.clear();up.shrink_to_fit();
+    vector<array<int,3>> up;{Model d=Model::load(model[5],0);up=shape_upsample(d,lrdn,coords);d.free();}vector<array<int,3>>hr=pixal3d_quantize_hr_coords(up,kSsRes,1024);frep("Shape512 -> Shape1024 tokens=%zu\n",hr.size());
+    // hr が確定したらもう要らない。
+    up.clear();up.shrink_to_fit();
     // SS / Shape512 の conditioning と 512 の view はここから先で一度も読まない。
     css=Pixal3dCond{};c512=Pixal3dCond{};neg.clear();neg.shrink_to_fit();negp.clear();negp.shrink_to_fit();
     z.clear();z.shrink_to_fit();zdec.clear();zdec.shrink_to_fit();

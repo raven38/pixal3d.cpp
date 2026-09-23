@@ -15,7 +15,7 @@ target_compile_definitions(ggml-webgpu PRIVATE WEBGPU_RUNTIME_WAIT_TIMEOUT_MS=72
 
 set(PIXAL3D_WASM_COMMON
   ${REPO}/src/trellis_model.cpp ${REPO}/src/dinov3.cpp ${REPO}/src/dit.cpp ${REPO}/src/flow_runner.cpp
-  ${REPO}/src/proj_grid.cpp ${REPO}/src/pixal3d_cond.cpp ${REPO}/src/pixal3d_cond_gpu.cpp
+  ${REPO}/src/proj_grid.cpp ${REPO}/src/pixal3d_cond.cpp ${REPO}/src/pixal3d_cond_gpu.cpp ${REPO}/src/pixal3d_cascade.cpp
   ${REPO}/src/naf.cpp ${REPO}/src/naf_gpu.cpp ${REPO}/src/graph_dump.cpp
   ${REPO}/src/shape_decoder.cpp ${REPO}/src/sparse.cpp ${REPO}/src/dual_grid.cpp)
 set(PIXAL3D_POSTPROCESS
@@ -58,5 +58,5 @@ add_executable(pixal3d-webgpu-real-geometry-wasm ${REPO}/src/pixal3d_real_geomet
 target_include_directories(pixal3d-webgpu-real-geometry-wasm PRIVATE ${REPO}/include ${GGML_DIR}/include ${REPO}/thirdparty/stb ${REPO}/thirdparty/xatlas ${REPO}/thirdparty/meshoptimizer ${REPO}/thirdparty/fqms)
 target_link_libraries(pixal3d-webgpu-real-geometry-wasm PRIVATE ggml ggml-base ggml-cpu ggml-webgpu)
 target_compile_options(pixal3d-webgpu-real-geometry-wasm PRIVATE "-fwasm-exceptions")
-target_link_options(pixal3d-webgpu-real-geometry-wasm PRIVATE "--use-port=emdawnwebgpu" "--profiling-funcs" "-sJSPI" "-fwasm-exceptions" "-lworkerfs.js" "-sFORCE_FILESYSTEM=1" "-sALLOW_MEMORY_GROWTH=1" "-sINITIAL_MEMORY=268435456" "-sMAXIMUM_MEMORY=4294967296" "-sEXPORTED_FUNCTIONS=[_pixal3d_real_geometry_run,_pixal3d_real_full_run,_malloc,_free]" "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPU8]" "-sMODULARIZE=1" "-sEXPORT_NAME=createPixal3dRealGeometry" "-sJSPI_EXPORTS=[pixal3d_real_geometry_run,pixal3d_real_full_run]" "-sENVIRONMENT=worker")
+target_link_options(pixal3d-webgpu-real-geometry-wasm PRIVATE "--use-port=emdawnwebgpu" "--profiling-funcs" "-sJSPI" "-fwasm-exceptions" "-lworkerfs.js" "-sFORCE_FILESYSTEM=1" "-sALLOW_MEMORY_GROWTH=1" "-sINITIAL_MEMORY=268435456" "-sMAXIMUM_MEMORY=4294967296" "-sEXPORTED_FUNCTIONS=[_pixal3d_real_geometry_run,_pixal3d_real_full_run,_pixal3d_real_set_ss_res,_pixal3d_real_setenv,_malloc,_free]" "-sEXPORTED_RUNTIME_METHODS=[ccall,cwrap,UTF8ToString,FS,WORKERFS,HEAPU8]" "-sMODULARIZE=1" "-sEXPORT_NAME=createPixal3dRealGeometry" "-sJSPI_EXPORTS=[pixal3d_real_geometry_run,pixal3d_real_full_run]" "-sENVIRONMENT=worker")
 set_target_properties(pixal3d-webgpu-real-geometry-wasm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${REPO}/web/real_e2e" OUTPUT_NAME "pixal3d_real_geometry" SUFFIX ".js")
