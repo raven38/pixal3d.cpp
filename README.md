@@ -1,26 +1,25 @@
-# trellis.cpp
+# pixal3d.cpp
 
-> **This repository is `pixal3d.cpp`, a fork of
-> [pwilkin/trellis.cpp](https://github.com/pwilkin/trellis.cpp)** (MIT, © 2026 Piotr Wilkin),
-> extending it with the multiview, camera-aware [TencentARC Pixal3D](https://github.com/TencentARC/Pixal3D)
-> backbone and a WebGPU/WASM browser target. The inherited pipeline described below is
-> upstream's work; see [`NOTICE`](NOTICE) for full attribution and [`PIXAL3D.md`](PIXAL3D.md)
-> for what this fork adds.
+A standalone, **GGML-based C++** implementation of image→3D: background removal, image
+conditioning, the three flow transformers, the VAE decoders, mesh extraction and UV-textured GLB
+export — all in native C++/GGML with no Python at runtime. It runs two model families through one
+pipeline: Microsoft's [TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B) from a single
+image, and the multiview, camera-aware [TencentARC Pixal3D](https://github.com/TencentARC/Pixal3D)
+backbone that turns four views of an object plus their camera poses into one asset. It can also be
+driven end-to-end from a text prompt, with
+[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) producing the input image.
 
-A standalone, **GGML-based C++** implementation of Microsoft's
-[TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B) image-to-3D pipeline:
-background removal, image conditioning, the three flow transformers, the VAE decoders,
-mesh extraction and UV-textured GLB export — all in native C++/GGML with no Python at
-runtime. Optionally driven end-to-end from a text prompt with
-[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) producing the
-input image.
-
-It ports the reference implementation at
-[microsoft/TRELLIS.2](https://github.com/microsoft/TRELLIS.2).
+> **This repository is a fork of [pwilkin/trellis.cpp](https://github.com/pwilkin/trellis.cpp)**
+> (MIT, © 2026 Piotr Wilkin), extending it with the Pixal3D backbone and a WebGPU/WASM browser
+> target. The inherited TRELLIS.2 pipeline described below is upstream's work, ported from the
+> reference implementation at [microsoft/TRELLIS.2](https://github.com/microsoft/TRELLIS.2); see
+> [`NOTICE`](NOTICE) for full attribution and [`PIXAL3D.md`](PIXAL3D.md) for what this fork adds.
 
 ```
-./build/trellis-cli assets/goblin.png out/goblin.glb      # image -> UV-textured GLB (atlas + PBR)
-python tools/render_glb.py out/goblin.glb out/view.png    # quick multi-view render
+./build/trellis-cli assets/goblin.png out/goblin.glb            # one image    -> UV-textured GLB (atlas + PBR)
+./build/trellis-cli --views views/ --models pixal3d_models \
+                    out/asset.glb                               # 4 views + poses -> one GLB (Pixal3D)
+python tools/render_glb.py out/goblin.glb out/view.png          # quick multi-view render
 ```
 
 Prebuilt binaries for Linux and Windows (Vulkan, ROCm, CUDA) are published on the
@@ -52,9 +51,10 @@ Seven single-image→3D reconstructions produced end-to-end by pixal3d.cpp
 (commit `ec464fe`, CUDA) on a single RTX 4090 with the published single-view
 Pixal3D model set `pixal3d-sv-q8_0 v1` — BiRefNet matte → MoGe-2 FOV estimate →
 `--views … --pixal3d-weights sv` (all res-1024 cascade, seed 42, Pixal3D's
-default ~1M-face / 4096² atlas postprocess; the Draco-compressed GLBs, their
-Z-Image-Turbo source images and the per-asset numbers live in
-[`assets/showcase/`](assets/showcase/)):
+default ~1M-face / 4096² atlas postprocess; the per-asset numbers are in
+[`assets/showcase/`](assets/showcase/), and the Draco-compressed GLBs plus their
+Z-Image-Turbo source images are attached to the
+[`showcase-assets-sv-1` release](https://github.com/raven38/pixal3d.cpp/releases/tag/showcase-assets-sv-1) rather than committed, to keep clones small):
 
 <p>
 <a href="assets/showcase/axe/axe_quad4k.webp"><img src="assets/showcase/axe/axe_quad4k.webp" width="49%"></a>
@@ -168,7 +168,9 @@ override them with its own fields.
 runs the Pixal3D camera-aware multiview cascade instead of single-image TRELLIS.2:
 
 ```
-trellis-cli --views assets/mv_images/example --models pixal3d_models --seed 42 --res 1024 out.glb
+# assets/mv_images/example is the four-view sample in the TencentARC/Pixal3D repository
+trellis-cli --views path/to/Pixal3D/assets/mv_images/example \
+            --models pixal3d_models --seed 42 --res 1024 out.glb
 ```
 
 `DIR` must contain `transforms.json` (Blender/NeRF convention: top-level `mesh_scale` and
@@ -197,6 +199,49 @@ the browser app synthesizes (`web/real_e2e/calibration.js`). Anything else — t
 a missing `--mesh-scale`, `--num-views` other than 4 — is rejected rather than guessed. A present
 but malformed `transforms.json` is still an error; the rig is used only when the file is absent.
 With `transforms.json` present, `--mesh-scale` overrides the value inside it.
+
+#### Preparing your own four views
+
+The four images must describe *one* object seen from the canonical rig, so what matters is not
+their source (photos, renders, or a drawn turnaround sheet) but that they agree with each other and
+with the camera contract:
+
+- **Alpha, not a matte step.** `--views` refuses a frame whose alpha is fully opaque. Matte the
+  images yourself and **keep the framing**: `transforms.json` describes the framing as given, so do
+  not re-crop to the object's bounding box afterwards (`--bg-only` does exactly that and is
+  therefore not usable to prepare multiview input).
+- **Scale and centring.** At the shipped rig (FOV 20°, camera distance 3.119) the `[-0.5, 0.5]³`
+  world cube covers ≈91 % of the frame, so size the object to ~85 % of the frame height, use the
+  *same* scale factor for all four views, and centre it. Pixal3D's own
+  `assets/mv_images/example` sits at ≈83 %.
+- **No camera JSON needed** for the canonical turntable: reuse that sample's `transforms.json`
+  verbatim (azimuths 0° / 90° / 180° / 270°, elevation 0°, FOV 20°) and point each `file_path` at
+  your own image, or drop the file and pass `--mesh-scale` as described above.
+- **Check the result instead of eyeballing it.** `python3 tools/silhouette_iou.py out.glb DIR
+  --res 256` reprojects the generated mesh through the input cameras and reports per-view
+  silhouette IoU plus the implied `mesh_scale`; a view that disagrees with its input shows up here
+  long before it is visible in a turntable render.
+
+#### Known multiview failure modes
+
+Measured on this fork against the official PyTorch `inference_mv.py` with identical inputs and
+seed, so these are properties of the Pixal3D model rather than of the port:
+
+- **Thin protruding parts get duplicated.** A figure whose single tail leaves the left hip and
+  points backwards reconstructs with *two* tails, one per side — already at `--num-views 2`
+  (front + 90°), with inputs that are mutually consistent, and the reference pipeline produces the
+  same two tails. Thin flat parts (an ear drawn as a sheet) also lose their inner shape at the
+  1024³ grid.
+- **A display base can grow into a floor.** Inputs where the subject stands on an explicit round
+  stand sometimes gain a hallucinated slab under it; the same input without a base does not. The
+  reference pipeline reproduces this too.
+- **Side views are the weak spot for characters.** Per-view silhouette IoU of an internally
+  consistent subject stays at 0.92–0.96 on all four views, while character turnarounds drop to
+  ~0.67–0.76 on the two side views with front/back still at ~0.92 — worth checking before blaming
+  the reconstruction.
+- **Cost follows the occupied volume, not the image.** A slim standing character takes ~1 000
+  active voxels at res 32 and ~4 400 HR tokens (≈270 s end-to-end on an RTX 4090 at res 1024),
+  where a stout subject of the same pixel size takes ~3 100 voxels / ~14 000 tokens (≈400 s).
 
 `--pixal3d-weights sv|mv` picks the flow-weight family (default `mv`). The official Pixal3D
 release has a single-view and a multiview checkpoint for each of the four flow stages; this repo
