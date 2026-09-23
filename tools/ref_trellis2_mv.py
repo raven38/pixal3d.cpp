@@ -224,6 +224,13 @@ def run_selftest() -> int:
     short["steps"] = 2
     assert _synthetic_run("stochastic", short)["view_schedule"] == [0, 1]
 
+    # PR #104 wraps the cascade's LR+HR shape samples in one injection context.
+    # For V=5 and 12 steps, HR starts at view 12 % 5 == 2 (not view 0).
+    lr_sched = [i % 5 for i in range(12)]
+    hr_sched = [(12 + i) % 5 for i in range(12)]
+    assert lr_sched[:6] == [0, 1, 2, 3, 4, 0]
+    assert hr_sched[:6] == [2, 3, 4, 0, 1, 2]
+
     # gs=1: stochastic's original CFG mixin skips the negative model call;
     # PR #104 multidiffusion still evaluates it inside the guidance interval.
     gs1 = dict(p)
@@ -358,11 +365,12 @@ def _sample_with_injection(
     neg_cond: Any,
     params: dict[str, Any],
     mode: str,
+    *,
+    inject: bool = True,
     **kwargs: Any,
 ) -> Any:
-    steps = int(params["steps"])
     sampler = getattr(pipeline, sampler_name)
-    with pipeline.inject_sampler_multi_image(sampler_name, len(cond), steps, mode=mode):
+    def run():
         return sampler.sample(
             flow_model,
             noise,
@@ -372,6 +380,11 @@ def _sample_with_injection(
             **kwargs,
             verbose=False,
         ).samples
+    if not inject:
+        return run()
+    steps = int(params["steps"])
+    with pipeline.inject_sampler_multi_image(sampler_name, len(cond), steps, mode=mode):
+        return run()
 
 
 def _denorm_sparse(pipeline: Any, slat: Any, which: str) -> Any:
@@ -513,6 +526,16 @@ def run_full(args: argparse.Namespace) -> int:
     hr_coords = None
     quant_coords = None
 
+    # PR #104 wraps sample_shape_slat_cascade() in one shape-sampler injection.
+    # Keep that context alive across LR and HR so stochastic V=5/7/8 continues
+    # from step 12 instead of silently resetting to view 0.
+    shape_ctx = None
+    if args.pipeline_type != "512":
+        shape_ctx = pipeline.inject_sampler_multi_image(
+            "shape_slat_sampler", len(images), int(shape_params["steps"]), mode=args.mode
+        )
+        shape_ctx.__enter__()
+
     flow_lr = pipeline.models["shape_slat_flow_model_512"]
     lr_noise = SparseTensor(
         feats=torch.randn(coords.shape[0], flow_lr.in_channels, device=pipeline.device),
@@ -524,6 +547,7 @@ def run_full(args: argparse.Namespace) -> int:
     shape_lr_norm = _sample_with_injection(
         pipeline, "shape_slat_sampler", flow_lr, lr_noise,
         cond512, neg512, shape_params, args.mode,
+        inject=(shape_ctx is None),
         tqdm_desc="reference shape LR",
     )
     if pipeline.low_vram:
@@ -572,6 +596,7 @@ def run_full(args: argparse.Namespace) -> int:
         shape_hr_norm = _sample_with_injection(
             pipeline, "shape_slat_sampler", flow_hr, hr_noise,
             cond1024, neg1024, shape_params, args.mode,
+            inject=False,
             tqdm_desc="reference shape HR",
         )
         if pipeline.low_vram:
@@ -581,6 +606,9 @@ def run_full(args: argparse.Namespace) -> int:
         dump.save_sparse("shape_hr_denorm", shape_final)
         tex_cond, tex_neg = cond1024, neg1024
         tex_flow = pipeline.models["tex_slat_flow_model_1024"]
+
+    if shape_ctx is not None:
+        shape_ctx.__exit__(None, None, None)
 
     # ---- Texture SLat ----
     tex_params = dict(pipeline.tex_slat_sampler_params)
@@ -618,6 +646,10 @@ def run_full(args: argparse.Namespace) -> int:
         k: _stage_schedule(v, len(images)) if v is not None else None
         for k, v in stage_steps.items()
     }
+    if args.mode == "stochastic" and args.pipeline_type != "512":
+        # One PR #104 shape injection spans both calls: HR continues after LR.
+        n = int(shape_params["steps"])
+        schedules["shape_hr"] = [((n + i) % len(images)) for i in range(n)]
 
     manifest = {
         "format": FORMAT_VERSION,

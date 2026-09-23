@@ -21,7 +21,13 @@ extern int  g_cpu_threads;      // defined in trellis_model.cpp (TRELLIS_THREADS
 // trellis-cli and trellis-server share the parser: the server runs it once for its
 // launch defaults, then per request to apply overrides (resolution, bg removal, ...).
 struct TrellisParams {
-    std::string image;                                          // input image (image->3D)
+    std::string image;                                          // input image (TRELLIS.2 single-image)
+    // TRELLIS.2 experimental multi-image mode (#58): pose-free image conditioning using
+    // stochastic or multidiffusion FlowEuler fusion. This is deliberately separate from
+    // Pixal3D --views (which consumes cameras/transforms.json).
+    std::string trellis2_mv;             // --trellis2-mv DIR, 2..8 images in natural filename order
+    std::string trellis2_mv_mode = "stochastic"; // stochastic | multidiffusion
+    bool trellis2_mv_mode_set = false;
     std::string views;          // Pixal3D multiview mode: directory with transforms.json +
                                  // RGBA views (--views DIR). Mutually exclusive with `image`;
                                  // non-empty selects the Pixal3D cascade instead of TRELLIS.2.

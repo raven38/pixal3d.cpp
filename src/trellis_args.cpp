@@ -60,6 +60,9 @@ void print_usage(const char* argv0, bool server) {
         "  -s, --seed N            RNG seed                     (default 42)\n"
         "      --res 512|1024|1536 geometry resolution\n"
         "      --max-tokens N      HR token budget              (default 49152)\n"
+        "      --trellis2-mv DIR   TRELLIS.2 multi-image mode: 2..8 images, natural order;\n"
+        "                          pose-free fusion, no transforms.json/camera metadata\n"
+        "      --trellis2-mv-mode M stochastic | multidiffusion (default stochastic)\n"
         "      --views DIR         Pixal3D multiview mode: DIR has transforms.json + RGBA\n"
         "      --sv-image PATH     Pixal3D single-view mode: one pre-matted RGBA image.\n"
         "                          Crops it like the reference preprocess, synthesizes the\n"
@@ -146,6 +149,14 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "-s" || a == "--seed")    { const char* v = need(a.c_str()); if (!v) return false; p.seed = (uint32_t)atoi(v); }
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
+        else if (a == "--trellis2-mv")          { const char* v = need(a.c_str()); if (!v) return false; p.trellis2_mv = v; }
+        else if (a == "--trellis2-mv-mode")     { const char* v = need(a.c_str()); if (!v) return false;
+                                                  const std::string m = v;
+                                                  if (m != "stochastic" && m != "multidiffusion") {
+                                                      fprintf(stderr, "[trellis] --trellis2-mv-mode expects 'stochastic' or 'multidiffusion', got '%s'\n", v);
+                                                      return false;
+                                                  }
+                                                  p.trellis2_mv_mode = m; p.trellis2_mv_mode_set = true; }
         else if (a == "--views")                { const char* v = need(a.c_str()); if (!v) return false; p.views = v; }
         else if (a == "--models-sv")            { const char* v = need(a.c_str()); if (!v) return false; p.models_sv = v; }
         else if (a == "--sv-image")             { const char* v = need(a.c_str()); if (!v) return false; p.sv_image = v; }
@@ -201,6 +212,29 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
 
     // Assign positionals now that --views (if any) is known: normally <image> <out.glb>;
     // in --views mode there is no positional image, so the lone positional is the output.
+    // TRELLIS.2 multi-image is an explicit fourth input mode. Never infer it from
+    // image count and never overload Pixal3D --views semantics.
+    if (p.trellis2_mv_mode_set && p.trellis2_mv.empty()) {
+        fprintf(stderr, "[trellis] --trellis2-mv-mode requires --trellis2-mv DIR\n");
+        return false;
+    }
+    if (!p.trellis2_mv.empty()) {
+        if (!p.views.empty() || !p.sv_image.empty() || !p.image.empty()) {
+            fprintf(stderr, "[trellis] --trellis2-mv is mutually exclusive with --views, --sv-image, and --image\n");
+            return false;
+        }
+        if (p.pixal3d_weights_set || p.mesh_scale_set || p.num_views_set || p.sv_fov_set) {
+            fprintf(stderr, "[trellis] Pixal3D camera/weight flags are not valid with --trellis2-mv\n");
+            return false;
+        }
+        if (npos > 1) {
+            fprintf(stderr, "[trellis] --trellis2-mv accepts only one positional output path\n");
+            return false;
+        }
+        if (npos == 1) p.output = pos[0];
+        return true;
+    }
+
     // --pixal3d-weights は Pixal3D (--views) 経路専用。指定だけして TRELLIS.2 経路で走ると
     // 「SV を実行した」と誤認されるので、ここで落とす。
     if (p.pixal3d_weights_set && p.views.empty() && p.sv_image.empty()) {

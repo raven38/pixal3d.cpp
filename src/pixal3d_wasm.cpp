@@ -171,7 +171,7 @@ int run_impl(const string& dinov3_gguf, const string& ss_flow_gguf, const string
     };
     SamplerParams sp;   // pipeline_mv.json sparse_structure_sampler.params
     sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.7f;
-    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 5.0f; sp.sigma_min = 1e-5f;
+    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 5.0; sp.sigma_min = 1e-5f;
     vector<vector<float>> trace;
     vector<float> out = sample_flow(fwd, sample, cond.global.data(), neg_cond.data(), cond.proj.data(), neg_proj.data(), sp, &trace);
     rep("dit forwards: %d, %.1f ms each, %.1f s total\n", n_fwd, n_fwd ? fwd_ms / n_fwd : 0.0, fwd_ms / 1000.0);
@@ -333,7 +333,7 @@ int run_shape512_impl(const string& dinov3_gguf, const string& naf_gguf, const s
     };
     SamplerParams sp;   // trellis_cli.cpp shape_flow(): steps=12 gs=7.5 gr=0.5 gi=[0.6,1.0] rescale_t=3.0
     sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.5f;
-    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f; sp.sigma_min = 1e-5f;
+    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 3.0; sp.sigma_min = 1e-5f;
     vector<vector<float>> trace;
     vector<float> out = sample_flow(fwd, sample, cond_g.data(), neg_cond.data(), proj.data(), neg_proj.data(), sp, &trace);
     rep("dit forwards: %d, %.1f ms each, %.1f s total\n", n_fwd, n_fwd ? fwd_ms / n_fwd : 0.0, fwd_ms / 1000.0);

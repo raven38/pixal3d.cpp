@@ -385,6 +385,60 @@ DitRunner* make_sparse_runner(const Model& m, const DiTParams& p,
     return new DitRunner(m, p, (int)coords.size(), n_cond, rcos, rsin);
 }
 
+// numpy `np.linspace(1, 0, steps+1)` verbatim: step = (stop-start)/(num-1), y[i] = i*step + start,
+// and the endpoint is forced to `stop` exactly rather than computed (matching linspace's endpoint
+// handling) -- forcing ts[steps]==0.0 exactly, instead of a rounding residue, is what makes this
+// bit-identical to the numpy reference for exact-decimal guidance_interval boundaries (t==0.6).
+std::vector<double> flow_t_schedule(int steps, double rescale_t) {
+    if (steps <= 0) throw std::invalid_argument("flow_t_schedule: steps must be positive");
+    std::vector<double> ts(steps + 1);
+    const double step = (0.0 - 1.0) / (double)steps;
+    for (int i = 0; i < steps; ++i) ts[i] = (double)i * step + 1.0;
+    ts[steps] = 0.0;
+    for (int i = 0; i <= steps; ++i) {
+        const double t = ts[i];
+        ts[i] = rescale_t * t / (1.0 + (rescale_t - 1.0) * t);
+    }
+    return ts;
+}
+
+SamplerParams ss_production_sampler_params(float guidance_strength) {
+    SamplerParams sp;
+    sp.steps = 12;
+    sp.guidance_strength = guidance_strength;
+    sp.guidance_rescale = 0.7f;
+    sp.gi0 = 0.6;
+    sp.gi1 = 1.0;
+    sp.rescale_t = 5.0;
+    return sp;
+}
+
+// Shared CFG-rescale math used by both sample_flow and sample_flow_multi (single source of truth
+// -- previously duplicated between the two samplers). `pos` is the raw positive prediction
+// (pre-CFG); `pred` is the CFG-mixed prediction, mutated in place to the rescaled value.
+static void apply_guidance_rescale(const std::vector<float>& sample, const std::vector<float>& pos,
+                                   std::vector<float>& pred, float t, float sigma_min,
+                                   float guidance_rescale, bool no_fix) {
+    const size_t Nst = sample.size();
+    if (Nst < 2) return;   // variance needs >=2 samples; a no-op on real (much larger) latents
+    const float a = 1 - sigma_min, b = sigma_min + (1 - sigma_min) * t;
+    double mp = 0, mc = 0;
+    std::vector<float> x0p(Nst), x0c(Nst);
+    for (size_t k = 0; k < Nst; ++k) { x0p[k] = a*sample[k] - b*pos[k]; x0c[k] = a*sample[k] - b*pred[k]; mp += x0p[k]; mc += x0c[k]; }
+    mp /= Nst; mc /= Nst;
+    double vp = 0, vc = 0;
+    for (size_t k = 0; k < Nst; ++k) { vp += (x0p[k]-mp)*(x0p[k]-mp); vc += (x0c[k]-mc)*(x0c[k]-mc); }
+    float ratio = vc > 0 ? (float)(std::sqrt(vp/(Nst-1)) / std::sqrt(vc/(Nst-1))) : 1.0f;
+    // OOD inputs (e.g. a thin figure at HR) can make vc tiny -> ratio explodes -> the
+    // rescaled velocity blows the latent past representable range over the 12 steps ->
+    // all-NaN SLAT. Clamp ratio to a sane band: it sits at ~1.0 for in-distribution
+    // props (a no-op there), and only bites on the pathological tail. (TRELLIS_NOFIX=1
+    // restores the raw behaviour for A/B.)
+    if (!no_fix) { if (!std::isfinite(ratio)) ratio = 1.0f; ratio = fminf(fmaxf(ratio, 0.2f), 5.0f); }
+    const float gr = guidance_rescale;
+    for (size_t k = 0; k < Nst; ++k) { float x0r = x0c[k]*ratio; float x0 = gr*x0r + (1-gr)*x0c[k]; pred[k] = (a*sample[k] - x0) / b; }
+}
+
 std::vector<float> sample_flow(const FlowFwdProj& fwd, std::vector<float> sample,
                                const float* cond, const float* neg_cond,
                                const float* proj, const float* neg_proj,
@@ -392,11 +446,7 @@ std::vector<float> sample_flow(const FlowFwdProj& fwd, std::vector<float> sample
                                std::vector<std::vector<float>>* trace) {
     const float sm = sp.sigma_min;
     const size_t Nst = sample.size();
-    std::vector<float> ts(sp.steps + 1);
-    for (int i = 0; i <= sp.steps; ++i) {
-        float t = 1.0f - (float)i / sp.steps;
-        ts[i] = sp.rescale_t * t / (1.0f + (sp.rescale_t - 1.0f) * t);
-    }
+    const std::vector<double> ts = flow_t_schedule(sp.steps, sp.rescale_t);
     std::vector<float> pos, neg, pred(Nst);
     static const bool dbg_step = std::getenv("TRELLIS_DBG_STEP") != nullptr;
     static const bool no_fix   = std::getenv("TRELLIS_NOFIX") != nullptr;  // robustness guards ON by default
@@ -425,9 +475,17 @@ std::vector<float> sample_flow(const FlowFwdProj& fwd, std::vector<float> sample
     };
     progress(0);
     for (int i = 0; i < sp.steps; ++i) {
-        const float t = ts[i], tprev = ts[i + 1];
-        const float gs = (sp.gi0 <= t && t <= sp.gi1) ? sp.guidance_strength : 1.0f;
-        const float tscaled = 1000.0f * t;
+        // Interval decision in double, matching the reference (guidance_interval_mixin.py compares
+        // Python floats before any float32 cast happens). Narrow to float32 only after deciding gs,
+        // and narrow `t - tprev` as a single combined double subtraction (dt), not as two
+        // independently-narrowed floats subtracted afterwards -- that would be a different
+        // rounding path than the reference's single scalar-to-tensor narrowing point.
+        const double t_d = ts[i], tprev_d = ts[i + 1];
+        const bool inside = flow_in_guidance_interval(t_d, sp.gi0, sp.gi1);
+        const float t = (float)t_d;
+        const float dt = (float)(t_d - tprev_d);
+        const float tscaled = (float)(1000.0 * t_d);   // multiply by 1000 in double, narrow last
+        const float gs = inside ? sp.guidance_strength : 1.0f;
         if (gs == 1.0f) {
             pred = fwd(sample, tscaled, cond, proj);
             ++n_fwd;
@@ -439,29 +497,12 @@ std::vector<float> sample_flow(const FlowFwdProj& fwd, std::vector<float> sample
             neg = fwd(sample, tscaled, neg_cond, neg_proj);
             n_fwd += 2;
             for (size_t k = 0; k < Nst; ++k) pred[k] = gs * pos[k] + (1 - gs) * neg[k];
-            if (sp.guidance_rescale > 0.0f) {
-                const float a = 1 - sm, b = sm + (1 - sm) * t;
-                double mp = 0, mc = 0;
-                std::vector<float> x0p(Nst), x0c(Nst);
-                for (size_t k = 0; k < Nst; ++k) { x0p[k] = a*sample[k] - b*pos[k]; x0c[k] = a*sample[k] - b*pred[k]; mp += x0p[k]; mc += x0c[k]; }
-                mp /= Nst; mc /= Nst;
-                double vp = 0, vc = 0;
-                for (size_t k = 0; k < Nst; ++k) { vp += (x0p[k]-mp)*(x0p[k]-mp); vc += (x0c[k]-mc)*(x0c[k]-mc); }
-                float ratio = vc > 0 ? (float)(std::sqrt(vp/(Nst-1)) / std::sqrt(vc/(Nst-1))) : 1.0f;
-                // OOD inputs (e.g. a thin figure at HR) can make vc tiny -> ratio explodes -> the
-                // rescaled velocity blows the latent past representable range over the 12 steps ->
-                // all-NaN SLAT. Clamp ratio to a sane band: it sits at ~1.0 for in-distribution
-                // props (a no-op there), and only bites on the pathological tail. (TRELLIS_NOFIX=1
-                // restores the raw behaviour for A/B.)
-                if (!no_fix) { if (!std::isfinite(ratio)) ratio = 1.0f; ratio = fminf(fmaxf(ratio, 0.2f), 5.0f); }
-                float gr = sp.guidance_rescale;
-                for (size_t k = 0; k < Nst; ++k) { float x0r = x0c[k]*ratio; float x0 = gr*x0r + (1-gr)*x0c[k]; pred[k] = (a*sample[k] - x0) / b; }
-            }
+            if (sp.guidance_rescale > 0.0f) apply_guidance_rescale(sample, pos, pred, t, sm, sp.guidance_rescale, no_fix);
         }
         // Safety net: never integrate a non-finite velocity (one poisoned tap would spread to the
         // whole latent on the next attention). A no-op when everything is finite.
         if (!no_fix) for (size_t k = 0; k < Nst; ++k) if (!std::isfinite(pred[k])) pred[k] = 0.0f;
-        for (size_t k = 0; k < Nst; ++k) sample[k] -= (t - tprev) * pred[k];
+        for (size_t k = 0; k < Nst; ++k) sample[k] -= dt * pred[k];
         progress(i + 1);
         if (dbg_step) { size_t pb, sb; double pm, sm2; fstats(pred, pb, pm); fstats(sample, sb, sm2);
             if (tty) printf("\n");
@@ -480,6 +521,98 @@ std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
                                std::vector<std::vector<float>>* trace) {
     FlowFwdProj f = [&fwd](const std::vector<float>& x, float t, const float* c, const float*) { return fwd(x, t, c); };
     return sample_flow(f, std::move(sample), cond, neg_cond, nullptr, nullptr, sp, trace);
+}
+
+std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> sample,
+                                     const std::vector<const float*>& conds,
+                                     const float* neg_cond,
+                                     const SamplerParams& sp,
+                                     MultiCondMode mode,
+                                     std::vector<std::vector<float>>* trace,
+                                     int* stochastic_counter) {
+    if (conds.empty()) throw std::invalid_argument("sample_flow_multi: empty condition bank");
+    for (const float* c : conds)
+        if (!c) throw std::invalid_argument("sample_flow_multi: null condition element in condition bank");
+    if (!neg_cond) throw std::invalid_argument("sample_flow_multi: null negative condition");
+    if (sp.steps <= 0) throw std::invalid_argument("sample_flow_multi: steps must be positive");
+
+    const float sm = sp.sigma_min;
+    const size_t Nst = sample.size();
+    const std::vector<double> ts = flow_t_schedule(sp.steps, sp.rescale_t);
+
+    std::vector<float> pos(Nst), neg(Nst), pred(Nst), tmp;
+    static const bool no_fix = std::getenv("TRELLIS_NOFIX") != nullptr;
+    const auto tflow0 = std::chrono::steady_clock::now();
+    int n_fwd = 0;
+
+    for (int i = 0; i < sp.steps; ++i) {
+        // Same double-precision interval decision + narrowing order as sample_flow() (see its
+        // comment above): decide `guided` in double, narrow t/dt/tscaled only afterwards.
+        const double t_d = ts[(size_t)i], tprev_d = ts[(size_t)i + 1];
+        const bool guided = flow_in_guidance_interval(t_d, sp.gi0, sp.gi1);
+        const float t = (float)t_d;
+        const float dt = (float)(t_d - tprev_d);
+        const float tscaled = (float)(1000.0 * t_d);
+
+        if (mode == MultiCondMode::Stochastic) {
+            const int seq = stochastic_counter ? (*stochastic_counter)++ : i;
+            const float* c = conds[(size_t)seq % conds.size()];
+            const float gs = guided ? sp.guidance_strength : 1.0f;
+            if (gs == 1.0f) {
+                pred = fwd(sample, tscaled, c);
+                if (pred.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
+                ++n_fwd;
+            } else if (gs == 0.0f) {
+                pred = fwd(sample, tscaled, neg_cond);
+                if (pred.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
+                ++n_fwd;
+            } else {
+                pos = fwd(sample, tscaled, c);
+                if (pos.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
+                neg = fwd(sample, tscaled, neg_cond);
+                if (neg.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
+                n_fwd += 2;
+                for (size_t k = 0; k < Nst; ++k)
+                    pred[k] = gs * pos[k] + (1.0f - gs) * neg[k];
+                if (sp.guidance_rescale > 0.0f) apply_guidance_rescale(sample, pos, pred, t, sm, sp.guidance_rescale, no_fix);
+            }
+        } else {
+            // PR #104 semantics: average RAW positive model predictions first.
+            std::fill(pos.begin(), pos.end(), 0.0f);
+            for (const float* c : conds) {
+                tmp = fwd(sample, tscaled, c);
+                ++n_fwd;
+                if (tmp.size() != Nst) throw std::runtime_error("sample_flow_multi: forward size mismatch");
+                for (size_t k = 0; k < Nst; ++k) pos[k] += tmp[k];
+            }
+            const float inv = 1.0f / (float)conds.size();
+            for (float& v : pos) v *= inv;
+
+            if (!guided) {
+                pred = pos;
+            } else {
+                // Preserve PR #104 literally: inside the interval it evaluates one
+                // negative forward even for guidance_strength == 1.
+                neg = fwd(sample, tscaled, neg_cond);
+                ++n_fwd;
+                for (size_t k = 0; k < Nst; ++k)
+                    pred[k] = sp.guidance_strength * pos[k] +
+                              (1.0f - sp.guidance_strength) * neg[k];
+                if (sp.guidance_rescale > 0.0f) apply_guidance_rescale(sample, pos, pred, t, sm, sp.guidance_rescale, no_fix);
+            }
+        }
+
+        if (!no_fix) for (float& v : pred) if (!std::isfinite(v)) v = 0.0f;
+        for (size_t k = 0; k < Nst; ++k) sample[k] -= dt * pred[k];
+        if (trace) trace->push_back(sample);
+    }
+
+    printf("      [flow-mv] %d steps, %zu views, %d forwards, mode=%s, %.1fs\n",
+           sp.steps, conds.size(), n_fwd,
+           mode == MultiCondMode::Stochastic ? "stochastic" : "multidiffusion",
+           std::chrono::duration<double>(std::chrono::steady_clock::now() - tflow0).count());
+    fflush(stdout);
+    return sample;
 }
 
 } // namespace trellis

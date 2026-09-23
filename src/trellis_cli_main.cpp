@@ -9,7 +9,7 @@ int main(int argc, char** argv) {
         trellis::print_usage(argv[0], /*server=*/false);
         return p.help ? 0 : 1;
     }
-    if (p.image.empty() && p.views.empty() && p.sv_image.empty()) {
+    if (p.image.empty() && p.views.empty() && p.sv_image.empty() && p.trellis2_mv.empty()) {
         fprintf(stderr, "[trellis] no input image (give <image.png>, --image, --views DIR, or --sv-image PATH)\n");
         trellis::print_usage(argv[0], /*server=*/false);
         return 1;

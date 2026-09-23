@@ -241,7 +241,7 @@ static std::vector<float> mv_shape_flow(const std::string& path, const trellis::
         return run->forward(x, ts, c, pj);
     };
     trellis::SamplerParams sp; sp.steps = 12; sp.guidance_strength = cfg.gsh; sp.guidance_rescale = 0.5f;
-    sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f;
+    sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 3.0;
     std::vector<float> out = trellis::sample_flow(fwd, noise_buf, cnd, ncnd, proj, nproj, sp);
     delete run; m.free();
     return out;
@@ -373,7 +373,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
         if (!trellis::dit_detect_proj_attn(m, p)) { fprintf(stderr, "[trellis] %s: not a Pixal3D checkpoint\n", W.ss.c_str()); return 1; }
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, c.n_global);
         trellis::FlowFwdProj fwd = [&](const vector<float>& x, float ts, const float* cn, const float* pj){ return run->forward(x, ts, cn, pj); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
+        trellis::SamplerParams sp = trellis::ss_production_sampler_params(cfg.gss);
         vector<float> z = trellis::sample_flow(fwd, noise(8*4096), c.global.data(), neg_g.data(), c.proj.data(), neg_p.data(), sp);
         delete run; m.free();
         cond_lap("flow (load + runner + sampler)");
@@ -549,7 +549,7 @@ int trellis_run_mv(const trellis::TrellisParams& cfg) {
                 }
                 return run->forward(x64, ts, cn, pj);
             };
-            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6f; sp.gi1=0.9f; sp.rescale_t=3.0f;
+            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6; sp.gi1=0.9; sp.rescale_t=3.0;
             texlat = trellis::sample_flow(fwdp, noise((size_t)32*N), c.global.data(), neg_g.data(), proj_sp.data(), neg_p.data(), sp);
             delete run; m.free();
             for (int n = 0; n < N; ++n) for (int cc = 0; cc < 32; ++cc) texlat[(size_t)cc + 32*n] = texlat[(size_t)cc + 32*n]*TEX_STD[cc] + TEX_MEAN[cc];
@@ -750,76 +750,156 @@ int trellis_run(const trellis::TrellisParams& cfg) {
     trellis::g_require_gpu = cfg.require_gpu;
     trellis::g_gpu_auto = !cfg.gpu_set;
     trellis::g_cpu_threads = cfg.threads;
-    const std::string& img = cfg.image;
+    const bool t2mv = !cfg.trellis2_mv.empty();
     const std::string& outglb = cfg.output;
     const std::string& M = cfg.models;
     const int gpu = cfg.gpu;
     const bool cascade = cfg.cascade;   // 1024 cascade is the TRELLIS default; --res 512 forces the light path
+    const trellis::MultiCondMode t2mv_mode =
+        cfg.trellis2_mv_mode == "multidiffusion" ? trellis::MultiCondMode::MultiDiffusion
+                                                   : trellis::MultiCondMode::Stochastic;
     std::mt19937 rng(run_seed); std::normal_distribution<float> randn(0.f, 1.f);
     auto noise = [&](size_t n){ vector<float> v(n); for (auto& x : v) x = randn(rng); return v; };
     double t0 = now();
 
-    bool birefnet = cfg.birefnet == 1;
-    if (cfg.birefnet < 0) {
-        // Auto bg-removal. A pre-matted image keeps its own alpha (threshold path uses it
-        // as-is). Otherwise prefer the neural matte: the white-threshold rule reads specular
-        // highlights (min(RGB)>=232) as background, and conditioning the flow on an object
-        // with punched-out highlights makes it generate HOLES right there (issue #1
-        // follow-ups: helmet-crest and axe-edge highlights on assets/goblin.png).
-        if (trellis::image_has_alpha(img)) {
-            birefnet = false;
-        } else {
-            FILE* bf = fopen((M + "/birefnet.gguf").c_str(), "rb");
-            if (bf) { fclose(bf); birefnet = true; }
-            else printf("      (birefnet.gguf not found -- falling back to threshold matte;"
-                        " bright highlights may punch holes)\n");
+    // Explicit TRELLIS.2 input modes. Multi-image uses the same per-image
+    // preprocessing as the single-image path; no camera metadata is inferred.
+    vector<std::string> input_images;
+    if (t2mv) {
+        std::string list_err;
+        vector<std::string> names = trellis::list_view_images(cfg.trellis2_mv, &list_err);
+        if (!list_err.empty()) {
+            fprintf(stderr, "[trellis] --trellis2-mv: %s\n", list_err.c_str());
+            return 1;
         }
-    }
-    vector<float> chw, chw1024;
-    std::vector<unsigned char> cutout; int cut_sz = 0;   // the bg-removal result (for --dump-bg / --bg-only)
-    if (birefnet) {
-        printf("[1/6] preprocess %s (BiRefNet bg removal, %s)\n", img.c_str(), cascade ? "1024 cascade" : "512");
-        // Full BiRefNet (Swin-L backbone + deformable-conv decoder) runs on the GPU. Cutout computed
-        // once, normalized for 512 and 1024.
-        trellis::Model bm = trellis::Model::load(M + "/birefnet.gguf", gpu);
-        cutout = trellis::birefnet_cutout(img, bm, gpu < 0 ? 0 : gpu, cut_sz);
-        bm.free();
-        if (cutout.empty()) return 1;
-        chw = trellis::normalize_cutout(cutout, cut_sz, 512);
-        if (cascade) chw1024 = trellis::normalize_cutout(cutout, cut_sz, 1024);
+        if (names.size() < 2 || names.size() > 8) {
+            fprintf(stderr, "[trellis] --trellis2-mv requires 2..8 images; found %zu\n", names.size());
+            return 1;
+        }
+        printf("[trellis] TRELLIS.2 multiview: V=%zu mode=%s\n",
+               names.size(), cfg.trellis2_mv_mode.c_str());
+        for (size_t i = 0; i < names.size(); ++i) {
+            input_images.push_back((std::filesystem::path(cfg.trellis2_mv) / names[i]).string());
+            printf("      view%zu %s\n", i, names[i].c_str());
+        }
     } else {
-        printf("[1/6] preprocess %s (%s)\n", img.c_str(), cascade ? "1024 cascade" : "512");
-        cutout = trellis::threshold_cutout(img, cut_sz);
-        if (cutout.empty()) return 1;
-        chw = trellis::normalize_cutout(cutout, cut_sz, 512);
-        if (cascade) chw1024 = trellis::normalize_cutout(cutout, cut_sz, 1024);
+        input_images.push_back(cfg.image);
     }
 
-    // --dump-bg: write the bg-removal cutout next to the output; --bg-only: stop here.
+    vector<vector<float>> chw_bank, chw1024_bank;
+    vector<vector<unsigned char>> cutout_bank;
+    vector<int> cut_sz_bank;
+    chw_bank.resize(input_images.size());
+    if (cascade) chw1024_bank.resize(input_images.size());
+    cutout_bank.resize(input_images.size());
+    cut_sz_bank.assign(input_images.size(), 0);
+
+    // Decide matting independently per input. In auto mode an existing alpha is
+    // preserved; otherwise BiRefNet is preferred when the model exists.
+    vector<uint8_t> use_biref(input_images.size(), 0);
+    bool need_biref = false;
+    bool have_biref = false;
+    { FILE* bf = fopen((M + "/birefnet.gguf").c_str(), "rb");
+      if (bf) { fclose(bf); have_biref = true; } }
+    for (size_t v = 0; v < input_images.size(); ++v) {
+        bool br = cfg.birefnet == 1;
+        if (cfg.birefnet < 0) {
+            if (trellis::image_has_alpha(input_images[v])) br = false;
+            else br = have_biref;
+        }
+        use_biref[v] = br ? 1 : 0;
+        need_biref = need_biref || br;
+    }
+    if (cfg.birefnet < 0 && !have_biref) {
+        bool any_opaque = false;
+        for (const auto& p : input_images) if (!trellis::image_has_alpha(p)) { any_opaque = true; break; }
+        if (any_opaque)
+            printf("      (birefnet.gguf not found -- falling back to threshold matte;"
+                   " bright highlights may punch holes)\n");
+    }
+
+    trellis::Model bm;
+    if (need_biref) bm = trellis::Model::load(M + "/birefnet.gguf", gpu);
+    for (size_t v = 0; v < input_images.size(); ++v) {
+        const std::string& img = input_images[v];
+        printf("[1/6] preprocess view%zu/%zu %s (%s, %s)\n",
+               v + 1, input_images.size(), img.c_str(),
+               use_biref[v] ? "BiRefNet bg removal" : "alpha/threshold matte",
+               cascade ? "1024 cascade" : "512");
+        if (use_biref[v]) {
+            cutout_bank[v] = trellis::birefnet_cutout(img, bm, gpu < 0 ? 0 : gpu, cut_sz_bank[v]);
+        } else {
+            cutout_bank[v] = trellis::threshold_cutout(img, cut_sz_bank[v]);
+        }
+        if (cutout_bank[v].empty()) {
+            if (need_biref) bm.free();
+            fprintf(stderr, "[trellis] preprocessing failed for view%zu: %s\n", v, img.c_str());
+            return 1;
+        }
+        chw_bank[v] = trellis::normalize_cutout(cutout_bank[v], cut_sz_bank[v], 512);
+        if (cascade) chw1024_bank[v] = trellis::normalize_cutout(cutout_bank[v], cut_sz_bank[v], 1024);
+    }
+    if (need_biref) bm.free();
+
+    // --dump-bg is useful for debugging MV inputs too; use numbered outputs.
     if (cfg.dump_bg || cfg.bg_only) {
-        const std::string cut_png = outglb.substr(0, outglb.find_last_of('.')) + "_cutout.png";
-        const int cut_channels = cut_sz > 0 && cutout.size() == (size_t)cut_sz * cut_sz * 4 ? 4 : 3;
-        if (cut_sz > 0 && stbi_write_png(cut_png.c_str(), cut_sz, cut_sz, cut_channels,
-                                        cutout.data(), cut_sz*cut_channels))
-            printf("      bg-removal cutout -> %s\n", cut_png.c_str());
-        else
-            fprintf(stderr, "      [warn] could not write bg-removal cutout to %s\n", cut_png.c_str());
+        const std::string stem = outglb.substr(0, outglb.find_last_of('.'));
+        for (size_t v = 0; v < cutout_bank.size(); ++v) {
+            const std::string cut_png = t2mv
+                ? stem + "_cutout_view" + (v < 10 ? "0" : "") + std::to_string(v) + ".png"
+                : stem + "_cutout.png";
+            const int sz = cut_sz_bank[v];
+            const int cut_channels = sz > 0 && cutout_bank[v].size() == (size_t)sz * sz * 4 ? 4 : 3;
+            if (sz > 0 && stbi_write_png(cut_png.c_str(), sz, sz, cut_channels,
+                                         cutout_bank[v].data(), sz * cut_channels))
+                printf("      bg-removal cutout -> %s\n", cut_png.c_str());
+            else
+                fprintf(stderr, "      [warn] could not write bg-removal cutout to %s\n", cut_png.c_str());
+        }
         if (cfg.bg_only) { printf("[bg-only] done (%.1fs)\n", now() - t0); return 0; }
     }
 
-    printf("[2/6] DINOv3 conditioning\n");
-    vector<float> cond, cond1024;
-    { trellis::Model m = trellis::Model::load(M + "/dinov3.gguf", gpu);
-      cond = trellis::dinov3_encode(m, chw, 512);
-      if (cascade) cond1024 = trellis::dinov3_encode(m, chw1024, 1024);
-      m.free(); }
+    printf("[2/6] DINOv3 conditioning%s\n", t2mv ? " (per-view bank)" : "");
+    vector<vector<float>> cond_bank(input_images.size()), cond1024_bank;
+    if (cascade) cond1024_bank.resize(input_images.size());
+    {
+        trellis::Model m = trellis::Model::load(M + "/dinov3.gguf", gpu);
+        for (size_t v = 0; v < input_images.size(); ++v) {
+            cond_bank[v] = trellis::dinov3_encode(m, chw_bank[v], 512);
+            if (cascade) cond1024_bank[v] = trellis::dinov3_encode(m, chw1024_bank[v], 1024);
+        }
+        m.free();
+    }
+    vector<float>& cond = cond_bank[0];
+    vector<float> cond1024 = cascade ? cond1024_bank[0] : vector<float>{};
     const int Lc = (int)(cond.size() / 1024);
     vector<float> neg(cond.size(), 0.0f);
     const int Lc1024 = cascade ? (int)(cond1024.size() / 1024) : 0;
     vector<float> neg1024(cond1024.size(), 0.0f);
-    printf("      cond tokens=%d%s\n", Lc, cascade ? (" / 1024-cond tokens=" + std::to_string(Lc1024)).c_str() : "");
-    slat_stats("cond_512 (DINOv3@512)", cond);
-    if (cascade) slat_stats("cond_1024 (DINOv3@1024)", cond1024);
+    for (size_t v = 0; v < cond_bank.size(); ++v) {
+        if ((int)(cond_bank[v].size() / 1024) != Lc) {
+            fprintf(stderr, "[trellis] DINO cond token mismatch at view%zu\n", v);
+            return 1;
+        }
+        if (cascade && (int)(cond1024_bank[v].size() / 1024) != Lc1024) {
+            fprintf(stderr, "[trellis] DINO 1024 cond token mismatch at view%zu\n", v);
+            return 1;
+        }
+    }
+    printf("      cond bank V=%zu tokens=%d%s\n", cond_bank.size(), Lc,
+           cascade ? (" / 1024-cond tokens=" + std::to_string(Lc1024)).c_str() : "");
+    slat_stats("cond_512 view0 (DINOv3@512)", cond);
+    if (cascade) slat_stats("cond_1024 view0 (DINOv3@1024)", cond1024);
+
+    auto sample_bank = [&](const trellis::FlowFwd& fwd, vector<float> state,
+                           const vector<vector<float>>& bank, const vector<float>& negative,
+                           const trellis::SamplerParams& sp, int* stochastic_counter = nullptr) {
+        if (!t2mv) return trellis::sample_flow(fwd, std::move(state), bank[0].data(), negative.data(), sp);
+        vector<const float*> ptrs; ptrs.reserve(bank.size());
+        for (const auto& c : bank) ptrs.push_back(c.data());
+        return trellis::sample_flow_multi(fwd, std::move(state), ptrs, negative.data(), sp,
+                                          t2mv_mode, nullptr, stochastic_counter);
+    };
 
     printf("[3/6] sparse-structure flow + decode\n");
     vector<std::array<int,3>> coords;
@@ -828,8 +908,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         trellis::DiTParams p; p.in_ch = 8; p.out_ch = 8; p.d_cond = 1024; p.cast_f32 = F32;
         trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, Lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gss; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
-        vector<float> z = trellis::sample_flow(fwd, noise(8*4096), cond.data(), neg.data(), sp);  // [8,4096] ne0=8
+        trellis::SamplerParams sp = trellis::ss_production_sampler_params(cfg.gss);
+        vector<float> z = sample_bank(fwd, noise(8*4096), cond_bank, neg, sp);  // [8,4096] ne0=8
         delete run; m.free();
         // transpose [8,L] -> torch [8,16,16,16] memory (c*4096 + sp)
         vector<float> zdec(8*4096);
@@ -844,16 +924,22 @@ int trellis_run(const trellis::TrellisParams& cfg) {
 
     const bool do_tex = cfg.texture;
 
+    // PR #104 wraps the whole cascade (LR + HR) in ONE shape-sampler injection.
+    // Therefore stochastic mode carries its view counter across the two 12-step calls.
+    // This only changes the HR starting view when V does not divide 12 (e.g. 5/7/8).
+    int shape_stochastic_counter = 0;
     // one shape SLAT flow run -> normalized [32,n] (sparse, CFG 7.5, gi[0.6,1], rescale_t 3)
     auto shape_flow = [&](const std::string& path, const vector<std::array<int,3>>& cds,
-                          const float* cnd, const float* ncnd, int lc) {
+                          const vector<vector<float>>& bank, const vector<float>& ncnd, int lc) {
         const int n = (int)cds.size();
         trellis::Model m = trellis::Model::load(path, gpu);
         trellis::DiTParams p; p.in_ch = 32; p.out_ch = 32; p.d_cond = 1024; p.cast_f32 = F32;
         trellis::DitRunner* run = trellis::make_sparse_runner(m, p, cds, lc);
         trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
-        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gsh; sp.guidance_rescale=0.5f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=3.0f;
-        vector<float> sn = trellis::sample_flow(fwd, noise((size_t)32*n), cnd, ncnd, sp);   // [32,n]
+        trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=cfg.gsh; sp.guidance_rescale=0.5f; sp.gi0=0.6; sp.gi1=1.0; sp.rescale_t=3.0;
+        vector<float> sn = sample_bank(fwd, noise((size_t)32*n), bank, ncnd, sp,
+                                             t2mv_mode == trellis::MultiCondMode::Stochastic
+                                                 ? &shape_stochastic_counter : nullptr);   // [32,n]
         delete run; m.free();
         return sn;
     };
@@ -861,8 +947,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
     vector<float> slat_norm, slat_dn;        // normalized (for tex concat) and denormalized (for decode)
     vector<std::array<int,3>> shc;           // coords where the shape SLAT lives + is decoded
     int RES = 512;                           // final grid resolution
-    const float* cond_dec = cond.data();     // cond used by HR shape + tex flows
-    const float* neg_dec  = neg.data();
+    const vector<vector<float>>* cond_dec_bank = &cond_bank; // HR shape + tex flow condition bank
+    const vector<float>* neg_dec_vec = &neg;
     int Lc_dec = Lc;
     vector<float> lr_norm, lr_dn;            // LR (res-512) shape slat @res32 — reused for the res-512 tex path
     if (cascade) {
@@ -880,7 +966,7 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         const int max_tok   = cfg.max_tokens;
         printf("[4/7] shape SLAT flow (LR 512 -> upsample -> HR %d cascade, max_tok=%d)\n", hr_target, max_tok);
         // (1) LR shape flow @res32 with cond_512
-        lr_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond.data(), neg.data(), Lc);
+        lr_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond_bank, neg, Lc);
         lr_dn.resize(lr_norm.size());
         for (size_t n = 0; n < coords.size(); ++n) for (int c = 0; c < 32; ++c)
             lr_dn[(size_t)c + 32*n] = lr_norm[(size_t)c + 32*n]*SHAPE_STD[c] + SHAPE_MEAN[c];
@@ -910,12 +996,12 @@ int trellis_run(const trellis::TrellisParams& cfg) {
             hr_res -= 128;
         }
         // (4) HR shape flow @res(hr_res//16) with cond_1024
-        slat_norm = shape_flow(M + "/shape_flow_1024.gguf", shc, cond1024.data(), neg1024.data(), Lc1024);
-        RES = hr_res; cond_dec = cond1024.data(); neg_dec = neg1024.data(); Lc_dec = Lc1024;
+        slat_norm = shape_flow(M + "/shape_flow_1024.gguf", shc, cond1024_bank, neg1024, Lc1024);
+        RES = hr_res; cond_dec_bank = &cond1024_bank; neg_dec_vec = &neg1024; Lc_dec = Lc1024;
     } else {
         printf("[4/7] shape SLAT flow (512)\n");
         shc = coords;
-        slat_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond.data(), neg.data(), Lc);
+        slat_norm = shape_flow(M + "/shape_flow_512.gguf", coords, cond_bank, neg, Lc);
     }
     const int N = (int)shc.size();
     slat_dn.resize(slat_norm.size());
@@ -982,8 +1068,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
         const std::string tflow = M + (mixed ? "/tex_flow_512.gguf" : (cascade ? "/tex_flow_1024.gguf" : "/tex_flow_512.gguf"));
         const vector<std::array<int,3>>& tcoords = mixed ? coords : shc;
         const vector<float>& tslat = mixed ? lr_norm : slat_norm;
-        const float* tcond = mixed ? cond.data() : cond_dec;
-        const float* tneg  = mixed ? neg.data()  : neg_dec;
+        const vector<vector<float>>& tbank = mixed ? cond_bank : *cond_dec_bank;
+        const vector<float>& tneg = mixed ? neg : *neg_dec_vec;
         const int    tlc   = mixed ? Lc : Lc_dec;
         const int    tN    = (int)tcoords.size();
         const std::vector<std::vector<uint8_t>>& tsubs = mixed ? so_tex.subs : so.subs;
@@ -1002,8 +1088,8 @@ int trellis_run(const trellis::TrellisParams& cfg) {
                 }
                 return run->forward(x64, ts, c);
             };
-            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6f; sp.gi1=0.9f; sp.rescale_t=3.0f;
-            texlat = trellis::sample_flow(fwd, noise((size_t)32*tN), tcond, tneg, sp);  // [32,tN]
+            trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=1.0f; sp.guidance_rescale=0.0f; sp.gi0=0.6; sp.gi1=0.9; sp.rescale_t=3.0;
+            texlat = sample_bank(fwd, noise((size_t)32*tN), tbank, tneg, sp);  // [32,tN]
             delete run; m.free();
             for (int n = 0; n < tN; ++n) for (int c = 0; c < 32; ++c) texlat[(size_t)c + 32*n] = texlat[(size_t)c + 32*n]*TEX_STD[c] + TEX_MEAN[c];
         }

@@ -17,14 +17,34 @@ namespace trellis {
 struct Model;
 
 struct SamplerParams {
-    int   steps             = 12;
-    float guidance_strength = 7.5f;
-    float guidance_rescale  = 0.0f;
-    float gi0               = 0.6f;
-    float gi1               = 1.0f;
-    float rescale_t         = 1.0f;
-    float sigma_min         = 1e-5f;
+    int    steps             = 12;
+    float  guidance_strength = 7.5f;
+    float  guidance_rescale  = 0.0f;
+    // gi0/gi1/rescale_t は double: 参照実装（trellis2/pipelines/samplers/flow_euler.py）は
+    // t-schedule を numpy float64 で組み、guidance interval の判定も double で行い、モデルに
+    // 渡す直前（1000*t）だけ float32 に narrow する。float だと 0.6f が
+    // 0.600000023841857910156250 へ widen され、guidance interval の厳密な小数境界（t==0.6）で
+    // 参照実装とずれる（fix(flow) が修正した境界バグ）。呼び出し側は `0.6` のように f サフィックス
+    // なしのリテラルで代入すること。
+    double gi0               = 0.6;
+    double gi1               = 1.0;
+    double rescale_t         = 1.0;
+    float  sigma_min         = 1e-5f;
 };
+
+// numpy `np.linspace(1, 0, steps+1)` + rescale を逐語再現する t-schedule（flow_runner.cpp）。
+// sample_flow / sample_flow_multi 共有の単一の真実源。steps<=0 は std::invalid_argument。
+std::vector<double> flow_t_schedule(int steps, double rescale_t);
+inline bool flow_in_guidance_interval(double t, double gi0, double gi1) { return gi0 <= t && t <= gi1; }
+
+// Sparse-structure (SS) flow stage の本番 SamplerParams（trellis_cli.cpp の trellis_run() /
+// trellis_run_mv() 両方の [SS] ブロックが使う値。steps=12, guidance_rescale=0.7, gi=[0.6,1.0],
+// rescale_t=5.0）を単一の真実源として公開する（TASK-PORT F2: 以前は trellis_cli.cpp とテストが
+// 同じリテラルを別々に書いていて「本番値と一致しているか」が目視確認頼みだった。本番側もこの
+// 関数を呼ぶようにし、本番定数がドリフトしたらテスト側の呼び出しも自動的に追随する設計にする）。
+// guidance_strength だけは --gss で CLI 上書き可能なので引数化する（既定 7.5、TrellisParams::gss
+// の既定値と同じ）。
+SamplerParams ss_production_sampler_params(float guidance_strength = 7.5f);
 
 // One DiT graph (built once for a fixed token count N), re-run per sampler step.
 // Token axis N = R^3 (dense) or number of active voxels (sparse); RoPE tables are
@@ -72,6 +92,28 @@ std::vector<float> sample_flow(const FlowFwd& fwd, std::vector<float> sample,
                                const float* cond, const float* neg_cond,
                                const SamplerParams& sp,
                                std::vector<std::vector<float>>* trace = nullptr);
+
+enum class MultiCondMode {
+    Stochastic,
+    MultiDiffusion,
+};
+
+// TRELLIS / TRELLIS.2 experimental multi-image sampler semantics.
+// Conditions are an ordered bank of same-shaped image-conditioning tensors.
+// - Stochastic: one positive condition per sampler step, cycling k % V.
+// - MultiDiffusion: evaluate every positive condition at the same x_t/t, average the
+//   raw velocity predictions, then apply one negative prediction + CFG/rescale.
+// V=1 is numerically equivalent to the single-condition sampler (apart from the
+// reference PR's intentionally preserved extra negative forward for multidiffusion
+// when guidance_strength==1 inside the guidance interval).
+std::vector<float> sample_flow_multi(const FlowFwd& fwd, std::vector<float> sample,
+                                     const std::vector<const float*>& conds,
+                                     const float* neg_cond,
+                                     const SamplerParams& sp,
+                                     MultiCondMode mode,
+                                     std::vector<std::vector<float>>* trace = nullptr,
+                                     int* stochastic_counter = nullptr);
+
 
 // Pixal3D ProjectAttention variant: the forward functor also takes the proj_cond pointer, threaded
 // from `proj`/`neg_proj` the same way `cond`/`neg_cond` are. The FlowFwd overload above wraps this

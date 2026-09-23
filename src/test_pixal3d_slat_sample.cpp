@@ -449,8 +449,8 @@ int main(int argc, char** argv) {
     // [6] = (steps, guidance_strength, guidance_rescale, gi0, gi1, rescale_t) when present. shape512
     // never has one (sf.sampler_params == ""), so it keeps the original hardcoded values verbatim.
     trellis::SamplerParams sp;
-    if (is_tex) { sp.steps = 12; sp.guidance_strength = 1.0f; sp.guidance_rescale = 0.0f; sp.gi0 = 0.6f; sp.gi1 = 0.9f; sp.rescale_t = 3.0f; }
-    else        { sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.5f; sp.gi0 = 0.6f; sp.gi1 = 1.0f; sp.rescale_t = 3.0f; }
+    if (is_tex) { sp.steps = 12; sp.guidance_strength = 1.0f; sp.guidance_rescale = 0.0f; sp.gi0 = 0.6; sp.gi1 = 0.9; sp.rescale_t = 3.0; }
+    else        { sp.steps = 12; sp.guidance_strength = 7.5f; sp.guidance_rescale = 0.5f; sp.gi0 = 0.6; sp.gi1 = 1.0; sp.rescale_t = 3.0; }
     sp.sigma_min = 1e-5f;
     if (!sf.sampler_params.empty()) {
         npy::Array spa;
@@ -458,8 +458,21 @@ int main(int argc, char** argv) {
             sp.steps = (int)std::lround((double)spa.data[0]);
             sp.guidance_strength = spa.data[1];
             sp.guidance_rescale  = spa.data[2];
-            sp.gi0 = spa.data[3]; sp.gi1 = spa.data[4]; sp.rescale_t = spa.data[5];
-            printf("sampler params loaded from %s: steps=%d gs=%.3f gr=%.3f gi=[%.2f,%.2f] rescale_t=%.2f\n",
+            // gi0/gi1/rescale_t stay at the compiled double defaults set above, NOT spa.data[3..5]:
+            // npy.h only round-trips float32 (`<f4`), so those three values are already
+            // float32-quantized (e.g. 0.6 -> 0.600000024) and widening them to double would
+            // reintroduce the exact-decimal boundary bug fix(flow) removes from sample_flow /
+            // sample_flow_multi (shape/tex step 8 sits exactly on t==0.6). Only warn on drift.
+            const double tol = 1e-6;
+            if (std::fabs((double)spa.data[3] - sp.gi0) > tol || std::fabs((double)spa.data[4] - sp.gi1) > tol ||
+                std::fabs((double)spa.data[5] - sp.rescale_t) > tol) {
+                printf("WARNING: %s gi=[%.9g,%.9g] rescale_t=%.9g disagrees with the compiled double defaults "
+                       "gi=[%.9g,%.9g] rescale_t=%.9g by more than float32 rounding -- keeping the compiled "
+                       "defaults (this npy file can only store float32, insufficient for the t==0.6 boundary)\n",
+                       sf.sampler_params.c_str(), (double)spa.data[3], (double)spa.data[4], (double)spa.data[5],
+                       sp.gi0, sp.gi1, sp.rescale_t);
+            }
+            printf("sampler params loaded from %s: steps=%d gs=%.3f gr=%.3f gi=[%.2f,%.2f] rescale_t=%.2f (gi/rescale_t kept at compiled double defaults)\n",
                    sf.sampler_params.c_str(), sp.steps, sp.guidance_strength, sp.guidance_rescale, sp.gi0, sp.gi1, sp.rescale_t);
         } else {
             printf("no %s in fixture -- using hardcoded %s default sampler params\n",
@@ -485,26 +498,33 @@ int main(int argc, char** argv) {
             size_t i1 = probe_arg.find(',', i0); if (i1 == string::npos) i1 = probe_arg.size();
             probe.push_back(atoi(probe_arg.substr(i0, i1 - i0).c_str())); i0 = i1 + 1;
         }
-        vector<float> ts(sp.steps + 1);
-        for (int i = 0; i <= sp.steps; ++i) { const float t = 1.0f - (float)i / sp.steps; ts[i] = sp.rescale_t * t / (1.0f + (sp.rescale_t - 1.0f) * t); }
+        // flow_t_schedule()/flow_in_guidance_interval() (flow_runner.h) are the single source of
+        // truth for this; this probe used to recompute its own float32 schedule and compare in
+        // float32, which is exactly the boundary bug fix(flow) removed from sample_flow /
+        // sample_flow_multi (it would silently reintroduce a wrong t==0.6 classification here).
+        const std::vector<double> ts_d = trellis::flow_t_schedule(sp.steps, sp.rescale_t);
         bool probe_ok = true;
         for (int k : probe) {
             if (k < 1 || k > sp.steps) { fprintf(stderr, "--probe-steps: step %d outside 1..%d\n", k, sp.steps); return 1; }
-            const float t = ts[k - 1], tprev = ts[k];
-            const float gs = (sp.gi0 <= t && t <= sp.gi1) ? sp.guidance_strength : 1.0f;
+            const double t_d = ts_d[k - 1], tprev_d = ts_d[k];
+            const bool inside = trellis::flow_in_guidance_interval(t_d, sp.gi0, sp.gi1);
+            const float t = (float)t_d, tprev = (float)tprev_d;
+            const float dt = (float)(t_d - tprev_d);
+            const float tscaled = (float)(1000.0 * t_d);   // same narrowing order as sample_flow
+            const float gs = inside ? sp.guidance_strength : 1.0f;
             if (gs != 1.0f && sp.guidance_rescale > 0.0f) { fprintf(stderr, "--probe-steps: step %d is inside a rescaled guidance interval (not reproduced here)\n", k); return 1; }
             npy::Array x0, rf, rc, rn;
             const string s0 = sf.x_step_prefix + std::to_string(k - 1) + ".npy", s1 = sf.x_step_prefix + std::to_string(k) + ".npy";
             if (!load_opt(fdir + "/f32_" + s0, x0) || !load_opt(fdir + "/f32_" + s1, rf)) { fprintf(stderr, "--probe-steps: f32_%s / f32_%s missing\n", s0.c_str(), s1.c_str()); return 1; }
             vector<float> x(x0.data.begin(), x0.data.begin() + (size_t)Cin * N), pred;
             const auto tp0 = std::chrono::steady_clock::now();
-            if (gs == 1.0f) pred = fwd(x, 1000.0f * t, cond.data(), proj.data());
+            if (gs == 1.0f) pred = fwd(x, tscaled, cond.data(), proj.data());
             else {
-                pred = fwd(x, 1000.0f * t, cond.data(), proj.data());
-                vector<float> neg = fwd(x, 1000.0f * t, neg_cond.data(), neg_proj.data());
+                pred = fwd(x, tscaled, cond.data(), proj.data());
+                vector<float> neg = fwd(x, tscaled, neg_cond.data(), neg_proj.data());
                 for (size_t i = 0; i < pred.size(); ++i) pred[i] = gs * pred[i] + (1 - gs) * neg[i];
             }
-            for (size_t i = 0; i < x.size(); ++i) x[i] -= (t - tprev) * pred[i];
+            for (size_t i = 0; i < x.size(); ++i) x[i] -= dt * pred[i];
             printf("probe step %2d: t=%.4f->%.4f gs=%.1f from f32_%s, %.1f ms\n", k, t, tprev, gs, s0.c_str(),
                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tp0).count());
             lat_stats(x);

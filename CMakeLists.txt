@@ -172,6 +172,15 @@ add_library(trellis_core STATIC
 target_include_directories(trellis_core PUBLIC include ${GGML_DIR}/include ${CMAKE_SOURCE_DIR}/thirdparty/stb ${CMAKE_SOURCE_DIR}/thirdparty/xatlas ${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer ${CMAKE_SOURCE_DIR}/thirdparty/fqms)
 target_compile_definitions(trellis_core PRIVATE TRELLIS_GIT_COMMIT="${TRELLIS_GIT_COMMIT}" TRELLIS_GIT_DIRTY=${TRELLIS_GIT_DIRTY} TRELLIS_BUILD_TIMESTAMP="${TRELLIS_BUILD_TIMESTAMP_UTC}" TRELLIS_APP_VERSION="${TRELLIS_APP_VERSION}")
 target_link_libraries(trellis_core PUBLIC ggml ggml-base ggml-cpu)
+# flow_t_schedule()/the guidance-interval decision (src/flow_runner.cpp) must reproduce numpy
+# float64 linspace + rescale bit-for-bit: a fused multiply-add collapses the two roundings numpy's
+# separate multiply and add ufuncs perform into one, which is enough to flip an exact-decimal
+# guidance_interval boundary (e.g. t==0.6) the wrong way. Clang defaults to -ffp-contract=on and
+# GCC to -ffp-contract=fast; disable it for this one file (the sampler loop is not perf-sensitive).
+# MSVC doesn't recognize this GCC/Clang flag (harmless D9002 warning only) -- guard it.
+if(NOT MSVC)
+  set_source_files_properties(src/flow_runner.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
 
 # --- WebP textures (reference-parity GLB export) ---------------------------
 # Optional lossy-WebP textures via EXT_texture_webp. The exporter only advertises
@@ -354,6 +363,24 @@ add_executable(trellis-test-transforms-synth src/test_transforms_synth.cpp)
 target_link_libraries(trellis-test-transforms-synth PRIVATE trellis_core)
 set_target_properties(trellis-test-transforms-synth PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+# TASK-PORT P5: list_view_images() coverage gaps not already covered by trellis-test-transforms-synth.
+add_executable(trellis-test-list-view-images src/test_list_view_images.cpp)
+target_link_libraries(trellis-test-list-view-images PRIVATE trellis_core)
+set_target_properties(trellis-test-list-view-images PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# TASK-PORT P4: SS MV stage tests (weight-driven, needs ss_dec.gguf; see the file's header comment
+# for why the 4 helper functions it needs are file-local static rather than a new shared module).
+add_executable(trellis-test-trellis2-mv-ss src/test_trellis2_mv_ss.cpp)
+target_link_libraries(trellis-test-trellis2-mv-ss PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-ss PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# TASK-PORT P6: cond-bank structural/self-consistency tests (weight-driven, needs dinov3.gguf; see
+# the file's header comment for why build_cond_bank() is file-local static rather than a new
+# shared module).
+add_executable(trellis-test-trellis2-mv-cond src/test_trellis2_mv_cond.cpp)
+target_link_libraries(trellis-test-trellis2-mv-cond PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-cond PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-ss-flow src/test_ss_flow.cpp)
 target_link_libraries(trellis-test-ss-flow PRIVATE trellis_core)
 set_target_properties(trellis-test-ss-flow PROPERTIES BUILD_RPATH "${GGML_RPATH}")
@@ -405,6 +432,27 @@ set_target_properties(trellis-test-ss-dec PROPERTIES BUILD_RPATH "${GGML_RPATH}"
 add_executable(trellis-test-slat-shape src/test_slat_shape.cpp)
 target_link_libraries(trellis-test-slat-shape PRIVATE trellis_core)
 set_target_properties(trellis-test-slat-shape PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-trellis2-mv-sampler src/test_trellis2_mv_sampler.cpp)
+target_link_libraries(trellis-test-trellis2-mv-sampler PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-sampler PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# TASK-STAGES: shape SLat (512 + 1024cascade LR/HR) / texture SLat stage-parity tests. See
+# docs/design/2026-09-21-trellis2-mv-stages-shape-tex.md for scope (step0/8/11 CFG only --
+# the v2 fixture captures only those 3 steps' prediction tensors, not all 12 like SS).
+add_executable(trellis-test-trellis2-mv-shape src/test_trellis2_mv_shape.cpp)
+target_link_libraries(trellis-test-trellis2-mv-shape PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-shape PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-trellis2-mv-tex src/test_trellis2_mv_tex.cpp)
+target_link_libraries(trellis-test-trellis2-mv-tex PRIVATE trellis_core)
+set_target_properties(trellis-test-trellis2-mv-tex PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+# TASK-PORT P3: synthetic sampler oracle (weightless, CPU-only), ported from the old track's
+# src/test_flow_multi.cpp. Kept alongside (not replacing) trellis-test-trellis2-mv-sampler above.
+add_executable(trellis-test-flow-multi src/test_flow_multi.cpp)
+target_link_libraries(trellis-test-flow-multi PRIVATE trellis_core)
+set_target_properties(trellis-test-flow-multi PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 add_executable(trellis-test-dinov3 src/test_dinov3.cpp)
 target_link_libraries(trellis-test-dinov3 PRIVATE trellis_core)

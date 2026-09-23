@@ -52,6 +52,49 @@ inline Array load(const std::string& path) {
     return a;
 }
 
+struct ArrayI32 {
+    std::vector<int64_t> shape;
+    std::vector<int32_t> data;
+    int64_t numel() const {
+        return std::accumulate(shape.begin(), shape.end(), (int64_t)1, std::multiplies<int64_t>());
+    }
+};
+
+// int32 twin of load() ('<i4'); coords / index dumps (e.g. a trellis2-mv reference fixture's
+// ss_coords.npy, torch SparseTensor coords saved as [batch, x, y, z] int32 rows).
+inline ArrayI32 load_i32(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) throw std::runtime_error("npy: cannot open " + path);
+    unsigned char magic[8];
+    if (fread(magic, 1, 8, f) != 8 || memcmp(magic, "\x93NUMPY", 6) != 0)
+        throw std::runtime_error("npy: bad magic " + path);
+    uint16_t hlen;
+    if (fread(&hlen, 2, 1, f) != 1) throw std::runtime_error("npy: header len");
+    std::string hdr(hlen, '\0');
+    if (fread(hdr.data(), 1, hlen, f) != hlen) throw std::runtime_error("npy: header");
+    if (hdr.find("'<i4'") == std::string::npos && hdr.find("\"<i4\"") == std::string::npos)
+        throw std::runtime_error("npy: only <i4 supported: " + path + " hdr=" + hdr);
+    if (hdr.find("'fortran_order': True") != std::string::npos)
+        throw std::runtime_error("npy: fortran order unsupported");
+    ArrayI32 a;
+    size_t p = hdr.find("'shape':");
+    p = hdr.find('(', p);
+    size_t q = hdr.find(')', p);
+    std::string s = hdr.substr(p + 1, q - p - 1);
+    for (size_t i = 0; i < s.size();) {
+        if (isdigit(s[i])) {
+            int64_t v = 0; while (i < s.size() && isdigit(s[i])) v = v * 10 + (s[i++] - '0');
+            a.shape.push_back(v);
+        } else ++i;
+    }
+    if (a.shape.empty()) a.shape.push_back(1);
+    a.data.resize(a.numel());
+    if ((int64_t)fread(a.data.data(), sizeof(int32_t), a.numel(), f) != a.numel())
+        throw std::runtime_error("npy: short data " + path);
+    fclose(f);
+    return a;
+}
+
 inline void save(const std::string& path, const float* data, const std::vector<int64_t>& shape) {
     std::string sh = "(";
     for (size_t i = 0; i < shape.size(); ++i) sh += std::to_string(shape[i]) + (shape.size() == 1 ? "," : (i + 1 < shape.size() ? ", " : ""));

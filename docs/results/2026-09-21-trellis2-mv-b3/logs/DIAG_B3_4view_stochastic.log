@@ -1,0 +1,116 @@
+[trellis] generating model with seed 42
+[trellis] TRELLIS.2 multiview: V=4 mode=stochastic
+      view0 Frame1.png
+      view1 Frame2.png
+      view2 Frame3.png
+      view3 Frame4.png
+      (birefnet.gguf not found -- falling back to threshold matte; bright highlights may punch holes)
+[1/6] preprocess view1/4 /nfs/pixal3d_trellis2mv_ref_v2/inputs/yoimiya_4view/Frame1.png (alpha/threshold matte, 1024 cascade)
+[1/6] preprocess view2/4 /nfs/pixal3d_trellis2mv_ref_v2/inputs/yoimiya_4view/Frame2.png (alpha/threshold matte, 1024 cascade)
+[1/6] preprocess view3/4 /nfs/pixal3d_trellis2mv_ref_v2/inputs/yoimiya_4view/Frame3.png (alpha/threshold matte, 1024 cascade)
+[1/6] preprocess view4/4 /nfs/pixal3d_trellis2mv_ref_v2/inputs/yoimiya_4view/Frame4.png (alpha/threshold matte, 1024 cascade)
+[2/6] DINOv3 conditioning (per-view bank)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 81151 MiB):
+  Device 0: NVIDIA A100-SXM4-80GB, compute capability 8.0, VMM: yes, VRAM: 81151 MiB
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      cond bank V=4 tokens=1029 / 1024-cond tokens=4101
+      [stats] cond_512 view0 (DINOv3@512) n=1053696 mean=0.0000 std=1.0000 min=-29.333 max=24.911 nan/inf=0
+      [stats] cond_1024 view0 (DINOv3@1024) n=4199424 mean=-0.0000 std=1.0000 min=-29.341 max=24.883 nan/inf=0
+[3/6] sparse-structure flow + decode
+      [stage] entering ss_flow DitRunner (V=4, mode=stochastic)
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      [flow-mv-step] i= 0 seq=0 view=0/4 guided=1 pred[nonfinite=0/32768 max|finite|=8.6]
+      [flow-mv-step] i= 1 seq=1 view=1/4 guided=1 pred[nonfinite=0/32768 max|finite|=12.8]
+      [flow-mv-step] i= 2 seq=2 view=2/4 guided=1 pred[nonfinite=0/32768 max|finite|=13.9]
+      [flow-mv-step] i= 3 seq=3 view=3/4 guided=1 pred[nonfinite=0/32768 max|finite|=11.9]
+      [flow-mv-step] i= 4 seq=4 view=0/4 guided=1 pred[nonfinite=0/32768 max|finite|=9.4]
+      [flow-mv-step] i= 5 seq=5 view=1/4 guided=1 pred[nonfinite=0/32768 max|finite|=12.9]
+      [flow-mv-step] i= 6 seq=6 view=2/4 guided=1 pred[nonfinite=0/32768 max|finite|=14]
+      [flow-mv-step] i= 7 seq=7 view=3/4 guided=1 pred[nonfinite=0/32768 max|finite|=11.1]
+      [flow-mv-step] i= 8 seq=8 view=0/4 guided=1 pred[nonfinite=0/32768 max|finite|=12.1]
+      [flow-mv-step] i= 9 seq=9 view=1/4 guided=1 pred[nonfinite=0/32768 max|finite|=19.4]
+      [flow-mv-step] i=10 seq=10 view=2/4 guided=0 pred[nonfinite=0/32768 max|finite|=5.44]
+      [flow-mv-step] i=11 seq=11 view=3/4 guided=0 pred[nonfinite=0/32768 max|finite|=5.52]
+      [flow-mv] 12 steps, 4 views, 22 forwards, mode=stochastic, 6.4s
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      active voxels @res32 = 936
+[4/7] shape SLAT flow (LR 512 -> upsample -> HR 1024 cascade, max_tok=49152)
+      [stage] entering /nfs/trellis2-mv/gguf-f16/shape_flow_512.gguf DitRunner (V=4, N=936, shape_stochastic_counter=0)
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      [flow-mv-step] i= 0 seq=0 view=0/4 guided=1 pred[nonfinite=0/29952 max|finite|=8.63]
+      [flow-mv-step] i= 1 seq=1 view=1/4 guided=1 pred[nonfinite=0/29952 max|finite|=11.3]
+      [flow-mv-step] i= 2 seq=2 view=2/4 guided=1 pred[nonfinite=0/29952 max|finite|=12.3]
+      [flow-mv-step] i= 3 seq=3 view=3/4 guided=1 pred[nonfinite=0/29952 max|finite|=11.3]
+      [flow-mv-step] i= 4 seq=4 view=0/4 guided=1 pred[nonfinite=0/29952 max|finite|=11.5]
+      [flow-mv-step] i= 5 seq=5 view=1/4 guided=1 pred[nonfinite=0/29952 max|finite|=12.7]
+      [flow-mv-step] i= 6 seq=6 view=2/4 guided=1 pred[nonfinite=0/29952 max|finite|=8.85]
+      [flow-mv-step] i= 7 seq=7 view=3/4 guided=1 pred[nonfinite=0/29952 max|finite|=12.3]
+      [flow-mv-step] i= 8 seq=8 view=0/4 guided=1 pred[nonfinite=0/29952 max|finite|=10.7]
+      [flow-mv-step] i= 9 seq=9 view=1/4 guided=0 pred[nonfinite=0/29952 max|finite|=5.46]
+      [flow-mv-step] i=10 seq=10 view=2/4 guided=0 pred[nonfinite=0/29952 max|finite|=5.15]
+      [flow-mv-step] i=11 seq=11 view=3/4 guided=0 pred[nonfinite=0/29952 max|finite|=5.11]
+      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 1.4s
+      [stats] LR slat (res32, decodes OK via upsample) n=29952 mean=0.0101 std=5.5632 min=-23.530 max=25.306 nan/inf=0
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      upsampled coords @res512=328867 -> quantized @res1024 (grid 64) = 4123 tokens
+      [stage] entering /nfs/trellis2-mv/gguf-f16/shape_flow_1024.gguf DitRunner (V=4, N=4123, shape_stochastic_counter=12)
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      [flow-mv-step] i= 0 seq=12 view=0/4 guided=1 pred[nonfinite=0/131936 max|finite|=10.4]
+      [flow-mv-step] i= 1 seq=13 view=1/4 guided=1 pred[nonfinite=0/131936 max|finite|=10.8]
+      [flow-mv-step] i= 2 seq=14 view=2/4 guided=1 pred[nonfinite=0/131936 max|finite|=10.6]
+      [flow-mv-step] i= 3 seq=15 view=3/4 guided=1 pred[nonfinite=0/131936 max|finite|=15.5]
+      [flow-mv-step] i= 4 seq=16 view=0/4 guided=1 pred[nonfinite=0/131936 max|finite|=18.6]
+      [flow-mv-step] i= 5 seq=17 view=1/4 guided=1 pred[nonfinite=0/131936 max|finite|=9.83]
+      [flow-mv-step] i= 6 seq=18 view=2/4 guided=1 pred[nonfinite=0/131936 max|finite|=9.42]
+      [flow-mv-step] i= 7 seq=19 view=3/4 guided=1 pred[nonfinite=0/131936 max|finite|=8.99]
+      [flow-mv-step] i= 8 seq=20 view=0/4 guided=1 pred[nonfinite=0/131936 max|finite|=8.41]
+      [flow-mv-step] i= 9 seq=21 view=1/4 guided=0 pred[nonfinite=0/131936 max|finite|=5.88]
+      [flow-mv-step] i=10 seq=22 view=2/4 guided=0 pred[nonfinite=0/131936 max|finite|=5.94]
+      [flow-mv-step] i=11 seq=23 view=3/4 guided=0 pred[nonfinite=0/131936 max|finite|=5.84]
+      [flow-mv] 12 steps, 4 views, 21 forwards, mode=stochastic, 8.3s
+      [stats] HR slat n=131936 mean=-0.0545 std=5.4118 min=-22.071 max=23.075 nan/inf=0
+[5/7] FlexiDualGrid shape decode -> mesh @res1024
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      decoded voxels @res1024 = 1358340
+      mesh V=1358340 F=2722828
+      filled 1795 small holes -> V=1360135 F=2733886
+[6/7] texture SLAT flow + PBR decode
+      [stats] tex branch: mixed=0 decoded_voxels=1358340 DENSE_TEX=9000000 tex_res=1024 RES=1024
+      [stage] entering /nfs/trellis2-mv/gguf-f16/tex_flow_1024.gguf DitRunner (V=4, N=4123)
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      [stats] tex concat: tN=4123 tbank.size()=4 tlc=4101
+      [stats] tex slat guide (tslat, fixed shape_slat_norm half of concat) n=131936 mean=-0.0024 std=0.9683 min=-3.937 max=4.311 nan/inf=0
+      [flow-mv-step] i= 0 seq=0 view=0/4 guided=0 pred[nonfinite=0/131936 max|finite|=6.11]
+      [flow-mv-step] i= 1 seq=1 view=1/4 guided=0 pred[nonfinite=0/131936 max|finite|=6.8]
+      [flow-mv-step] i= 2 seq=2 view=2/4 guided=0 pred[nonfinite=0/131936 max|finite|=6.9]
+      [flow-mv-step] i= 3 seq=3 view=3/4 guided=1 pred[nonfinite=0/131936 max|finite|=6.91]
+      [flow-mv-step] i= 4 seq=4 view=0/4 guided=1 pred[nonfinite=0/131936 max|finite|=6.86]
+      [flow-mv-step] i= 5 seq=5 view=1/4 guided=1 pred[nonfinite=0/131936 max|finite|=6.87]
+      [flow-mv-step] i= 6 seq=6 view=2/4 guided=1 pred[nonfinite=0/131936 max|finite|=6.87]
+      [flow-mv-step] i= 7 seq=7 view=3/4 guided=1 pred[nonfinite=0/131936 max|finite|=6.87]
+      [flow-mv-step] i= 8 seq=8 view=0/4 guided=1 pred[nonfinite=0/131936 max|finite|=6.88]
+      [flow-mv-step] i= 9 seq=9 view=1/4 guided=0 pred[nonfinite=0/131936 max|finite|=6.84]
+      [flow-mv-step] i=10 seq=10 view=2/4 guided=0 pred[nonfinite=0/131936 max|finite|=6.81]
+      [flow-mv-step] i=11 seq=11 view=3/4 guided=0 pred[nonfinite=0/131936 max|finite|=6.74]
+      [flow-mv] 12 steps, 4 views, 12 forwards, mode=stochastic, 4.7s
+      [stats] tex slat (norm, sampler output) n=131936 mean=-0.0178 std=1.2783 min=-3.163 max=4.314 nan/inf=0
+      [stats] tex slat (denorm, tex_decode input) n=131936 mean=0.3088 std=3.5476 min=-11.208 max=12.640 nan/inf=0
+[trellis] using CUDA0: NVIDIA A100-SXM4-80GB (81151 MB) [auto]
+      [stats] tex_decode raw output (pbr, pre-clamp, [6,Mv]) n=8150040 mean=0.0012 std=0.9975 min=-1.019 max=1.048 nan/inf=0
+      PBR voxels=1358340 @res1024
+      [stats] tex_decode base color, post-clamp (colors, [3,Mv]) n=4075020 mean=0.0021 std=0.0038 min=0.000 max=0.663 nan/inf=0
+[7/7] write /nfs/trellis2-mv/b3-diag/DIAG_B3_4view_stochastic/out.glb
+  weld: V 1360135->1355474 (4661 near-duplicates merged, eps=0.00012)
+  fill_holes: 2054 boundary loops filled (+8712 faces)
+  remesh_dc: 2966652 active voxels -> V=2449889 F=4911256 (eps=0.001965, project_back=0.00)
+    [clean] faces=4911256, flipped 0 for consistent winding
+  remesh postproc: dropped 215 floater comps -> V=2224581 F=4460492
+  decimate_qem_gpu(target=300000): V 2224581->143827, F 4460492->294352
+  weld: V 143827->143826 (1 near-duplicates merged, eps=0.00012)
+  decimated postproc: dropped 7 more comps -> F=291146
+  uv_bake: 2 components (0 tiny, 0 faces -> strip S=0), 0 duplicate faces dropped
+  uv_bake: 3238 merge clusters
+  uv_bake: 117 uncharted faces kept with point-collapsed UVs
+  uv_bake: atlas 2048x2048 (xatlas 1214x1223), Vo=219185 Fo=291146
+      textured GLB (atlas 2048, +/nfs/trellis2-mv/b3-diag/DIAG_B3_4view_stochastic/out_base.png)
+done in 56.0s -> /nfs/trellis2-mv/b3-diag/DIAG_B3_4view_stochastic/out.glb (+ /nfs/trellis2-mv/b3-diag/DIAG_B3_4view_stochastic/out.ply)

@@ -1,0 +1,32 @@
+{
+  "4v_stochastic": {
+    "proxy_base_color_mean_0_255": 14.136441230773926,
+    "baked_texture_mean_0_255_ground_truth": 13.022363,
+    "proxy_classification": "normal",
+    "ground_truth_classification": "normal",
+    "abs_diff": 1.1140782307739254,
+    "classification_agrees": true,
+    "close_enough_within_2pt": true,
+    "agrees": true
+  },
+  "2v_stochastic": {
+    "proxy_base_color_mean_0_255": 0.1898704320192337,
+    "baked_texture_mean_0_255_ground_truth": 0.0,
+    "proxy_classification": "black",
+    "ground_truth_classification": "black",
+    "abs_diff": 0.1898704320192337,
+    "classification_agrees": true,
+    "close_enough_within_2pt": true,
+    "agrees": true
+  },
+  "4v_multidiffusion": {
+    "proxy_base_color_mean_0_255": 10.228216171264648,
+    "baked_texture_mean_0_255_ground_truth": 9.845867,
+    "proxy_classification": "normal",
+    "ground_truth_classification": "intermediate",
+    "abs_diff": 0.3823491712646483,
+    "classification_agrees": false,
+    "close_enough_within_2pt": true,
+    "agrees": true
+  }
+}

@@ -188,3 +188,92 @@ clusters more than theirs); turret welded-boundary 3.1k vs 81 (pre-existing in
 the decimated geometry, not opened by the bake); our WebP files are larger
 (noisier inpaint far-field + alpha channel content); zero-UV-area faces 1.8%
 (the kept point-collapsed faces the reference deletes).
+
+## Addendum 4 — trellis2-mv stochastic mode: seed-dependent texture black-out (not a divergence; recorded to stop re-investigation)
+
+**Symptom.** With `--trellis2-mv <dir> --trellis2-mv-mode stochastic` the texture stage can
+land in the decoder's saturation region and bake an (almost) all-black base colour, with
+finite `tex_slat` and no NaN/Inf anywhere. Whether it happens depends on the seed; the same
+seed with `multidiffusion` is fine.
+
+**Class: none detected (shared with the reference).** The pinned PyTorch reference
+(`75fbf018`) shows the same failure: the v3 fixture `run_2img_real_stochastic_1024c`
+(2-view, seed 42) bakes a texture with every texel = 0, `saturation_rate` 0.9999911. Measured
+rates (Fisher exact, two-sided): 4-view stochastic reference 0/10 vs native 2/6 (p = 0.125),
+2-view 1/10 vs 1/3 (p = 0.423), pooled 1/20 vs 3/9 (p = 0.076). **At n = 10/6 no difference
+is detectable; this is not a proof that the rates are equal** — the 4-view point estimate is
+higher on native, and the native tex-DiT real-weight forward differs from the reference by
+1.29 % rel at step 0 (f16 GGUF, unresolved, own issue candidate). The decisive test (inject
+native's noise into the reference and watch the same trajectory) has not been run.
+
+**Verify / details.** `docs/results/2026-09-21-trellis2-mv-b3/2026-09-22-b3-conclusion.md`
+(frozen-criteria contrast table, raw counts, refutation path) — all numbers live there, not
+here. Native logs: `docs/results/2026-09-21-trellis2-mv-b3/logs/v9-pod-seed-sweep.log`;
+reference sweep: `docs/results/2026-09-22-trellis2-mv-b3-ref/`. Diagnostic instrumentation
+is on branch `diag/trellis2-mv-b3` only.
+
+**Rank: —** (documented limitation). Two workarounds are demonstrated at the product surface:
+re-rolling `--seed`, and `--trellis2-mv-mode multidiffusion` — on the black seed 42, a full
+multidiffusion run comes back normal (tex-decode base colour mean 0.0238 vs 0.0021 for the black
+stochastic run at the same seed; both from the diag pod re-runs of the E2E B3/B4 conditions, since
+the E2E runs themselves only recorded the baked `out_base.png` mean). `multidiffusion` has not shown the failure in the samples
+taken — 0/3 reference seeds and 0/2 native runs — but that is n=5 and is not evidence that it is
+immune.
+
+Separately, and as mechanism rather than workaround: holding the geometry fixed and swapping *only*
+the texture stage to multidiffusion on that same seed also recovers colour (0.0254, vs 0.0065 for
+the reverse swap), which localises the failure to the texture stage's stochastic sampling. That
+experiment used `TRELLIS_DBG_TEX_MODE`, which exists only on `diag/trellis2-mv-b3` — the shipped
+flag switches every stage, so it cannot reproduce this split. Logs:
+`docs/results/2026-09-21-trellis2-mv-b3/logs/DIAG_{B3_4view_stochastic,B4_4view_multidiff,shapeStoch_texMultidiff,shapeMultidiff_texStoch}.log`
+(all four figures above are that log line's `tex_decode base color, post-clamp` mean, so they are
+comparable to each other but not to the baked `out_base.png` means quoted elsewhere).
+
+## Addendum 5 — guidance-rescale OOD clamp [0.2, 5.0] (issue #77: intentional, kept; measured activation)
+
+**What differs.** `sample_flow` / `sample_flow_multi` (`src/flow_runner.cpp`) clamp the
+guidance-rescale ratio `std_pos / std_cfg` to `[0.2, 5.0]`. The pinned TRELLIS.2 reference
+(`flow_euler.py` / `guidance_interval_mixin.py` at `75fbf018`) has **no clamp**. The guard is
+inherited from upstream `c26fc76` (2026-06-22), whose stated premise is that OOD inputs drive
+`vc` toward zero, the ratio explodes and the SLAT comes back all-NaN — and that in-distribution
+the ratio sits near 1.0, so the clamp is a no-op.
+
+**Class: ours-extra (deliberate robustness divergence). Decision: keep** (user, 2026-09-22),
+with the activation rate recorded here because the upstream premise does not hold everywhere.
+
+**Measured activation** (per stage, at production sampler parameters):
+
+There are **two separate SS measurements**; they are not the same experiment and their ratio
+ranges differ. Keep them apart.
+
+| Stage | Measurement | Params | Points | ratio range | Clamp fires |
+|---|---|---|---|---|---|
+| Sparse structure | ① synthetic sampler fixture, pinned Python reference run directly | gs=7.5, gr=0.5 | 3 of the 9 in-interval steps | **0.156–0.187** | **yes** (below the 0.2 floor) |
+| Sparse structure | ② `trellis-test-trellis2-mv-ss` replaying the #59 v2 golden fixtures (**real TRELLIS.2-4B predictions**, captured on an A100) | gs=7.5 | 6 runs, clamp on vs `TRELLIS_NOFIX=1` | **0.138–0.154** | **yes** |
+| Shape SLat LR + HR | v3 real-weight fixture, `trellis-test-trellis2-mv-shape` S4 | gs=7.5, gr=0.5 | 162 points (18 run-sides x 9 in-interval steps) | min **0.2462**, max **0.9575** | no (0/162) |
+| Texture SLat | — | gs=1.0, **gr=0.0** | — | — | structurally n/a (rescale is not applied) |
+
+**Expected impact.** Confined to the SS stage. From ①: final-sample divergence 0.0108 abs. From
+②: per-step max rel error 9.9–11.6 % with the clamp on (1.0e-6–1.6e-6 with it off), and a shifted
+active voxel set — `run_1img_baseline_512` 3547 vs 3543, `run_2img_real_multidiffusion_512` 966 vs
+963, `run_4img_real_stochastic_512` 954 vs 952. Shape is unaffected — clamp-on vs `TRELLIS_NOFIX=1`
+12-step traces are bit-identical across all 18 run-sides, and native's ratios match the reference
+manifest to 1.97e-7.
+
+**Verify.** `trellis-test-trellis2-mv-shape` prints the per-row ratio table (S4 section, 162 hard
+asserts); `docs/results/2026-09-21-trellis2-mv-stages-v3.md` has the shape numbers (conclusion item 5, and
+the `S4 clamp条件` row of its frozen-criteria table — that doc has no numbered sections). For SS,
+① is in the body of issue #77 and ② is in its first comment — quote whichever one you mean.
+
+**Remaining gap.** ② replays predictions captured on the reference, so the clamp's effect is
+measured on real model output. What is missing is neither the weights nor a real-weight run — the
+epic converted `ss_flow.gguf` (sha256 `1dfbef1b80ddea42…`) and drove it live through all eight E2E
+runs — but the instrumentation: nothing logs the rescale ratio and a "clamp fired" flag per step at
+the SS stage. Issue #77's ask #1 requested exactly that logging, but named the shape-SLat stage;
+shape is now covered (the 162 points above, obtained by replicating the clamp arithmetic inside
+`trellis-test-trellis2-mv-shape` rather than by adding a `TRELLIS_DBG_*` logger to the product), and
+the SS equivalent was never built. This gap is narrower than "unmeasured on the real model", which
+issue #77's comment explicitly retracts.
+
+**Rank: —** (kept by decision; revisit only if the SS stage has to be bit-compared with the
+reference, or if a real-weight SS measurement contradicts the synthetic one).

@@ -1,6 +1,6 @@
 // Studio の headless UI スモーク（.github/workflows/studio-headless.yml）。
 // vite preview（browser mode）に対して Playwright/Chromium で次を見る:
-//   1. 3 モード（TRELLIS.2 / Pixal3D SV / Pixal3D MV）の切替でパネルが排他表示される
+//   1. 4 modes (TRELLIS.2 single/MV, Pixal3D SV/MV) switch panels exclusively
 //   2. MV + transforms.json: mesh_scale 欠落は Generate 無効・スライダ無効・既定値を捏造しない、
 //      明示入力で通る、並べ替えが保存 JSON に反映される（0.9.0 からの回帰テスト）
 //   3. MV canonical rig（transforms.json 無し）: ちょうど 4 枚のときだけ受け付け、
@@ -61,7 +61,7 @@ function minimalGlb() {
 }
 
 // ---- stub trellis-server: /health, /capabilities, /generate-mv（即答）。/generate-sv は永遠に応答しない ----
-const stub = { busy: false, completed: 0, mvRequests: 0, dead: false, holdMv: false, sv: { configured: true, available: true, model_set: 'pixal3d-sv-q8_0', version: 'v1', model_family: 'sv' } };
+const stub = { busy: false, completed: 0, mvRequests: 0, t2mvRequests: 0, dead: false, holdMv: false, sv: { configured: true, available: true, model_set: 'pixal3d-sv-q8_0', version: 'v1', model_family: 'sv' } };
 const pending = new Set();
 const pendingMv = new Set();
 const server = http.createServer((req, res) => {
@@ -75,7 +75,14 @@ const server = http.createServer((req, res) => {
   if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
   if (req.url === '/capabilities') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ busy: stub.busy, completed: stub.completed, mv: { configured: true, available: true, model_set: 'pixal3d-f16', version: 'v1', model_family: 'mv' }, sv: stub.sv }));
+    res.end(JSON.stringify({ busy: stub.busy, completed: stub.completed, mv: { configured: true, available: true, model_set: 'pixal3d-f16', version: 'v1', model_family: 'mv' }, sv: stub.sv, trellis2_mv: { available: true, max_images: 8, modes: ['stochastic','multidiffusion'] } }));
+    return;
+  }
+  if (req.url === '/generate-trellis2-mv' && req.method === 'POST') {
+    stub.t2mvRequests++;
+    stub.completed++;
+    req.resume();
+    req.on('end', () => { res.writeHead(200, { 'Content-Type': 'model/gltf-binary' }); res.end(minimalGlb()); });
     return;
   }
   if (req.url === '/generate-mv' && req.method === 'POST') {
@@ -115,7 +122,9 @@ const pickMode = async (mode) => {
 
 // ---- 1. モード切替 ------------------------------------------------------------------
 if (!(await visible('trellis2-panel'))) fail('TRELLIS.2 panel must be the default');
-if (await visible('sv-mount') || await visible('mv-calibration-mount')) fail('SV/MV panels must start hidden');
+if (await visible('trellis2-mv-mount') || await visible('sv-mount') || await visible('mv-calibration-mount')) fail('non-default panels must start hidden');
+await pickMode('trellis2-mv');
+if (!(await visible('trellis2-mv-mount')) || await visible('trellis2-panel')) fail('TRELLIS.2 MV mode must show only its panel');
 await pickMode('pixal3d-sv');
 if (!(await visible('sv-mount')) || await visible('trellis2-panel')) fail('SV mode must show only the SV panel');
 await pickMode('pixal3d-mv');
@@ -327,5 +336,23 @@ if (await page.locator('#server-label').textContent() !== 'ready') fail('status 
 console.log('ok   server lost mid-generation → toast, state cleared, Generate re-enabled after restart');
 
 console.log('HEADLESS_SERVER_LOST_OK');
+
+// ---- 8. TRELLIS.2 multiview completion ----------------------------------------------
+await pickMode('trellis2-mv');
+const t2file = page.locator('#t2mvp-file');
+await t2file.setInputFiles([png('view0.png'), png('view1.png')]);
+await page.locator('#t2mvp-fusion').selectOption('multidiffusion');
+await page.locator('#t2mvp-res').selectOption('1024');
+await page.waitForFunction(() => !document.querySelector('#t2mvp-generate')?.disabled, null, { timeout: 15000 });
+await page.locator('#t2mvp-generate').click();
+await page.waitForFunction(() => document.querySelector('#t2mvp-stage')?.textContent === 'complete', null, { timeout: 15000 });
+if (stub.t2mvRequests !== 1) fail(`expected one /generate-trellis2-mv request, saw ${stub.t2mvRequests}`);
+await page.waitForFunction(() => document.querySelector('#viewer-caption')?.textContent?.includes('TRELLIS.2 MV'), null, { timeout: 10000 });
+const t2cap = await page.locator('#viewer-caption').textContent();
+if (!t2cap.includes('2 views') || !t2cap.includes('multidiffusion')) fail(`TRELLIS.2 MV caption missing metadata: ${t2cap}`);
+if (await page.locator('#save-glb').isDisabled()) fail('Save GLB must be enabled after TRELLIS.2 MV result');
+console.log('ok   TRELLIS.2 MV completion path');
+console.log('HEADLESS_TRELLIS2_MV_OK');
+
 await browser.close();
 server.close();

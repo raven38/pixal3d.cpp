@@ -129,6 +129,8 @@ The most useful ones:
 | `--atlas PX` | UV atlas size (default 2048 @1024 / 1024 @512) |
 | `--box-uv` | voxel-native 6-way box projection instead of the default xatlas unwrap (O(faces), faster, looser packing) |
 | `--seed N` | RNG seed |
+| `--trellis2-mv DIR` | TRELLIS.2 pose-free multi-image input (2–8 images, natural filename order); separate from Pixal3D `--views` |
+| `--trellis2-mv-mode stochastic\|multidiffusion` | multi-image FlowEuler fusion policy (default `stochastic`) |
 | `--require-gpu` | fail instead of falling back to the (very slow, RAM-hungry) CPU path |
 | `--profile` | after the second forward of every flow DiT, re-submit the same graph as role×block slices and as single nodes and print the breakdown (`[prof]` lines: by role / by block / by op / top nodes, plus the slice-sum vs whole-forward ratios). Timing only — the sampler still uses the whole-graph output. Adds roughly 4 forwards per flow |
 | `--profile-cond` | print per-view / per-stage wall-clock laps of the conditioning (DINOv3 → NAF → projection, host and device paths) and of the sparse decoders / cascade upsample (`[cond-v]` lines). printf only — adds no compute, unlike `--profile`, so it can be used to time the conditioning without the flow side-passes heating the GPU first. The coarse per-stage `[cond]` laps are printed always, in the multiview pipeline (`--views`) only |
@@ -155,13 +157,51 @@ behavior-driving environment variables remain — use the flags above.
 
 ```
 GET  /health     -> "ok"
-POST /generate      multipart/form-data with an "image" file part; optional text
-                    fields "seed", "resolution" (512/1024/1536), "bg_removal"
-                    (threshold|birefnet). Returns model/gltf-binary.
+POST /generate      TRELLIS.2 single image
+POST /generate-trellis2-mv
+                    TRELLIS.2 pose-free 2..8 image conditioning;
+                    fusion=stochastic|multidiffusion
+POST /generate-mv   Pixal3D camera-aware multiview
+POST /generate-sv   Pixal3D single view
 ```
 
 Launch-time flags (including `--res`) set the per-request defaults; each request can
 override them with its own fields.
+
+### TRELLIS.2 multi-image / multiview mode
+
+The native TRELLIS.2 pipeline can condition the existing **single-image TRELLIS.2 weights**
+on 2–8 images without camera poses or additional checkpoints:
+
+```bash
+./build/trellis-cli --trellis2-mv ./views \
+  --trellis2-mv-mode stochastic \
+  --models /path/to/trellis2-gguf --seed 42 --res 1024 out.glb
+```
+
+`./views` is naturally sorted by filename. This mode is deliberately separate from
+Pixal3D `--views`: it does **not** read `transforms.json`, FOV, camera matrices or
+`mesh_scale`.
+
+Two inference-time fusion algorithms are exposed, matching the experimental multi-image
+sampler in Microsoft TRELLIS and the pinned TRELLIS.2 PR #104 reference:
+
+- **`stochastic`** — sampler step `k` uses positive condition `k % V`. Compute is
+  close to the single-image sampler and every stage resets the view cycle.
+- **`multidiffusion`** — every step evaluates the raw positive model prediction for all
+  `V` images, averages those predictions, then applies the single negative prediction /
+  CFG / guidance-rescale. Flow compute therefore scales approximately with the number of
+  input images.
+
+The same policy is used in sparse structure, Shape-SLat LR/HR cascade, and Texture-SLat;
+DINO features themselves, latents, voxel coordinates and meshes are **not averaged**.
+The server endpoint is `POST /generate-trellis2-mv`, and Trellis Studio exposes a
+separate **TRELLIS.2 · multiview** mode.
+
+The algorithm is experimental: equal multidiffusion averaging has known cases of
+width/thickness drift in upstream testing. Confidence-weighted fusion is tracked
+separately rather than silently changing the reference semantics. The exact pinned oracle
+and fixture protocol live in `docs/results/2026-09-21-trellis2-mv-reference.md`.
 
 ### Pixal3D multiview mode
 

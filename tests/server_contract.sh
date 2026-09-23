@@ -9,6 +9,9 @@
 #     ファイル欠損・サイズ不一致・family 取り違え）と busy / completed
 #   - POST /generate-sv: whitelist、strict な数値、PNG のみ、1024 のみ、SV 未導入は 503
 #   - POST /generate-mv: seed=abc が 400 になる（0.10.0 の挙動変更。以前は黙って 0）
+#   - POST /generate-trellis2-mv: 2..8 image contract / fusion / camera-field separation /
+#     decompression-bomb IHDR preflight（/generate-sv と同じ 64 Mpixel 上限、全 num_images 枚）/
+#     duplicate multipart field rejection
 #   - 生成が走ると busy=true → 終了で busy=false かつ completed が 1 増える
 #     （manifest どおりのサイズの sparse ファイルを置いて available=true にし、
 #      GGUF ロードで失敗させる。500 で返り、それでも completed は増えること）
@@ -65,6 +68,18 @@ open(sys.argv[1], "wb").write(png)
 PY
 IMG="$WORK/prematted.png"
 
+# decompression-bomb 再現（issue #66 反証レビュー）: IHDR は 40000x40000
+# （16 億画素超）を主張するが、ファイル自体は数百バイトしかない。
+python3 - "$WORK/bomb.png" <<'PY'
+import struct, sys, zlib
+w, h = 40000, 40000
+def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"\x00" * 100) + chunk(b"IEND", b"")
+open(sys.argv[1], "wb").write(png)
+PY
+BOMB="$WORK/bomb.png"
+
 # ---- 1. MV/SV とも manifest だけ（ファイル欠損）で起動 ----------------------
 "$SERVER" --models "$MV" --models-sv "$SV" --gpu -1 --port "$PORT" >"$WORK/server1.log" 2>&1 &
 SRV_PID=$!
@@ -77,6 +92,8 @@ C="$(cap)"
 [ "$(jq_py "$C" '"missing model file" in d["mv"]["reason"]')" = "True" ] && pass "mv reason names the missing file" || fail "mv reason: $C"
 [ "$(jq_py "$C" 'd["sv"]["model_set"] == "pixal3d-sv-q8_0" and d["sv"]["model_family"] == "sv"')" = "True" ] && pass "sv identity is read from the manifest" || fail "sv identity: $C"
 [ "$(jq_py "$C" 'd["busy"] is False and d["completed"] == 0')" = "True" ] && pass "idle: busy=false completed=0" || fail "idle state: $C"
+[ "$(jq_py "$C" 'd.get("trellis2_mv",{}).get("available") is False and d["trellis2_mv"]["max_images"] == 8')" = "True" ] && pass "trellis2_mv capability reports missing TRELLIS.2 flows" || fail "trellis2_mv capability: $C"
+[ "$(jq_py "$C" '"missing TRELLIS.2 model file" in d["trellis2_mv"].get("reason","")')" = "True" ] && pass "trellis2_mv capability names the missing model file" || fail "trellis2_mv reason: $C"
 
 expect_status "generate-sv without an available SV set -> 503" 503 -X POST "$U/generate-sv" -F "image=@$IMG"
 expect_status "generate-sv unknown field -> 400"             400 -X POST "$U/generate-sv" -F "image=@$IMG" -F "band=2"
@@ -93,6 +110,18 @@ expect_status "generate-sv seed=4294967296 -> 400"           400 -X POST "$U/gen
 expect_status "generate-sv uv=typo -> 400"                   400 -X POST "$U/generate-sv" -F "image=@$IMG" -F "uv=typo"
 expect_status "generate-sv non-PNG -> 400"                   400 -X POST "$U/generate-sv" -F "image=@$ROOT/CMakeLists.txt"
 expect_status "generate-sv missing image -> 400"             400 -X POST "$U/generate-sv" -F "fov=0.5"
+expect_status "trellis2-mv missing num_images -> 400"          400 -X POST "$U/generate-trellis2-mv" -F "image0=@$IMG" -F "image1=@$IMG"
+expect_status "trellis2-mv one image -> 400"                    400 -X POST "$U/generate-trellis2-mv" -F "num_images=1" -F "image0=@$IMG"
+expect_status "trellis2-mv nine images -> 400"                  400 -X POST "$U/generate-trellis2-mv" -F "num_images=9"
+expect_status "trellis2-mv invalid fusion -> 400"               400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "fusion=wat" -F "image0=@$IMG" -F "image1=@$IMG"
+expect_status "trellis2-mv sparse image indices -> 400"         400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image2=@$IMG"
+expect_status "trellis2-mv duplicate image0 part -> 400"        400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image0=@$IMG" -F "image1=@$IMG"
+expect_status "trellis2-mv rejects mesh_scale -> 400"           400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "mesh_scale=1"
+expect_status "trellis2-mv seed=abc -> 400"                     400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG" -F "seed=abc"
+expect_status "trellis2-mv valid input but no TRELLIS.2 set -> 503" 503 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$IMG"
+expect_status "generate-sv decompression-bomb IHDR -> 400 (sanity)"    400 -X POST "$U/generate-sv" -F "image=@$BOMB"
+expect_status "trellis2-mv decompression-bomb IHDR in image0 -> 400" 400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$BOMB" -F "image1=@$IMG"
+expect_status "trellis2-mv decompression-bomb IHDR in image1 -> 400" 400 -X POST "$U/generate-trellis2-mv" -F "num_images=2" -F "image0=@$IMG" -F "image1=@$BOMB"
 expect_status "generate-mv seed=abc -> 400 (was silently 0)" 400 -X POST "$U/generate-mv" -F "view0=@$IMG" -F "mesh_scale=1" -F "seed=abc"
 expect_status "generate seed=abc -> 400 (was silently 0)"    400 -X POST "$U/generate" -F "image=@$IMG" -F "seed=abc"
 

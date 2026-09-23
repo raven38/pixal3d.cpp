@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     if (getenv("TRELLIS_F32W")) p.cast_f32 = true;
     trellis::DitRunner* run = trellis::make_dense_runner(m, p, 16, Lc);
     trellis::FlowFwd fwd = [&](const vector<float>& x, float ts, const float* c){ return run->forward(x, ts, c); };
-    trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=7.5f; sp.guidance_rescale=0.7f; sp.gi0=0.6f; sp.gi1=1.0f; sp.rescale_t=5.0f;
+    trellis::SamplerParams sp; sp.steps=12; sp.guidance_strength=7.5f; sp.guidance_rescale=0.7f; sp.gi0=0.6; sp.gi1=1.0; sp.rescale_t=5.0;
     if (getenv("GS")) sp.guidance_strength = atof(getenv("GS"));
     if (getenv("GR")) sp.guidance_rescale = atof(getenv("GR"));
     vector<float> z = trellis::sample_flow(fwd, nz, cond.data.data(), neg.data(), sp);  // [8,L]
