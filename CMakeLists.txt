@@ -566,6 +566,10 @@ target_link_libraries(pixal3d-partial-run PRIVATE trellis_core)
 set_target_properties(pixal3d-partial-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 set_target_properties(pixal3d-texture-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
+add_executable(trellis-test-pixal3d-cascade src/test_pixal3d_cascade.cpp)
+target_link_libraries(trellis-test-pixal3d-cascade PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-cascade PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(trellis-test-pixal3d-ss-sample src/test_pixal3d_ss_sample.cpp)
 target_link_libraries(trellis-test-pixal3d-ss-sample PRIVATE trellis_core)
 set_target_properties(trellis-test-pixal3d-ss-sample PROPERTIES BUILD_RPATH "${GGML_RPATH}")
