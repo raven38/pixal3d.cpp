@@ -22,9 +22,10 @@ driven end-to-end from a text prompt, with
 python tools/render_glb.py out/goblin.glb out/view.png          # quick multi-view render
 ```
 
-Prebuilt binaries for Linux and Windows (Vulkan, ROCm, CUDA) are published on the
-[releases page](../../releases). Serves as the `trellis` backend of
-[Lemonade](https://github.com/lemonade-sdk/lemonade).
+Prebuilt binaries for Linux, Windows (CUDA, ROCm, Vulkan) and macOS (Metal), plus the Trellis
+Studio desktop app, are published on the [releases page](../../releases). Serves as the
+recommended image→3D backend of
+[image-to-3dlab](https://github.com/Bingeljell/image-to-3dlab).
 
 ## Quick start
 
