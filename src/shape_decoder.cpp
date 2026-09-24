@@ -97,6 +97,7 @@ static void stage_dump(const char* kind, const std::string& stage, const std::ve
                        const std::vector<std::array<int,3>>& coords) {
     const char* dir = getenv("TRELLIS_DBG_STAGE_DUMP");
     if (!dir || !*dir) return;
+    if (h.size() < (size_t)C * coords.size()) return;   // coords-only upsample: no feats at the last stage
     const int64_t N = (int64_t)coords.size();
     const std::string base = std::string(dir) + "/" + kind + "_" + stage + "_";
     std::vector<int32_t> ci((size_t)N * 3);
@@ -177,7 +178,7 @@ static std::vector<float> decode_unet(const Model& m, const std::vector<float>& 
         const bool fuse = fuse_head && si == 3;   // 最終段だけ head を融合する
         C2SResult r = sparse_c2s(m, std::string("blocks.") + st.s + "." + std::to_string(st.c2si), h, st.C, coords, st.Cout, ext,
                                  (std::string(kind) + "_c2s_stage" + std::to_string(si)).c_str(),
-                                 fuse ? &head : nullptr);
+                                 fuse ? &head : nullptr, /*coords_only=*/coords_only && si == 3);
         if (subs_out) subs_out->push_back(r.subdiv);
         h = std::move(r.feats); coords = std::move(r.coords); N = (int)coords.size();
         mem_probe("after c2s");
