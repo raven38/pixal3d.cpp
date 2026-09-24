@@ -9,6 +9,16 @@ wall, 9.9 GB host RSS peak) plus arithmetic from `src/trellis_cli.cpp` (`trellis
 `src/trellis_model.cpp` (`Model::load`). GPU peak was never measured natively; every GPU number
 below is derived from tensor shapes in code, not profiled.
 
+## 0. Three different "4 GiB" limits (read this first)
+
+| limit | what it bounds | where enforced |
+|---|---|---|
+| WebGPU `maxStorageBufferBindingSize` / `maxBufferSize` | the largest **single tensor** (a tensor cannot span buffers). Chrome reports e.g. 4 095 MiB or 2 047 MiB — a per-buffer signal, **not** VRAM | `check_graph_supported` (ggml-webgpu `supports_op` size check, before allocation); `pixal3d_cond_slat_plan` / `[cond-mem]` log the conditioning estimate (spec 33 §5) |
+| aggregate device memory | the sum of live buffers (weights + activations) | not exposed by WebGPU; measured per stage in the sections below |
+| wasm32 linear memory (`-sMAXIMUM_MEMORY=4294967296`) | everything on the **host** heap: decoded meshes, BVH, remesh, QEM, UV/bake | the bounded postprocess tail (`host_budget_bytes`, spec 33 §6) |
+
+Sparse/chunked conditioning (§11) solves the first; it does nothing for the third.
+
 ## 1. WebGPU runtime limits to query
 
 **Measured 2026-09-06** in Google Chrome 152.0.7977.82 (macOS 26.5) on the Apple M1
