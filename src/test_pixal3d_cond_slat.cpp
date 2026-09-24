@@ -265,17 +265,70 @@ static bool run_s1024(const Model& dinov3, const Model& naf, const string& dir,
     return all_ok;
 }
 
+// #78/#79: the production sparse path (pixal3d_cond_slat_gpu with active coords, split-graph NAF)
+// against tools/ref_pixal3d_ss_res.py's per-ss_res fixtures: LR shape-512 cond at R = ss_res over
+// the SS coords (ss<R>/coords.npy, cond_global.npy, cond_proj.npy) and, where dumped, the HR
+// shape-1024 cond at grid 64 over that run's HR tokens (hr_coords.npy, hr_cond_*.npy).
+static vector<std::array<int, 3>> coords_xyz(const npy::ArrayI32& a) {
+    const int w = (int)a.shape.back();
+    vector<std::array<int, 3>> v((size_t)a.shape[0]);
+    for (size_t i = 0; i < v.size(); ++i)
+        for (int k = 0; k < 3; ++k) v[i][k] = a.data[i * w + (w - 3) + k];
+    return v;
+}
+
+static bool run_ss_res(const Model& dinov3, const Model& naf, const string& ssdir,
+                       const vector<Pixal3dView>& v512, const vector<Pixal3dView>& v1024, float mesh_scale) {
+    bool all_ok = true;
+    for (int R : {32, 64}) {
+        const string d = ssdir + "/ss" + std::to_string(R);
+        npy::Array g_ref, p_ref;
+        if (!try_load(d + "/cond_global.npy", g_ref) || !try_load(d + "/cond_proj.npy", p_ref)) {
+            printf("\n(ss_res=%d fixture absent under %s)\n", R, d.c_str()); continue;
+        }
+        const auto co = coords_xyz(npy::load_i32(d + "/coords.npy"));
+        printf("\n=== ss_res=%d LR cond: S=512 R=%d T=512 sparse, %zu tokens ===\n", R, R, co.size());
+        Pixal3dSlatCondParams prm{512, R, 512, mesh_scale};
+        prm.naf_block_chunk = 256;                       // trellis_cli.cpp's LR setting
+        Pixal3dCondStats st;
+        Pixal3dCond g = pixal3d_cond_slat_gpu(dinov3, naf, v512, prm, &st, &co);
+        print_stats("gpu", st);
+        char nm[96];
+        snprintf(nm, sizeof nm, "ss%d LR z_global", R); all_ok &= compare(nm, g.global, g_ref);
+        npy::Array lr, hr; lr.shape = hr.shape = {(int64_t)co.size(), D};
+        lr.data = proj_half(p_ref.data, co.size(), false); hr.data = proj_half(p_ref.data, co.size(), true);
+        snprintf(nm, sizeof nm, "ss%d LR z_proj_lr", R); all_ok &= compare(nm, proj_half(g.proj, co.size(), false), lr);
+        snprintf(nm, sizeof nm, "ss%d LR z_proj_hr", R); all_ok &= compare(nm, proj_half(g.proj, co.size(), true), hr);
+        if (!v1024.empty() && try_load(d + "/hr_cond_global.npy", g_ref) && try_load(d + "/hr_cond_proj.npy", p_ref)) {
+            const auto hc = coords_xyz(npy::load_i32(d + "/hr_coords.npy"));
+            printf("\n=== ss_res=%d HR cond: S=1024 R=64 T=512 sparse, %zu tokens ===\n", R, hc.size());
+            Pixal3dSlatCondParams hp{1024, 64, 512, mesh_scale};
+            hp.naf_block_chunk = 1024;                   // trellis_cli.cpp's HR setting
+            Pixal3dCond h = pixal3d_cond_slat_gpu(dinov3, naf, v1024, hp, &st, &hc);
+            print_stats("gpu", st);
+            snprintf(nm, sizeof nm, "ss%d HR z_global", R); all_ok &= compare(nm, h.global, g_ref);
+            lr.shape = hr.shape = {(int64_t)hc.size(), D};
+            lr.data = proj_half(p_ref.data, hc.size(), false); hr.data = proj_half(p_ref.data, hc.size(), true);
+            snprintf(nm, sizeof nm, "ss%d HR z_proj_lr", R); all_ok &= compare(nm, proj_half(h.proj, hc.size(), false), lr);
+            snprintf(nm, sizeof nm, "ss%d HR z_proj_hr", R); all_ok &= compare(nm, proj_half(h.proj, hc.size(), true), hr);
+        }
+    }
+    return all_ok;
+}
+
 int main(int argc, char** argv) {
     vector<string> pos;
     bool full = false;
-    string stage = "all";
+    string stage = "all", ss_res_dir;
     for (int i = 1; i < argc; ++i) {
         if (string(argv[i]) == "--full") full = true;
         else if (string(argv[i]) == "--stage" && i + 1 < argc) stage = argv[++i];
+        else if (string(argv[i]) == "--ss-res-dir" && i + 1 < argc) ss_res_dir = argv[++i];
         else pos.push_back(argv[i]);
     }
     if (pos.size() < 3 || (stage != "all" && stage != "host" && stage != "gpu")) {
-        fprintf(stderr, "usage: %s <dinov3.gguf> <pixal3d_naf.gguf> <fixture_dir> [gpu] [--full] [--stage host|gpu|all]\n", argv[0]);
+        fprintf(stderr, "usage: %s <dinov3.gguf> <pixal3d_naf.gguf> <fixture_dir> [gpu] [--full] [--stage host|gpu|all]"
+                        " [--ss-res-dir DIR]\n", argv[0]);
         return 1;
     }
     const bool do_host = stage != "gpu", do_gpu = stage != "host";
@@ -314,6 +367,24 @@ int main(int argc, char** argv) {
                                          images512.data.data() + (size_t)(v + 1) * plane3);
             views[v].fov_x = views_meta[v].fov_x;
             std::memcpy(views[v].c2w, views_meta[v].c2w, 16 * sizeof(float));
+        }
+        if (!ss_res_dir.empty()) {                     // only the ss_res fixtures
+            vector<Pixal3dView> v1024;
+            npy::Array images1024;
+            if (try_load(dir + "/s1024_images.npy", images1024)) {
+                const int S1 = (int)images1024.shape[3];
+                const size_t p1 = (size_t)3 * S1 * S1;
+                v1024.resize(Vs);
+                for (int v = 0; v < Vs; ++v) {
+                    v1024[v].rgb_premult.assign(images1024.data.data() + (size_t)v * p1, images1024.data.data() + (size_t)(v + 1) * p1);
+                    v1024[v].fov_x = views_meta[v].fov_x;
+                    std::memcpy(v1024[v].c2w, views_meta[v].c2w, 16 * sizeof(float));
+                }
+            }
+            all_ok &= run_ss_res(dinov3, naf, ss_res_dir, views, v1024, mesh_scale);
+            dinov3.free(); naf.free();
+            printf("\n=== overall %s ===\n", all_ok ? "PASS" : "FAIL (see above)");
+            return all_ok ? 0 : 1;
         }
         if (do_host) all_ok &= run_s512(dinov3, naf, dir, views, mesh_scale);
         if (do_gpu) all_ok &= run_s512_gpu(dinov3, naf, dir, views, mesh_scale, /*with_host=*/ stage == "gpu");

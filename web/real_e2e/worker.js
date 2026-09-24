@@ -35,7 +35,7 @@ function filesFromManifest(manifest, roles) {
 }
 
 self.onmessage = async (ev) => {
-  const { models, modelManifest, views, seed, resolution = 1024 } = ev.data;
+  const { models, modelManifest, views, seed, resolution = 1024, ssRes = 32, env = {} } = ev.data;
   const log = (text) => self.postMessage({ type: 'log', text });
   try {
     if (resolution !== 1024) {
@@ -47,6 +47,13 @@ self.onmessage = async (ev) => {
       print: log,
       printErr: (t) => log('[stderr] ' + t),
     });
+    if (!M.ccall('pixal3d_real_set_ss_res', 'number', ['number'], [ssRes])) {
+      throw new Error(`unsupported sparse-structure resolution ${ssRes} (32 or 64)`);
+    }
+    for (const [k, v] of Object.entries(env)) {
+      M.ccall('pixal3d_real_setenv', 'number', ['string', 'string'], [k, String(v)]);
+      log(`env ${k}=${v}`);
+    }
     const FS = M.FS, WORKERFS = M.WORKERFS;
     FS.mkdir('/models');
     FS.mount(WORKERFS, { files: models }, '/models');

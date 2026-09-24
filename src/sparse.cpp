@@ -208,7 +208,7 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<float>& feats_in, int Cin,
                      const std::vector<std::array<int,3>>& coords, int Cout,
                      const std::vector<uint8_t>* ext_subdiv, const char* tag,
-                     const C2SFinalHead* head) {
+                     const C2SFinalHead* head, bool coords_only) {
     const int N = (int)coords.size();
     if (N == 0) throw std::runtime_error("c2s: empty input coordinate set in " + prefix);
     if (Cin <= 0 || Cout <= 0 || feats_in.size() != (size_t)Cin * N)
@@ -281,6 +281,11 @@ C2SResult sparse_c2s(const Model& m, const std::string& prefix,
     mstart[N] = (int32_t)gidx.size();
     const int M = (int)nc.size();
     if (M == 0) throw std::runtime_error("c2s: subdivision produced no active voxels in " + prefix);
+    if (coords_only) {
+        C2SResult r;
+        r.coords = std::move(nc); r.C = Cout; r.subdiv = std::move(mask_used);
+        return r;
+    }
     std::vector<int32_t> nnbr = build_neighbor_table(nc);
     if (getenv("TRELLIS_DBG_MEM"))
         fprintf(stderr, "      [c2s] %-22s N=%d -> M=%d | host nnbr=%.2f GB feats_in=%.2f GB out=%.2f GB\n",

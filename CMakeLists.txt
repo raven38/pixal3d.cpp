@@ -160,6 +160,7 @@ add_library(trellis_core STATIC
   src/proj_grid.cpp
   src/pixal3d_cond.cpp
   src/pixal3d_cond_gpu.cpp
+  src/pixal3d_cascade.cpp
   src/naf.cpp
   src/naf_gpu.cpp
   src/transforms_json.cpp
@@ -494,6 +495,10 @@ set_target_properties(trellis-cli PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 # Resident HTTP server (keeps the process warm; wraps trellis_run).
 find_package(Threads REQUIRED)
+add_executable(trellis-pixal3d-tail-replay src/pixal3d_tail_replay.cpp)
+target_link_libraries(trellis-pixal3d-tail-replay PRIVATE trellis_core)
+set_target_properties(trellis-pixal3d-tail-replay PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
 add_executable(post-replay src/post_replay.cpp)
 target_link_libraries(post-replay PRIVATE trellis_core Threads::Threads)
 set_target_properties(post-replay PROPERTIES BUILD_RPATH "${GGML_RPATH}")
@@ -564,6 +569,10 @@ add_executable(pixal3d-partial-run src/pixal3d_partial_e2e_wasm.cpp)
 target_link_libraries(pixal3d-partial-run PRIVATE trellis_core)
 set_target_properties(pixal3d-partial-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 set_target_properties(pixal3d-texture-run PROPERTIES BUILD_RPATH "${GGML_RPATH}")
+
+add_executable(trellis-test-pixal3d-cascade src/test_pixal3d_cascade.cpp)
+target_link_libraries(trellis-test-pixal3d-cascade PRIVATE trellis_core)
+set_target_properties(trellis-test-pixal3d-cascade PROPERTIES BUILD_RPATH "${GGML_RPATH}")
 
 add_executable(trellis-test-pixal3d-ss-sample src/test_pixal3d_ss_sample.cpp)
 target_link_libraries(trellis-test-pixal3d-ss-sample PRIVATE trellis_core)

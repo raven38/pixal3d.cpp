@@ -129,6 +129,7 @@ The most useful ones:
 | `--atlas PX` | UV atlas size (default 2048 @1024 / 1024 @512) |
 | `--box-uv` | voxel-native 6-way box projection instead of the default xatlas unwrap (O(faces), faster, looser packing) |
 | `--seed N` | RNG seed |
+| `--ss-res 32\|64` | Pixal3D (`--views` / `--sv-image`) sparse-structure resolution; default 32 = the reference. 64 is experimental: geometrically correct and memory-safe, but not shown to improve quality (`docs/spec/33-pixal3d-ss-res.md`) |
 | `--trellis2-mv DIR` | TRELLIS.2 pose-free multi-image input (2–8 images, natural filename order); separate from Pixal3D `--views` |
 | `--trellis2-mv-mode stochastic\|multidiffusion` | multi-image FlowEuler fusion policy (default `stochastic`) |
 | `--require-gpu` | fail instead of falling back to the (very slow, RAM-hungry) CPU path |

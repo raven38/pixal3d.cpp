@@ -70,3 +70,5 @@ web/real_e2e/SHA256SUMS
 # emcmake の configure 検査が repo 直下に残す
 /a.out.js
 /a.out.wasm
+web/tail_replay/pixal3d_tail_replay.js
+web/tail_replay/pixal3d_tail_replay.wasm

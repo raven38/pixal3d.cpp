@@ -60,6 +60,8 @@ void print_usage(const char* argv0, bool server) {
         "  -s, --seed N            RNG seed                     (default 42)\n"
         "      --res 512|1024|1536 geometry resolution\n"
         "      --max-tokens N      HR token budget              (default 49152)\n"
+        "      --ss-res 32|64      Pixal3D sparse-structure resolution (default 32; 64 is\n"
+        "                          experimental). --views/--sv-image cascade only.\n"
         "      --trellis2-mv DIR   TRELLIS.2 multi-image mode: 2..8 images, natural order;\n"
         "                          pose-free fusion, no transforms.json/camera metadata\n"
         "      --trellis2-mv-mode M stochastic | multidiffusion (default stochastic)\n"
@@ -149,6 +151,11 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
         else if (a == "-s" || a == "--seed")    { const char* v = need(a.c_str()); if (!v) return false; p.seed = (uint32_t)atoi(v); }
         else if (a == "--res")                  { const char* v = need(a.c_str()); if (!v) return false; p.set_res(atoi(v)); }
         else if (a == "--max-tokens")           { const char* v = need(a.c_str()); if (!v) return false; p.max_tokens = atoi(v); }
+        else if (a == "--ss-res")               { const char* v = need(a.c_str()); if (!v) return false;
+                                                  if (!parse_int_strict(v, p.ss_res) || (p.ss_res != 32 && p.ss_res != 64)) {
+                                                      fprintf(stderr, "[trellis] --ss-res expects 32 or 64, got '%s'\n", v); return false;
+                                                  }
+                                                  p.ss_res_set = true; }
         else if (a == "--trellis2-mv")          { const char* v = need(a.c_str()); if (!v) return false; p.trellis2_mv = v; }
         else if (a == "--trellis2-mv-mode")     { const char* v = need(a.c_str()); if (!v) return false;
                                                   const std::string m = v;
@@ -216,6 +223,12 @@ bool parse_args(int argc, char** argv, TrellisParams& p) {
     // image count and never overload Pixal3D --views semantics.
     if (p.trellis2_mv_mode_set && p.trellis2_mv.empty()) {
         fprintf(stderr, "[trellis] --trellis2-mv-mode requires --trellis2-mv DIR\n");
+        return false;
+    }
+    // --ss-res は Pixal3D cascade（--views / --sv-image）専用。TRELLIS.2 経路の cascade 量子化は
+    // 別式（int 切り捨て, grid）で ss_res=32 固定なので、黙って無視せずここで落とす。
+    if (p.ss_res_set && p.views.empty() && p.sv_image.empty()) {
+        fprintf(stderr, "[trellis] --ss-res requires --views DIR or --sv-image PATH (Pixal3D cascade only)\n");
         return false;
     }
     if (!p.trellis2_mv.empty()) {

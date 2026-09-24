@@ -69,6 +69,8 @@ struct TrellisParams {
     bool cascade    = true;     // 1024 cascade (default); --res 512 selects the light path
     int  hr_res     = 1024;     // HR cascade target resolution (1024 / 1536)
     int  max_tokens = 49152;    // HR token budget (backoff floors at 1024)
+    int  ss_res     = 32;       // Pixal3D sparse-structure resolution (32 | 64, --ss-res)
+    bool ss_res_set = false;
 
     int birefnet = -1;          // bg removal: 1 BiRefNet, 0 white-threshold, -1 auto
                                 // (auto: keep a pre-matted image's alpha; else BiRefNet when

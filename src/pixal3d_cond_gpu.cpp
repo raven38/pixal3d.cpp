@@ -24,7 +24,9 @@
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -499,6 +501,69 @@ static Pixal3dCond cond_slat_gpu_chunked(const Model& dinov3, const Model& naf,
     return out;
 }
 
+// #82 preflight: size (in uint64, before any size_t narrowing on wasm32) the largest single
+// device tensor pixal3d_cond_slat_gpu is about to create. A tensor cannot be split across
+// buffers, so this -- not aggregate VRAM -- is what a WebGPU adapter's
+// maxStorageBufferBindingSize bounds. Dense R^3 projection ([R^3, 1024] per accumulator, 1 GiB at
+// R=64) and the unchunked NAF map ([1024, T^2], 4 GiB at T=1024) are the known offenders; the
+// sparse / chunked paths keep both proportional to the active tokens / one chunk.
+static bool cond_slat_chunked(const Pixal3dSlatCondParams& prm) {
+    // NAF 出力 [D, T*T] が 1 GiB を超える段（= naf_T > 512）、または明示指定があるときは
+    // 分割グラフ版へ。T<=512 の既存2段は検証済みの単一グラフ経路のままにする。
+    return prm.naf_block_chunk > 0 || (int64_t)prm.naf_T * prm.naf_T * D * 4 > (1LL << 30);
+}
+
+Pixal3dCondSlatPlan pixal3d_cond_slat_plan(const Pixal3dSlatCondParams& prm, int64_t tokens, bool sparse) {
+    Pixal3dCondSlatPlan p;
+    p.sparse = sparse; p.tokens = tokens; p.chunked = cond_slat_chunked(prm);
+    const uint64_t S = (uint64_t)prm.S, T = (uint64_t)prm.naf_T, Hp = S / 16, NP = Hp * Hp, C = D;
+    const uint64_t d2 = (T / Hp) * (T / Hp), ntok = NP + NPREFIX;
+    p.largest_bytes = (uint64_t)D * (uint64_t)tokens * 4;          // acc_lr / acc_hr / gathered taps
+    p.what = sparse ? "sparse proj accumulator" : "dense R^3 proj accumulator";
+    auto consider = [&](uint64_t b, const char* w) { if (b > p.largest_bytes) { p.largest_bytes = b; p.what = w; } };
+    consider(ntok * ntok * 16 * 4, "DINOv3 attention scores");      // dinov3.cpp: soft_max(k^T q) [N, N, 16]
+    consider(S * S * 256 * 4, "NAF encoder concat");                // build_encoder cat [S, S, 256]
+    consider(T * T * 256 * 4, "NAF pooled / q_bm");
+    // naf_build_attn_chunk over nb blocks: v_win [C, 81 nb], logits/probs [81, d2, 4, nb], out [C, d2 nb].
+    uint64_t nb = NP;
+    if (p.chunked) {
+        nb = prm.naf_block_chunk > 0 ? (uint64_t)prm.naf_block_chunk
+           : std::max<uint64_t>(1, (uint64_t)256 * 1024 * 1024 / (d2 * D * 4));
+        nb = std::min(nb, NP);
+    }
+    consider(C * 81 * nb * 4, "NAF attention value windows");
+    consider(81 * d2 * 4 * nb * 4, "NAF attention scores");
+    consider(C * d2 * nb * 4, p.chunked ? "NAF attention chunk" : "full NAF map (unchunked)");
+    p.host_proj_bytes = (uint64_t)tokens * 2 * D * 4;
+    return p;
+}
+
+// Logs the plan and refuses it before any allocation when a single tensor exceeds the backend's
+// per-buffer limit (ggml_backend_get_max_size), instead of an allocator failure mid-graph.
+static void cond_slat_preflight(ggml_backend_t be, const Pixal3dSlatCondParams& prm, int64_t NT,
+                                bool sparse, Pixal3dCondStats& st) {
+    const Pixal3dCondSlatPlan p = pixal3d_cond_slat_plan(prm, NT, sparse);
+    const uint64_t limit = (uint64_t)ggml_backend_get_max_size(be);
+    st.largest_planned_bytes = p.largest_bytes;
+    st.backend_max_buffer = limit;
+    char lim[32];
+    if (limit >= ((uint64_t)1 << 62)) snprintf(lim, sizeof lim, "unbounded");
+    else snprintf(lim, sizeof lim, "%.1f MiB", limit / 1048576.0);
+    printf("      [cond-mem] S=%d T=%d R=%d tokens=%lld (%s, NAF %s): largest planned tensor %.1f MiB (%s),"
+           " backend per-buffer limit %s, host proj %.1f MiB\n",
+           prm.S, prm.naf_T, prm.R, (long long)NT, sparse ? "sparse gather" : "DENSE R^3",
+           p.chunked ? "chunked" : "single graph", p.largest_bytes / 1048576.0, p.what, lim, p.host_proj_bytes / 1048576.0);
+    if (p.largest_bytes > limit)
+        throw std::runtime_error("pixal3d_cond_slat_gpu: planned " + std::string(p.what) + " of " +
+                                 std::to_string(p.largest_bytes >> 20) + " MiB exceeds the backend per-buffer limit of " +
+                                 std::to_string(limit >> 20) + " MiB (S=" + std::to_string(prm.S) + " T=" +
+                                 std::to_string(prm.naf_T) + " R=" + std::to_string(prm.R) + " tokens=" +
+                                 std::to_string(NT) + "); use sparse coords / a smaller naf_block_chunk");
+    if (p.host_proj_bytes > (uint64_t)SIZE_MAX / 2)
+        throw std::runtime_error("pixal3d_cond_slat_gpu: host proj buffer of " + std::to_string(p.host_proj_bytes >> 20) +
+                                 " MiB does not fit this address space");
+}
+
 Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
                                    const std::vector<Pixal3dView>& views,
                                    const Pixal3dSlatCondParams& prm, Pixal3dCondStats* stats,
@@ -525,14 +590,18 @@ Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
         }
     }
     const int64_t N3 = coords ? (int64_t)sel.size() : R3;
-    out.proj.assign((size_t)N3 * 2 * D, 0.0f);
-    if (V == 0 || N3 == 0) return out;
+    if (V == 0 || N3 == 0) { out.proj.assign((size_t)N3 * 2 * D, 0.0f); return out; }
     if (naf.backend == nullptr || dinov3.backend == nullptr)
         throw std::runtime_error("pixal3d_cond_slat_gpu: models must be loaded on a backend");
-    // NAF 出力 [D, T*T] が 1 GiB を超える段（= naf_T > 512）、または明示指定があるときは
-    // 分割グラフ版へ。T<=512 の既存2段は検証済みの単一グラフ経路のままにする。
-    if (prm.naf_block_chunk > 0 || (int64_t)Tn * Tn * D * 4 > (1LL << 30))
-        return cond_slat_gpu_chunked(dinov3, naf, views, prm, sel, N3, stats);
+    const bool chunked = cond_slat_chunked(prm);
+    Pixal3dCondStats pre;
+    cond_slat_preflight(dinov3.backend, prm, N3, coords != nullptr, pre);
+    out.proj.assign((size_t)N3 * 2 * D, 0.0f);
+    if (chunked) {
+        Pixal3dCond r = cond_slat_gpu_chunked(dinov3, naf, views, prm, sel, N3, stats);
+        if (stats) { stats->largest_planned_bytes = pre.largest_planned_bytes; stats->backend_max_buffer = pre.backend_max_buffer; }
+        return r;
+    }
     if (naf.backend == nullptr || dinov3.backend == nullptr)
         throw std::runtime_error("pixal3d_cond_slat_gpu: models must be loaded on a backend");
 
@@ -686,6 +755,8 @@ Pixal3dCond pixal3d_cond_slat_gpu(const Model& dinov3, const Model& naf,
     ggml_backend_buffer_free(pbuf);
     ggml_free(pc);
 
+    st.largest_planned_bytes = pre.largest_planned_bytes;
+    st.backend_max_buffer = pre.backend_max_buffer;
     st.peak_bytes = st.weight_bytes + st.cond_bytes + st.view_alloc_bytes;
     st.total_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (stats) *stats = st;

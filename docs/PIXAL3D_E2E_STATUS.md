@@ -118,6 +118,14 @@ fixture は `PIXAL3D_DUMP_FIXTURE=<dir>` を付けた native の
 
 ## 4. Production postprocess
 
+> **更新（2026-09-24, #83）**: ブラウザの tail は `remesh_res=512` 固定をやめ、decode 解像度
+> （1024）から始めて「tail 開始時の live ヒープ + 予測ピーク」が 4 GiB − 128 MiB に入る段
+> （1024 / 768 / 512 / 384）を選ぶ有界ポリシーになった。予測を外した `std::bad_alloc` は 1 段
+> 下げて再試行し、入らなければ `HOST_HEAP_EXHAUSTED` で明示的に失敗する。wasm32 の tail
+> リプレイ実測では、クリーンなヒープなら cyclops でも 1024 がピーク 3 809 MiB で完走し、
+> 以下の「1024 は落ちる」は tail 開始時に ~918 MiB が live だったことによる。
+> 詳細・校正値・native との幾何比較は `docs/spec/33-pixal3d-ss-res.md` §6。以下は当時の記録。
+
 共通実装 `include/pixal3d_postprocess.h` / `src/pixal3d_postprocess.cpp`。
 partial / fixture full / real full の 3 経路が同じ tail を使う。
 

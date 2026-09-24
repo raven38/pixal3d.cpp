@@ -45,11 +45,15 @@ struct C2SFinalHead {
 };
 // `tag`: label for graph_dump.h (TRELLIS_DUMP_OPS), identifying the caller's stage; purely diagnostic.
 // `head`: 非 null なら上記の融合を行い、返る feats は [out_ch * M]・C は out_ch になる。
+// `coords_only`: 分割マスクと新しい coords だけを返し、conv1/conv2（feats [Cout, M] と M 個分の
+// 近傍表）を作らない。coords はマスクだけで決まるので結果は同じ。cascade upsample の最終段用
+// （ss_res=64 では M ≈ 4.8M、捨てる feats だけで 1.2 GB、wasm32 のヒープを 4 GiB 近くまで押し上げていた）。
 C2SResult sparse_c2s(const Model& m, const std::string& prefix,
                      const std::vector<float>& feats_in, int Cin,
                      const std::vector<std::array<int,3>>& coords, int Cout,
                      const std::vector<uint8_t>* ext_subdiv = nullptr,
                      const char* tag = "c2s",
-                     const C2SFinalHead* head = nullptr);
+                     const C2SFinalHead* head = nullptr,
+                     bool coords_only = false);
 
 } // namespace trellis
