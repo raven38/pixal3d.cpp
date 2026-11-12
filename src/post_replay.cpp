@@ -66,15 +66,21 @@ int main(int argc, char** argv) {
     FILE* f = fopen(dump, "rb");
     if (!f) { fprintf(stderr, "cannot open %s\n", dump); return 1; }
     int V, F, Mv, res;
-    if (fread(&V,4,1,f)+fread(&F,4,1,f)+fread(&Mv,4,1,f)+fread(&res,4,1,f) != 4) return 1;
+    // Read the header in one call. The order in which the operands of '+' run is
+    // unspecified: MSVC runs those four freads right to left, so on Windows V got res,
+    // F got Mv and so on; the body reads then came up short and the tool exited 1 silently.
+    int32_t hdr[4];
+    if (fread(hdr,4,4,f) != 4) { fprintf(stderr, "%s: header is short\n", dump); return 1; }
+    V = hdr[0]; F = hdr[1]; Mv = hdr[2]; res = hdr[3];
     std::vector<float> verts((size_t)V*3);
     std::vector<int32_t> faces((size_t)F*3);
     std::vector<std::array<int,3>> coords((size_t)Mv);
     std::vector<float> pbr6((size_t)Mv*6);
-    if (fread(verts.data(),4,verts.size(),f) != verts.size()) return 1;
-    if (fread(faces.data(),4,faces.size(),f) != faces.size()) return 1;
-    for (auto& c : coords) if (fread(c.data(),4,3,f) != 3) return 1;
-    if (fread(pbr6.data(),4,pbr6.size(),f) != pbr6.size()) return 1;
+    bool ok = fread(verts.data(),4,verts.size(),f) == verts.size()
+           && fread(faces.data(),4,faces.size(),f) == faces.size();
+    for (auto& c : coords) ok = ok && fread(c.data(),4,3,f) == 3;
+    ok = ok && fread(pbr6.data(),4,pbr6.size(),f) == pbr6.size();
+    if (!ok) { fprintf(stderr, "%s ends early: its header says V=%d F=%d Mv=%d\n", dump, V, F, Mv); return 1; }
     fclose(f);
     printf("loaded: V=%d F=%d voxels=%d res=%d\n", V, F, Mv, res);
 
