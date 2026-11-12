@@ -341,7 +341,9 @@ int weld_vertices(std::vector<float>& verts, std::vector<int32_t>& faces, std::v
     // per cell: the key packs the cell coordinate monotonically (21 biased bits
     // per axis), so "cell + offset" is "key + constant" and every neighbouring
     // cell pair falls out of one merge pass per offset.
-    constexpr int64_t BIAS = (int64_t)1 << 20;
+    // static: the lambdas below read BIAS without capturing it. GCC and Clang allow that for a
+    // plain constexpr local, MSVC does not (C3493); a static one needs no capture anywhere.
+    static constexpr int64_t BIAS = (int64_t)1 << 20;
     auto pack = [](int64_t cx, int64_t cy, int64_t cz) -> uint64_t {
         auto clampc = [](int64_t c) { return std::max<int64_t>(-BIAS + 1, std::min<int64_t>(BIAS - 2, c)); };
         return ((uint64_t)(clampc(cx) + BIAS) << 42) | ((uint64_t)(clampc(cy) + BIAS) << 21) | (uint64_t)(clampc(cz) + BIAS);
